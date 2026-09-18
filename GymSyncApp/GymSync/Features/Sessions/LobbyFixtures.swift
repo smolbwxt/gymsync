@@ -82,7 +82,13 @@ enum LobbyFixtures {
     /// `lobby_open`, in a crew, with a routine — the state every one of these
     /// frames is captured in. No room code: these are crew sessions, and the
     /// room-code banner is a `.code` session's chrome.
-    private static func session(state: String = "lobby_open") -> WorkoutSession {
+    /// `style` is stated rather than defaulted (plan task S2): frame 136
+    /// exists to show Rounds SELECTED with the other two readable, and a
+    /// frame whose selection came from a memberwise default is a frame that
+    /// silently changes if the default ever does. `liftingStartedAt` stays
+    /// nil, which is what keeps the style card on screen at all.
+    private static func session(state: String = "lobby_open",
+                                style: SessionStyle = .rounds) -> WorkoutSession {
         WorkoutSession(
             id: sessionID,
             routineID: nil,
@@ -96,7 +102,8 @@ enum LobbyFixtures {
             scheduledFor: scheduledFor,
             seriesID: nil,
             currentTurnUserID: nil,
-            currentTurnStartedAt: nil)
+            currentTurnStartedAt: nil,
+            style: style)
     }
 
     // MARK: - The plan
@@ -160,7 +167,7 @@ enum LobbyFixtures {
     /// one on the way — so Start is disabled and captioned
     /// `2 of 4 checked in`, and the energy card reads `3 OF 4 REPORTED`.
     static let waiting = LobbyWorld(
-        session: session(),
+        session: session(style: .rounds),
         groupName: "Push Crew",
         rows: [
             row(alexID, "Alex Rue", .checkedIn, energy: 4, isYou: true),

@@ -101,7 +101,7 @@ enum PersonalRecordRepository {
     /// user_id, 20260715000002_personal_records.sql:23-25), so despite
     /// filtering only on `session_id` this can never return a teammate's
     /// row. Correct for the "your PR" callout (`SessionRecapView`'s `myPR`
-    /// and `GroupSessionLiveView`'s own heaviestPR card) — each needs
+    /// and `SessionLiveView`'s own heaviestPR card) — each needs
     /// exactly the caller's own PR detail (exercise/weight/reps/
     /// previousBest) for a session they participated in, which is
     /// inherently self-scoped by the product itself, not just by RLS.
@@ -134,7 +134,7 @@ enum PersonalRecordRepository {
 
     /// TRUE per-user PR counts for a session, across ALL participants —
     /// backs the group recap's hero "PRS" total (sum) and every leaderboard
-    /// row's "N PR" badge (`GroupSessionLiveView.buildGroupRecapPayload`).
+    /// row's "N PR" badge (`SessionLiveView.buildGroupRecapPayload`).
     /// Also backs the equivalent COUNT-only spots in the history/legacy
     /// recap views (`CompletedSessionView`'s PRS tile + per-member badges,
     /// `SessionRecapView`'s PRS pill + per-member badges) as of the

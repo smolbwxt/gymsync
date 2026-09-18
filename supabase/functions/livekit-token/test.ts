@@ -445,10 +445,10 @@ Deno.test("handleRequest: falls back to the raw user id for `name` if no profile
   assertEquals(claims.name, "user-no-profile");
 });
 
-Deno.test("VOICE_ELIGIBLE_STATES matches the sessions.state check constraint's 5 confirmed voice-eligible values", () => {
+Deno.test("VOICE_ELIGIBLE_STATES matches the sessions.state check constraint's 2 confirmed voice-eligible values", () => {
   assertEquals(
     [...VOICE_ELIGIBLE_STATES].sort(),
-    ["editing", "in_progress", "lobby_open", "locked", "voting"].sort(),
+    ["in_progress", "lobby_open"].sort(),
   );
 });
 

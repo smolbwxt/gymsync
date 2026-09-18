@@ -7,10 +7,10 @@ import XCTest
 /// AVFoundation: `WCSession` is faked via the `WatchSessionProviding`
 /// seam, the set-log submit path via `SetLogSubmitting` (the SAME seam
 /// `OfflineSetLogQueueTests` already fakes — see that file's header doc
-/// comment for the shared idiom this mirrors), the soundboard
-/// play/broadcast pair via `SoundboardBroadcasting`, and (Phase W gate
+/// comment for the shared idiom this mirrors), and (Phase W gate
 /// finding I-2) the best-effort post-submit turn-advance call via
-/// `TurnAdvancing`.
+/// `TurnAdvancing`. (Before plan task S11 this list also faked the
+/// soundboard play/broadcast pair via `SoundboardBroadcasting`.)
 ///
 /// `WatchEnvelope`'s own codec properties (round-trip, unknown-kind
 /// tolerance, version gate) are covered separately in
@@ -95,20 +95,11 @@ final class WatchConnectivityBridgeTests: XCTestCase {
         }
     }
 
-    private final class FakeSoundboardBroadcasting: SoundboardBroadcasting {
-        private(set) var playedSlugs: [String] = []
-        private(set) var sentSounds: [(sessionID: UUID, groupID: UUID?, slug: String)] = []
-
-        func play(slug: String) async { playedSlugs.append(slug) }
-
-        func sendSound(sessionID: UUID, groupID: UUID?, slug: String) async {
-            sentSounds.append((sessionID, groupID, slug))
-        }
-    }
-
     /// Phase W Task 5 — records every `publish` call so relay-gating tests
     /// can assert "no publish happened" without linking Supabase/Realtime.
-    /// Same "protocol + fake" idiom as `FakeSoundboardBroadcasting` above.
+    /// Same "protocol + fake" idiom `FakeSetLogSubmitter` above establishes
+    /// (before plan task S11, a sibling `FakeSoundboardBroadcasting` used
+    /// this idiom too).
     private final class FakeHeartRateBroadcasting: HeartRateBroadcasting {
         private(set) var published: [(sessionID: UUID, userID: UUID, bpm: Int, zone: String?)] = []
 
@@ -123,7 +114,6 @@ final class WatchConnectivityBridgeTests: XCTestCase {
         let bridge: WatchConnectivityBridge
         let session: FakeWatchSession
         let submitter: FakeSetLogSubmitter
-        let soundboard: FakeSoundboardBroadcasting
         let heartRateBroadcast: FakeHeartRateBroadcasting
         let turnAdvancer: FakeTurnAdvancing
     }
@@ -131,21 +121,19 @@ final class WatchConnectivityBridgeTests: XCTestCase {
     private func makeHarness(userID: UUID? = UUID()) -> Harness {
         let session = FakeWatchSession()
         let submitter = FakeSetLogSubmitter()
-        let soundboard = FakeSoundboardBroadcasting()
         let heartRateBroadcast = FakeHeartRateBroadcasting()
         let turnAdvancer = FakeTurnAdvancing()
         let bridge = WatchConnectivityBridge(
             session: session,
             submitter: submitter,
             userIDProvider: FakeCurrentUserIDProvider(currentUserID: userID),
-            soundboard: soundboard,
             heartRateBroadcast: heartRateBroadcast,
             turnAdvancer: turnAdvancer
         )
-        return Harness(bridge: bridge, session: session, submitter: submitter, soundboard: soundboard, heartRateBroadcast: heartRateBroadcast, turnAdvancer: turnAdvancer)
+        return Harness(bridge: bridge, session: session, submitter: submitter, heartRateBroadcast: heartRateBroadcast, turnAdvancer: turnAdvancer)
     }
 
-    /// Seeds `bridge.lastPushedState` the same way `GroupSessionLiveView.
+    /// Seeds `bridge.lastPushedState` the same way `SessionLiveView.
     /// pushWatchSessionState()` does in production — through the real
     /// `updateSessionState(_:)` call, not by poking a private field.
     /// `isActive`/`shareHeartRate` (Phase W Task 5) default to the SAME
@@ -297,8 +285,8 @@ final class WatchConnectivityBridgeTests: XCTestCase {
         XCTAssertFalse(log.isFailed)
         XCTAssertFalse(log.isPenalty, "watch taps are always a normal set, never a penalty log")
         XCTAssertEqual(log.note, "watch tap")
-        // setIndex: 1 — same "not turn-tracked" precedent GroupSessionLiveView.logSet's
-        // penalty path already establishes (GroupSessionLiveView.swift:2108);
+        // setIndex: 1 — same "not turn-tracked" precedent SessionLiveView.logSet's
+        // penalty path already establishes (SessionLiveView.swift:2108);
         // see WatchConnectivityBridge.handleLogSet's doc comment for the full citation.
         XCTAssertEqual(log.setIndex, 1)
 
@@ -389,7 +377,7 @@ final class WatchConnectivityBridgeTests: XCTestCase {
     // MARK: - logSet turn-advance parity (Phase W gate finding I-2)
     //
     // A watch-logged set now advances the turn on parity with the phone's
-    // own `logSetAndAdvance` online path (GroupSessionLiveView.swift:2416)
+    // own `logSetAndAdvance` online path (SessionLiveView.swift:2416)
     // — see `WatchConnectivityBridge.handleLogSet`'s TURN-ADVANCE PARITY
     // doc comment for the full ruling. These 4 cases are the ones that
     // doc comment's own contract promises: online success advances once
@@ -421,7 +409,7 @@ final class WatchConnectivityBridgeTests: XCTestCase {
         var captured: [String: Any] = [:]
         await h.bridge.handleLogSet(envelope, replyHandler: { captured = $0 })
 
-        XCTAssertTrue(h.turnAdvancer.advancedSessionIDs.isEmpty, "a queued-offline set must not attempt to advance the turn — matches logSetAndAdvance's own online-only advance (GroupSessionLiveView.swift:2415-2416)")
+        XCTAssertTrue(h.turnAdvancer.advancedSessionIDs.isEmpty, "a queued-offline set must not attempt to advance the turn — matches logSetAndAdvance's own online-only advance (SessionLiveView.swift:2415-2416)")
         let outcome = try reply(from: captured)
         XCTAssertEqual(outcome.outcome, .queued)
     }
@@ -459,48 +447,13 @@ final class WatchConnectivityBridgeTests: XCTestCase {
         XCTAssertEqual(outcome.outcome, .failure)
     }
 
-    // MARK: - soundboardTap routing
-
-    func testSoundboardTapPlaysAndBroadcastsThenRepliesSuccess() async throws {
-        let h = makeHarness()
-        let state = seedSessionState(h)
-        let payload = WatchSoundboardTapPayload(slug: "airhorn")
-        let envelope = try WatchEnvelope.encode(kind: .soundboardTap, payload: payload)
-
-        var captured: [String: Any] = [:]
-        await h.bridge.handleSoundboardTap(envelope, replyHandler: { captured = $0 })
-
-        XCTAssertEqual(h.soundboard.playedSlugs, ["airhorn"])
-        XCTAssertEqual(h.soundboard.sentSounds.count, 1)
-        let sent = try XCTUnwrap(h.soundboard.sentSounds.first)
-        XCTAssertEqual(sent.sessionID, state.sessionID)
-        XCTAssertEqual(sent.groupID, state.groupID)
-        XCTAssertEqual(sent.slug, "airhorn")
-
-        let outcome = try reply(from: captured)
-        XCTAssertEqual(outcome.outcome, .success)
-    }
-
-    func testSoundboardTapWithNoActiveSessionRepliesFailure() async throws {
-        let h = makeHarness()
-        let payload = WatchSoundboardTapPayload(slug: "airhorn")
-        let envelope = try WatchEnvelope.encode(kind: .soundboardTap, payload: payload)
-
-        var captured: [String: Any] = [:]
-        await h.bridge.handleSoundboardTap(envelope, replyHandler: { captured = $0 })
-
-        XCTAssertTrue(h.soundboard.playedSlugs.isEmpty)
-        let outcome = try reply(from: captured)
-        XCTAssertEqual(outcome.outcome, .failure)
-    }
-
     // MARK: - Full dispatch (onMessageReceived -> handle -> handler), incl. envelope-level gates
 
     /// End-to-end proof that the `.logSet` KIND really does route through
     /// to `handleLogSet` via the SAME `onMessageReceived` closure
     /// `WatchConnectivityBridge.init` wires — the tests above call
-    /// `handleLogSet`/`handleSoundboardTap` directly for focused coverage,
-    /// this one exercises the actual dispatcher in `handle(message:replyHandler:)`.
+    /// `handleLogSet` directly for focused coverage, this one exercises
+    /// the actual dispatcher in `handle(message:replyHandler:)`.
     /// Safe against the continuation-before-Task-observability class of
     /// deadlock `VoiceRoomServiceTests`'s `PendingTokenFetcher` doc comment
     /// warns about: the continuation is created and handed to
@@ -620,13 +573,13 @@ final class WatchConnectivityBridgeTests: XCTestCase {
         // coverage). This particular case still replies `.failure`, but
         // for an ORDINARY reason now — no `seedSessionState` call, so
         // `lastPushedState` is nil ("No active session"), the exact same
-        // "no active session" gate `handleLogSet`/`handleSoundboardTap`
-        // enforce — not because the kind is unimplemented.
+        // "no active session" gate `handleLogSet` enforces — not because
+        // the kind is unimplemented.
         //
         // Fix wave 2 ADJUDICATION (this test previously read `captured`
         // synchronously and was ruled WRONG in shape — the implementation
         // is right): `handle`'s `.hrSample` case spawns `Task { await
-        // self.handleHRSample(...) }` (same as `.logSet`/`.soundboardTap`),
+        // self.handleHRSample(...) }` (same as `.logSet`),
         // and `handleHRSample` DOES reply exactly once on every path — but
         // asynchronously. This whole class is `@MainActor`, so that
         // spawned MainActor `Task` cannot run until the (previously

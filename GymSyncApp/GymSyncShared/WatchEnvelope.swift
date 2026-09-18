@@ -37,14 +37,13 @@ import Foundation
 /// broadcast this schema is defined ahead of — "define now, implement
 /// senders progressively" per the task brief). `sessionState` is
 /// phone→watch (pushed via `WCSession.updateApplicationContext`, latest-
-/// wins); `logSet`/`soundboardTap` are watch→phone (`sendMessage`,
-/// expects a `WatchActionReply`); `hrSample` is watch→phone (T5 — sender
-/// not implemented until that task, per the design doc's HR broadcast
-/// component).
+/// wins); `logSet` is watch→phone (`sendMessage`, expects a
+/// `WatchActionReply`); `hrSample` is watch→phone (T5 — sender not
+/// implemented until that task, per the design doc's HR broadcast
+/// component). `soundboardTap` left with the soundboard (plan task S11).
 enum WatchMessageKind: String, Codable, Sendable, Equatable {
     case sessionState
     case logSet
-    case soundboardTap
     case hrSample
     /// Task 3 addition (watch-hr design §2, "Idle state"). phone→watch,
     /// `updateApplicationContext` — mutually exclusive with `sessionState`
@@ -188,7 +187,7 @@ enum WatchWire {
 /// wins — no queueing, no history; a watch that reconnects after missing
 /// several pushes only ever sees the MOST RECENT one, which is exactly
 /// what a "current session state" concept wants). Built by
-/// `GroupSessionLiveView` from its own already-fetched models (`WorkoutSession`,
+/// `SessionLiveView` from its own already-fetched models (`WorkoutSession`,
 /// `SessionParticipant`/`Profile` — see that view's `pushWatchSessionState()`
 /// for the exact derivation and citations), not re-derived inside the
 /// bridge — this app has no OTHER service that independently computes
@@ -208,8 +207,8 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
     let currentExerciseName: String?
     /// Task 3 addition (watch-hr design §2, Component "Tap-to-log-set") —
     /// the SAME `Exercise`'s id whose `.name` fills `currentExerciseName`
-    /// above (`GroupSessionLiveView.currentExerciseForSheet`,
-    /// `GroupSessionLiveView.swift:1675`) — needed to fill
+    /// above (`SessionLiveView.currentExerciseForSheet`,
+    /// `SessionLiveView.swift:1675`) — needed to fill
     /// `WatchLogSetPayload.exerciseID` when the watch submits a set. `nil`
     /// under the identical conditions `currentExerciseName` is nil.
     let currentExerciseID: UUID?
@@ -219,7 +218,7 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
     let currentLifterName: String?
     let isMyTurn: Bool
     /// NOTE (pre-existing, Task 2): despite the name, this carries
-    /// `GroupSessionLiveView.burpeesRemaining` (owed minus already-paid-
+    /// `SessionLiveView.burpeesRemaining` (owed minus already-paid-
     /// this-session), not the raw `myParticipant.burpeesOwed` total — see
     /// `pushWatchSessionState()`'s call site. Kept byte-identical here; an
     /// additive Task 3 extension is not the place to rename a shipped
@@ -227,42 +226,16 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
     let burpeesOwed: Int
     /// Task 3 addition (watch-hr design §2, "Ledger glance") — burpee reps
     /// already logged as a penalty THIS SESSION by the current user,
-    /// mirrors `GroupSessionLiveView.penaltyLogged`
-    /// (`GroupSessionLiveView.swift:130`) — the same counter `burpeesOwed`
+    /// mirrors `SessionLiveView.penaltyLogged`
+    /// (`SessionLiveView.swift:130`) — the same counter `burpeesOwed`
     /// above is already net of (see that field's note). Together the two
     /// give the ledger glance its "owed / paid" pair without re-deriving
     /// anything phone-side.
     let burpeesPaid: Int
-    /// Task 3 addition (watch-hr design §2, "Soundboard buttons") — up to 4
-    /// favorite slugs, straight from `GroupSessionLiveView.soundFavorites`
-    /// (`GroupSessionLiveView.swift:69`), itself sourced from
-    /// `SoundboardFavoritesRepository.get()` (`Models/Soundboard.swift:60`)
-    /// — the SAME favorites list the phone's own soundboard dock ribbon
-    /// renders (`dockSounds`, `GroupSessionLiveView.swift:164-168`). Empty
-    /// until favorites finish loading or none are chosen.
-    let soundboardFavorites: [String]
-    /// Task 3 fix wave 1 (reviewer finding, IMPORTANT 2) — additive alongside
-    /// `soundboardFavorites` above, NOT a replacement: `soundboardFavorites`
-    /// stays the slugs the watch's TAP path sends back for playback
-    /// (`SoundboardView.soundTile` -> `WatchSessionStore.tapSoundboard(slug:)`
-    /// -> `WatchConnectivityBridge.handleSoundboardTap`, which resolves
-    /// `payload.slug` straight into `SoundboardBroadcasting.play(slug:)` —
-    /// that contract is unchanged and must stay that way). This field is the
-    /// human-readable label for each of those SAME slugs, in the SAME order
-    /// (`SoundboardSound.label`, `Models/Soundboard.swift:16` —
-    /// `displayName ?? slug`) so the watch can render a real name instead of
-    /// a raw slug like "airhorn"/"crowd-cheer" (the file header comment in
-    /// `GymSyncWatch/SoundboardView.swift` used to explain why labels were
-    /// judged out of scope; that reasoning is now superseded). Parallel
-    /// array rather than `[(slug: String, label: String)]` or a small struct
-    /// — matches `soundboardFavorites`' own plain-`[String]` wire shape
-    /// exactly, so this rides the identical Codable/JSON path with no new
-    /// type to define.
-    let soundboardFavoriteLabels: [String]
     /// Task 3 addition — the CARRIED-IN REQUIREMENT from T2's review: "no
     /// session-ended signal exists; a Watch shows stale 'live' state for up
     /// to 90s after a session ends while the phone stays reachable."
-    /// `false` exactly once, pushed from `GroupSessionLiveView.endSession()`
+    /// `false` exactly once, pushed from `SessionLiveView.endSession()`
     /// right after `SessionRepository.complete(sessionID:)` succeeds — see
     /// that function's own comment for why THAT moment (not `.onDisappear`)
     /// is the honest hook. Defaults `true` so every pre-Task-3 call site
@@ -324,8 +297,6 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         isMyTurn: Bool,
         burpeesOwed: Int,
         burpeesPaid: Int = 0,
-        soundboardFavorites: [String] = [],
-        soundboardFavoriteLabels: [String] = [],
         isActive: Bool = true,
         shareHeartRate: Bool = false,
         sampleHeartRate: Bool? = nil,
@@ -342,8 +313,6 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         self.isMyTurn = isMyTurn
         self.burpeesOwed = burpeesOwed
         self.burpeesPaid = burpeesPaid
-        self.soundboardFavorites = soundboardFavorites
-        self.soundboardFavoriteLabels = soundboardFavoriteLabels
         self.isActive = isActive
         self.shareHeartRate = shareHeartRate
         self.sampleHeartRate = sampleHeartRate
@@ -354,8 +323,8 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case sessionID, groupID, sessionName, currentExerciseName, currentExerciseID
-        case currentLifterName, isMyTurn, burpeesOwed, burpeesPaid, soundboardFavorites
-        case soundboardFavoriteLabels, isActive, shareHeartRate, updatedAt
+        case currentLifterName, isMyTurn, burpeesOwed, burpeesPaid
+        case isActive, shareHeartRate, updatedAt
         case nextSetIndex, bodyWeightLbs, sampleHeartRate
     }
 
@@ -375,15 +344,6 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
     /// COMPILER-SYNTHESIZED (not written here) — only decode needs the
     /// leniency, matching `WorkoutSession`'s identical split.
     ///
-    /// `soundboardFavoriteLabels` (fix wave 1, IMPORTANT 2) falls back to
-    /// `soundboardFavorites` itself — not `[]` — when its own key is absent:
-    /// a build one version behind this fix (Task-3-wave-0, which already
-    /// sends `soundboardFavorites` but not yet this field) still gives the
-    /// watch something readable to render rather than blank tiles; a build
-    /// two versions behind (pre-Task-3, missing both) still degrades
-    /// correctly since `soundboardFavorites` itself has already resolved to
-    /// `[]` by the time this line runs.
-    ///
     /// `shareHeartRate` (Task 4) follows the SAME `decodeIfPresent(...) ??
     /// default` shape as `isActive` immediately above it — falls back to
     /// `false`, the column's own safe default, for any pre-Task-4 stored
@@ -400,8 +360,6 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         isMyTurn = try c.decode(Bool.self, forKey: .isMyTurn)
         burpeesOwed = try c.decode(Int.self, forKey: .burpeesOwed)
         burpeesPaid = (try? c.decodeIfPresent(Int.self, forKey: .burpeesPaid)) ?? 0
-        soundboardFavorites = (try? c.decodeIfPresent([String].self, forKey: .soundboardFavorites)) ?? []
-        soundboardFavoriteLabels = (try? c.decodeIfPresent([String].self, forKey: .soundboardFavoriteLabels)) ?? soundboardFavorites
         isActive = (try? c.decodeIfPresent(Bool.self, forKey: .isActive)) ?? true
         shareHeartRate = (try? c.decodeIfPresent(Bool.self, forKey: .shareHeartRate)) ?? false
         // 2026-08-26 additions. Same decodeIfPresent shape as everything
@@ -469,12 +427,6 @@ struct WatchLogSetPayload: Codable, Sendable, Equatable {
     }
 }
 
-/// watch→phone, `sendMessage` with a reply expected.
-struct WatchSoundboardTapPayload: Codable, Sendable, Equatable {
-    let slug: String
-    init(slug: String) { self.slug = slug }
-}
-
 /// watch→phone (T5 — HR broadcast). LIVE since 95dd7a3/f61a337: the sender
 /// is `HeartRateSampler.send` (watch, fire-and-forget sendMessage) and the
 /// phone-side handler is `WatchConnectivityBridge.handleHRSample` (relays
@@ -497,14 +449,14 @@ struct WatchHRSamplePayload: Codable, Sendable, Equatable {
 
 // MARK: - WatchActionReply
 //
-// Reply shape for BOTH `logSet` and `soundboardTap` (`sendMessage`'s reply
-// dictionary) — one shared type rather than a per-action reply struct,
-// since both actions reduce to the same 3-outcome shape the task brief
-// names verbatim ("reply with success/queued/failure"). `soundboardTap`
-// never actually produces `.queued` (there's no offline queue for sounds —
-// see `WatchConnectivityBridge.handleSoundboardTap`), but reusing one type
-// costs nothing and keeps the watch-side reply-handling code (T3+) a
-// single switch instead of two near-identical ones. Rides the SAME
+// Reply shape for `logSet` (`sendMessage`'s reply dictionary) — a shared
+// type rather than a per-action reply struct, since the task brief names
+// the 3-outcome shape verbatim ("reply with success/queued/failure").
+// `soundboardTap` used to share this same type (it never actually
+// produced `.queued` — there's no offline queue for sounds) before it
+// left with the soundboard (plan task S11); the type stayed shared rather
+// than narrowed since a future watch→phone action reduces to the same
+// shape. Rides the SAME
 // `WatchWire` single-key-`Data` bridge as `WatchEnvelope` — deliberately
 // NOT wrapped in a `WatchEnvelope` itself: a reply is a synchronous,
 // single-round-trip response tied 1:1 to the request that produced it, not

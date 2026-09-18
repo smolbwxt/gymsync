@@ -19,7 +19,7 @@ import Foundation
 // (`Services/HeartRateBroadcastService.swift`). A receiving client never
 // recomputes another participant's zone from their raw bpm; it renders
 // whatever zone string arrived on the broadcast
-// (`GroupSessionLiveView.heartRateFor(_:)`), because zone reflects the
+// (`SessionLiveView.heartRateFor(_:)`), because zone reflects the
 // SHARING user's own effort relative to THEIR OWN max HR — a viewer has
 // neither the data nor the standing to compute that for someone else.
 //
@@ -70,7 +70,7 @@ enum HeartRateZone: String, Codable, Sendable, Equatable, CaseIterable {
 // MARK: - HeartRateFreshness
 //
 // Roster HR-pill staleness (task-5-brief.md item 4: "pills fade/remove when
-// no sample for >15s"). Pure predicate — the GroupSessionLiveView-side
+// no sample for >15s"). Pure predicate — the SessionLiveView-side
 // auto-purge `Task` that actually drives the removal is untestable UI glue
 // (same category as that file's own `showReactionOverlay`/`showSoundOverlay`
 // sleep-based transient-state clearing); THIS is the authoritative,

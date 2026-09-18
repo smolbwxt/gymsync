@@ -10,7 +10,7 @@ import SwiftUI
 // if set, else `started_at + warmup_minutes` (the clock alone can end it).
 //
 // This file is the feature's shared home: the phase page itself
-// (`WarmUpPhaseView`, rendered by BOTH GroupSessionLiveView and the solo
+// (`WarmUpPhaseView`, rendered by BOTH SessionLiveView and the solo
 // WorkoutSessionView), the solo duration setting (`SoloWarmupStore`), and
 // the TRANSIT constant the rest windows read (`TransitWindow`).
 
@@ -19,7 +19,7 @@ import SwiftUI
 /// whole window is labelled "TRANSIT · SET UP YOUR STATION" — time to strip
 /// the bar, walk to the next station, and set up. Same-exercise turns are
 /// unchanged. ONE constant, read by both rest computations
-/// (GroupSessionLiveView's self-rotation interlude and WorkoutSessionView's
+/// (SessionLiveView's self-rotation interlude and WorkoutSessionView's
 /// solo rest window) — never a scattered literal.
 enum TransitWindow {
     static let seconds = 120
@@ -103,7 +103,7 @@ enum WarmupMobility {
 }
 
 /// The warm-up phase page. Plain values + closures only — no session
-/// repositories inside (GroupSessionLiveView is at its type-checker limit;
+/// repositories inside (SessionLiveView is at its type-checker limit;
 /// this view must stay independently checkable and reusable by the solo
 /// screen). The caller supplies the countdown target (`started_at +
 /// warmup_minutes`), the PRESENT participants (the same subset the server

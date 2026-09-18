@@ -10,7 +10,7 @@ import Foundation
 /// THE BUG THIS FIXES: every weight-entry submit path in this codebase used
 /// to call the bare `Decimal(string:)` initializer directly on a keyboard-
 /// typed string (`.decimalPad` `TextField`s at `BodyWeightLogSheet.swift`,
-/// `LogSetSheet.swift`, `GroupSessionLiveView.swift`). `Decimal(string:)`
+/// `LogSetSheet.swift`, `SessionLiveView.swift`). `Decimal(string:)`
 /// with NO explicit `locale:` argument parses using `Locale.current`'s
 /// decimal separator — but a `.decimalPad` keyboard shows a COMMA (not a
 /// period) as its decimal key on comma-locale devices (most of continental

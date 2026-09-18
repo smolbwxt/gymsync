@@ -36,6 +36,28 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
     /// warming up. Effective lifting start = `liftingStartedAt` if set,
     /// else `startedAt + warmupMinutes`.
     var liftingStartedAt: Date?
+    /// How this session moves (20260913000101, plan task S1/D1). Set in the
+    /// lobby by ANY participant — it is the crew's decision, not the
+    /// organizer's — and frozen by `private.session_round_guard` once
+    /// `liftingStartedAt` is stamped. Defaults to `.rounds`, which is what
+    /// every shipped session already is: the rotation the app has always run.
+    var style: SessionStyle
+    /// The CURRENT exercise's station assignment, or nil while the crew is
+    /// small enough to lift as one station. Written ONLY by
+    /// `public.set_session_stations`; transient by design (spec §6 — "a
+    /// separate table is not needed").
+    var stations: SessionStations?
+    /// The server-owned round counter, advanced ONLY by
+    /// `public.advance_round` (20260913000102). Monotonic, so every client
+    /// agrees when a round closes — the same reasoning `turnVersion` above
+    /// records for rotations, which wrap and therefore cannot be compared.
+    /// Defaults to 1: a row decoded before the column existed is at the
+    /// first round, which is where the shipped rotation starts.
+    var round: Int
+    /// When the current round opened — stamped by `advance_round`, and the
+    /// timestamp the round-close predicate measures sets against. NULL until
+    /// the first round closes.
+    var roundStartedAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -56,6 +78,10 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
         case turnVersion = "turn_version"
         case warmupMinutes = "warmup_minutes"
         case liftingStartedAt = "lifting_started_at"
+        case style
+        case stations
+        case round
+        case roundStartedAt = "round_started_at"
     }
 
     // Safe decode: duration_was_edited has DB DEFAULT false so older rows always carry it;
@@ -80,6 +106,15 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
         turnVersion          = (try? c.decodeIfPresent(Int.self,  forKey: .turnVersion)) ?? 0
         warmupMinutes        = (try? c.decodeIfPresent(Int.self,  forKey: .warmupMinutes)) ?? 0
         liftingStartedAt     = try? c.decodeIfPresent(Date.self,  forKey: .liftingStartedAt)
+        // 20260913000101's four columns, decoded with the same schema-lag
+        // guard the block above uses. `style` additionally swallows an
+        // UNRECOGNISED string: the column's CHECK makes one impossible, but
+        // a client running behind a future fourth style must fall back to
+        // the rotation it does understand rather than dropping the whole row.
+        style                = (try? c.decodeIfPresent(SessionStyle.self, forKey: .style)) ?? .rounds
+        stations             = try? c.decodeIfPresent(SessionStations.self, forKey: .stations)
+        round                = (try? c.decodeIfPresent(Int.self,  forKey: .round)) ?? 1
+        roundStartedAt       = try? c.decodeIfPresent(Date.self,  forKey: .roundStartedAt)
     }
 
     // Memberwise init used by startSolo and other repository callers.
@@ -101,7 +136,11 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
         editedBy: UUID? = nil,
         turnVersion: Int = 0,
         warmupMinutes: Int = 0,
-        liftingStartedAt: Date? = nil
+        liftingStartedAt: Date? = nil,
+        style: SessionStyle = .rounds,
+        stations: SessionStations? = nil,
+        round: Int = 1,
+        roundStartedAt: Date? = nil
     ) {
         self.id                   = id
         self.routineID            = routineID
@@ -121,6 +160,10 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
         self.turnVersion          = turnVersion
         self.warmupMinutes        = warmupMinutes
         self.liftingStartedAt     = liftingStartedAt
+        self.style                = style
+        self.stations             = stations
+        self.round                = round
+        self.roundStartedAt       = roundStartedAt
     }
 }
 

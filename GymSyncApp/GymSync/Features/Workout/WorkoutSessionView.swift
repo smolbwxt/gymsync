@@ -68,7 +68,7 @@ struct WorkoutSessionView: View {
     /// multiple times. This advances the set without them actually being
     /// completed"). The CTA stays tappable for the whole round trip, so a
     /// slow submit used to accept N taps and advance the set counter N times.
-    /// `GroupSessionLiveView` has carried this guard since its own report;
+    /// `SessionLiveView` has carried this guard since its own report;
     /// solo never got it.
     @State private var isLoggingSet = false
 
@@ -140,15 +140,15 @@ struct WorkoutSessionView: View {
     @State private var showLogSheet = false
     @State private var errorText: String?
     @State private var completed = false
-    // Full-screen, USER-DISMISSED PR celebration (p29) — shared with GroupSessionLiveView
+    // Full-screen, USER-DISMISSED PR celebration (p29) — shared with SessionLiveView
     // via PRCelebrationOverlay (Phase P Task 1). Replaces the old 2s auto-dismissing
-    // "isPRToast" banner, mirroring the same takeover GroupSessionLiveView already did.
+    // "isPRToast" banner, mirroring the same takeover SessionLiveView already did.
     @State private var isPROverlay = false
     @State private var prOverlayExerciseName: String = ""
     @State private var prOverlayWeight: Decimal = 0
     @State private var prOverlayReps: Int = 0
     @State private var prOverlayPriorBest: Decimal = 0
-    /// Always nil in the solo path — mirrors `GroupSessionLiveView`'s pre-resolution state.
+    /// Always nil in the solo path — mirrors `SessionLiveView`'s pre-resolution state.
     /// Solo has no established `countSince` plumbing wired to this view; see Task 2 report
     /// for the decision not to invent that ordering here (badge suppressed, by design).
     @State private var prOverlayMonthlyCount: Int? = nil
@@ -232,9 +232,9 @@ struct WorkoutSessionView: View {
     /// used to be log-only — the user never learned their "show me on the
     /// leaderboard" choice silently didn't take. Non-blocking transient
     /// notice, same "@State String?, overlay + `.animation`, auto-clear after
-    /// a fixed delay" shape as `GroupSessionLiveView`'s incoming-sound pill
+    /// a fixed delay" shape as `SessionLiveView`'s incoming-sound pill
     /// (`soundOverlayText` / `showSoundOverlay(_:)`,
-    /// `GroupSessionLiveView.swift:68,502-522,1577-1583) — reused rather than
+    /// `SessionLiveView.swift:68,502-522,1577-1583) — reused rather than
     /// inventing a new toast component. Never blocks `startIfNeeded()` or the
     /// workout itself (see that function's catch block below).
     @State private var attemptOptInFailedText: String? = nil
@@ -3698,7 +3698,7 @@ struct WorkoutSessionView: View {
                     // awaited) so this transient notice's own display/clear
                     // lifecycle never delays `startIfNeeded()` returning or
                     // blocks the workout, matching `showSoundOverlay`'s own
-                    // call sites in GroupSessionLiveView.
+                    // call sites in SessionLiveView.
                     Task { await showAttemptOptInFailedNotice() }
                 }
             }
@@ -3756,7 +3756,7 @@ struct WorkoutSessionView: View {
     }
 
     /// Show the "couldn't join the leaderboard" transient notice for 3
-    /// seconds. Same shape as `GroupSessionLiveView.showSoundOverlay(_:)`.
+    /// seconds. Same shape as `SessionLiveView.showSoundOverlay(_:)`.
     @MainActor
     private func showAttemptOptInFailedNotice() async {
         let text = "Couldn't join the leaderboard for this attempt."
@@ -3812,7 +3812,7 @@ struct WorkoutSessionView: View {
             // logSet() would fold the just-inserted set's own weight into the max
             // (self-comparison), making `weight > priorBest` always false for a
             // genuine new max and silently suppressing the PR celebration. Mirrors
-            // GroupSessionLiveView.logSetAndAdvance's identical ordering.
+            // SessionLiveView.logSetAndAdvance's identical ordering.
             var isPR = false
             var priorBest: Decimal = 0
             // Failure doctrine (owner 2026-08-13): failed sets are judged on
@@ -3942,7 +3942,7 @@ struct WorkoutSessionView: View {
                 let repsForOverlay = completedReps ?? 0
                 // Full-screen, user-dismissed celebration (p29) — content comes from data
                 // already known at this point (no need to wait on the record insert below),
-                // same as GroupSessionLiveView.showPROverlay.
+                // same as SessionLiveView.showPROverlay.
                 showPROverlay(exerciseName: exerciseName(for: re.exerciseID), weight: weight,
                               reps: repsForOverlay, priorBest: priorBest)
                 // Best-effort PR record — a failed insert must never block or delay
@@ -4139,7 +4139,7 @@ struct WorkoutSessionView: View {
     }
 
     /// Show the full-screen, USER-DISMISSED PR celebration (p29) — no auto-timeout.
-    /// Mirrors `GroupSessionLiveView.showPROverlay`'s field-setting shape; `monthlyCount`
+    /// Mirrors `SessionLiveView.showPROverlay`'s field-setting shape; `monthlyCount`
     /// stays `nil` here (see `prOverlayMonthlyCount`'s declaration for why).
     @MainActor
     private func showPROverlay(exerciseName: String, weight: Decimal, reps: Int, priorBest: Decimal) {
@@ -4149,9 +4149,9 @@ struct WorkoutSessionView: View {
         prOverlayPriorBest = priorBest
         prOverlayMonthlyCount = nil
         withAnimation(.easeOut(duration: 0.25)) { isPROverlay = true }
-        // Ronnie for the PR moment (user 2026-08-01) — the solo path had
-        // no celebration sound at all.
-        Task { await SoundboardPlayer.shared.play(slug: "lightweight-baby") }
+        // Ronnie for the PR moment (user 2026-08-01) left with the
+        // soundboard (ruling R-B8, plan task S11) — same change as
+        // SessionLiveView.showPROverlay.
     }
 
     /// The PR basis for `exerciseID`, served from the prefetch when it landed.

@@ -11,7 +11,7 @@ import SwiftUI
 // CATALOG-ONLY, exactly like the Home v3 round this copies. Nothing in this
 // folder is reachable from the running app: every view here is rendered only
 // through `CatalogHostView`, from the pinned fixtures below, and the whole
-// folder is `#if DEBUG`. `LobbyView`, `GroupSessionLiveView` and
+// folder is `#if DEBUG`. `LobbyView`, `SessionLiveView` and
 // `WarmUpPhaseView` are untouched — spec §8 puts their rework in Phases A
 // and B, AFTER the owner picks a composition here.
 //
@@ -687,6 +687,28 @@ struct SVStationLines: View {
                 .font(GSFont.body(12.5, relativeTo: .caption))
                 .foregroundStyle(theme.neutral700)
             Spacer(minLength: 0)
+        }
+    }
+}
+
+/// The heart-rate ramp, mirroring `GSHeartRatePill`'s own private mapping
+/// (blue → green → orange → red over the four named zones). Heart-rate zone
+/// colour is DATA COLOUR and is exempt from the accent/green/red rules —
+/// design language rule 2 says so explicitly, and `GSHeartRatePill` is the
+/// precedent.
+///
+/// MOVED HERE from `StyleVariations.swift` (plan task S13): that file's own
+/// ten-ids-out deletion would have taken this definition with it, but
+/// `SessionVariationsV2Kit.swift`'s `zoneTinted` still reads it
+/// (`SVZoneColor.of(bpm)`) — a Kit symbol a surviving frame uses must not
+/// leave with the file that used to declare it.
+enum SVZoneColor {
+    static func of(_ bpm: Int) -> Color {
+        switch HeartRateZone.zone(bpm: bpm) {
+        case .warmup:   return .blue
+        case .moderate: return .green
+        case .hard:     return .orange
+        case .max:      return .red
         }
     }
 }

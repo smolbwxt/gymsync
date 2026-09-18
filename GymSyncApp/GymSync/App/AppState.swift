@@ -76,14 +76,14 @@ final class AppState {
 
     // MARK: - Active-context suppression (push-dossier.md §B.7)
     //
-    // Set/cleared by GroupSessionLiveView / ChatView on appear/disappear.
+    // Set/cleared by SessionLiveView / ChatView on appear/disappear.
     // AppDelegate's `willPresent` compares a push's thread-id against these
     // to suppress the banner when the user is already looking at the same
     // session/chat live (they're already seeing it via Realtime).
     var activeSessionID: UUID?
     var activeChatGroupID: UUID?
 
-    /// Set by GroupSessionLiveView right before it pops after ANY exit
+    /// Set by SessionLiveView right before it pops after ANY exit
     /// (leave, recap Done, member-side completion) — the lobby underneath
     /// consumes it to pop itself too, so every session exit lands on Home
     /// instead of a stale lobby (user 2026-08-01).
@@ -99,7 +99,7 @@ final class AppState {
     // tab alive via a ZStack-of-all-tabs + opacity — and REJECTED it:
     // "keep-alive ZStack alternative breaks onDisappear-driven realtime
     // unsubscribe (worse bug class)". Every live-data screen in this app
-    // (ChatView, GroupSessionLiveView, LobbyView) unsubscribes Realtime
+    // (ChatView, SessionLiveView, LobbyView) unsubscribes Realtime
     // channels / LiveKit rooms from `onDisappear`; keep-alive would leave
     // those channels open indefinitely for a backgrounded tab, trading a
     // small UX papercut for a resource leak and stale-data class of bug.
@@ -159,7 +159,7 @@ final class AppState {
 
     /// Group counterpart (owner 2026-08-12: "you can't swipe down in a group
     /// session like you can for a solo session"). Registered by
-    /// GroupSessionLiveView.onAppear, cleared ONLY by a deliberate exit
+    /// SessionLiveView.onAppear, cleared ONLY by a deliberate exit
     /// (`exitToHome()` — leave, recap Done, member-side completion) or by
     /// LobbyView noticing a terminal state — NOT by onDisappear, which now
     /// also fires on a recoverable swipe-down. While set and the live view

@@ -641,8 +641,11 @@ struct SocialTabView: View {
                             guard let date else { return false }
                             return calendar.isDate(date, equalTo: now, toGranularity: .weekOfYear)
                         }
+                        // `editing`/`voting`/`locked` narrowed out (D7's
+                        // five-state CHECK, mechanical cleanup decision 6,
+                        // plan task S13): the states no longer exist.
                         let upcomingStates: Set<String> = [
-                            "scheduled", "lobby_open", "editing", "voting", "locked", "in_progress"
+                            "scheduled", "lobby_open", "in_progress"
                         ]
                         let completed = sessions.filter { $0.state == "completed" && inThisWeek($0.scheduledFor) }.count
                         let upcoming = sessions.filter { upcomingStates.contains($0.state) && inThisWeek($0.scheduledFor) }.count

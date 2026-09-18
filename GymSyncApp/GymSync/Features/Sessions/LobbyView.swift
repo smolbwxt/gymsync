@@ -85,6 +85,12 @@ struct LobbyView: View {
     /// The consensus Start, armed when the last lifter checks in. Held so the
     /// leader tapping first — or the roster changing — can cancel it.
     @State private var consensusStart: Task<Void, Never>?
+    /// The style default fires ONCE per lobby, on the organizer's client
+    /// (plan task S2). The same one-shot `@State` idiom `consensusStart`
+    /// above uses, and for the same reason: `reload()` runs on every realtime
+    /// echo and every 5 s poll, so a re-render must not be able to re-write a
+    /// choice the crew has since made.
+    @State private var hasAppliedStyleDefault = false
     @State private var allExercises: [Exercise] = []
     @State private var currentSession: WorkoutSession?
     @State private var groupName: String?
@@ -236,8 +242,11 @@ struct LobbyView: View {
     /// Session states the spec (Dossier §A.1) says voice should be live for.
     /// Matches the `sessions.state` check constraint enum minus the
     /// non-actionable states (`scheduled`, `completed`, `abandoned`).
+    /// `editing`/`voting`/`locked` narrowed out (D7's five-state CHECK,
+    /// mechanical cleanup decision 6, plan task S13): the states no longer
+    /// exist.
     private static let voiceEligibleStates: Set<String> = [
-        "lobby_open", "editing", "voting", "locked", "in_progress"
+        "lobby_open", "in_progress"
     ]
 
     private var isVoiceEligible: Bool {
@@ -316,7 +325,7 @@ struct LobbyView: View {
     // Split into three layered expressions (CI 2026-08-12, twice: the
     // RELEASE-config type-check timeout at `body` survived closure
     // extraction — the ~25-modifier chain itself was the over-budget
-    // expression. Same failure mode and fix as GroupSessionLiveView's
+    // expression. Same failure mode and fix as SessionLiveView's
     // arenaBase → arenaWithThrow → body layering). Each layer is a
     // separately-checked expression; behavior unchanged.
 
@@ -417,6 +426,16 @@ struct LobbyView: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 10)
 
+                // HOW THIS SESSION MOVES (spec §1, owner decision 1, plan
+                // task S2). The style is the CREW'S decision, not the
+                // leader's — every row is tappable for everyone, and the
+                // shipped organizer-or-participant UPDATE policy is what
+                // grants it. It renders only before Start; see `styleCard`,
+                // which owns its own padding for exactly that reason — an
+                // empty branch must take no space (the `roomCodeBanner`
+                // idiom above).
+                styleCard
+
                 // THE CREW'S WEEK (owner addition 2026-09-12, on trial). ONE
                 // LINE, removable in one line — that is the deal. Shown in
                 // both the waiting and the ready state, directly under the
@@ -466,10 +485,10 @@ struct LobbyView: View {
                 // resolved there): whether the PTT dock replaces, stacks
                 // above, or sits below the existing `actionBar`. ASSUMPTION
                 // (judgment call, no design ruling to follow): stacks above,
-                // matching GroupSessionLiveView's own `PTTDockRow`, which
+                // matching SessionLiveView's own `PTTDockRow`, which
                 // sits between its content and its bottom action bar the
-                // same way (GroupSessionLiveView.swift:2885-2894). Fix round
-                // 3 R-11: previously cited as "GroupSessionLiveView's
+                // same way (SessionLiveView.swift:2885-2894). Fix round
+                // 3 R-11: previously cited as "SessionLiveView's
                 // soundboard dock" — a literal grep for that word finds
                 // nothing, so the precedent is named directly instead.
                 if isVoiceEligible {
@@ -608,7 +627,21 @@ struct LobbyView: View {
         // lands in `currentSession` and the onChange above completes the
         // handoff. The realtime echo remains the fast path.
         .task(id: currentSession?.state ?? session.state) {
-            let preLive: Set<String> = ["scheduled", "lobby_open", "editing", "voting", "locked"]
+            #if DEBUG
+            // GLOBAL CONSTRAINT 11, the same guard `openAndLoad`, `reload`,
+            // `publishOwnStage`, `applyStyleDefaultIfNeeded` and `pickStyle`
+            // carry — this poll was the one entry point in this file without
+            // it (final review, finding 5). `LobbyFixtures.waiting`'s session
+            // is `lobby_open`, which is IN the pre-live set below, so every
+            // lobby frame was firing `SessionRepository.session(id:)` at a
+            // fixture UUID every five seconds for as long as the capture ran
+            // — Phase A's N3 defect, and now across five frames rather than
+            // four (`session-style-choice` joined them).
+            if catalog != nil { return }
+            #endif
+            // `editing`/`voting`/`locked` narrowed out (D7's five-state
+            // CHECK, mechanical cleanup decision 6, plan task S13).
+            let preLive: Set<String> = ["scheduled", "lobby_open"]
             guard preLive.contains(currentSession?.state ?? session.state) else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(5))
@@ -1113,6 +1146,207 @@ struct LobbyView: View {
         .gs3DCard(cornerRadius: GSMetrics.radiusMd, lipHeight: 6)
     }
 
+    // MARK: - HOW THIS SESSION MOVES (spec §1, owner decision 1, plan task S2)
+
+    /// The card's kicker. A `static` so `LobbyStyleCardTests` can read the
+    /// copy without building a view.
+    static let styleKicker = "HOW THIS SESSION MOVES"
+
+    /// The crew's style choice, above THE CREW'S WEEK.
+    ///
+    /// **NOT RENDERED AFTER START.** `private.session_round_guard` (plan task
+    /// D3) rejects a style write once `lifting_started_at` is stamped, so the
+    /// card stops offering one at exactly that moment: the UI never offers a
+    /// write the server will reject, and the crew never taps a row that
+    /// silently fails.
+    ///
+    /// Design rule 1: the CARD is the raised surface
+    /// (`.gs3DCard(radiusMd, lip 6)`); the three rows inside it are flat,
+    /// because furniture inside a raised box stays flat. Design rule 2: the
+    /// selected mark is `Color.gsSuccess`, never a second accent — the
+    /// lobby's one accent is Start.
+    @ViewBuilder
+    private var styleCard: some View {
+        if effectiveSession.liftingStartedAt == nil {
+            VStack(alignment: .leading, spacing: 9) {
+                GSSectionHeader(Self.styleKicker)
+                // Listed rather than looped over `allCases` on purpose: what
+                // the lobby OFFERS is a deliberate choice, and
+                // `SessionStyleTests` pins this order as `allCases`' own.
+                VStack(spacing: 0) {
+                    styleRow(.rounds)
+                    GSDivider()
+                    styleRow(.freestyle)
+                    GSDivider()
+                    styleRow(.together)
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .gs3DCard(cornerRadius: GSMetrics.radiusMd, lipHeight: 6)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+        }
+    }
+
+    /// One flat, tappable row: the glyph, the title, the consequence, and the
+    /// tick when it is the crew's current choice.
+    ///
+    /// The tick is drawn at zero opacity rather than removed, so choosing a
+    /// different style cannot re-flow the card — and hidden from
+    /// accessibility in the same breath, so a reader does not announce three
+    /// checkmarks.
+    private func styleRow(_ style: SessionStyle) -> some View {
+        Button {
+            Task { await pickStyle(style) }
+        } label: {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: style.copy.glyph)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(theme.neutral700)
+                    .frame(width: 20, alignment: .center)
+                    .padding(.top, 1)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(style.copy.title)
+                        .font(GSFont.bold(14, relativeTo: .headline))
+                        .foregroundStyle(theme.text)
+                    Text(style.copy.line)
+                        .font(GSFont.body(12, relativeTo: .caption))
+                        .foregroundStyle(theme.neutral500)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 16, weight: .regular))
+                    .foregroundStyle(Color.gsSuccess)
+                    .opacity(effectiveSession.style == style ? 1 : 0)
+                    .accessibilityHidden(effectiveSession.style != style)
+                    .padding(.top, 1)
+            }
+            .padding(.vertical, 10)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// The routine's rows, reduced to the two columns the default law reads
+    /// (`SessionStyleDefault`, the plan's data decision 2).
+    ///
+    /// `routineInfo.exercises` carries `cardio_minutes`; the CATEGORY lives on
+    /// the exercise itself, so this is the same `allExercises` join
+    /// `exerciseName(for:)` above performs. An exercise the catalog has not
+    /// resolved yet contributes an empty category — neither cardio nor
+    /// mobility — which can only push the answer toward `.rounds`. That is the
+    /// safe direction: a half-loaded catalog must never auto-switch a crew to
+    /// Together.
+    private var styleDefaultRows: [(category: String, cardioMinutes: Int?)] {
+        guard let info = routineInfo else { return [] }
+        return info.exercises.map { exercise in
+            (category: allExercises.first(where: { $0.id == exercise.exerciseID })?.category ?? "",
+             cardioMinutes: exercise.cardioMinutes)
+        }
+    }
+
+    /// The one-shot default rule, as a pure function so it can be tested
+    /// without a view (plan task S2).
+    ///
+    /// True only when NOBODY HAS CHOSEN. `rounds` is the column's own DEFAULT
+    /// (`20260913000101`), so "the row says rounds" and "the row has never
+    /// been set" are the same fact — which is why a session already reading
+    /// `freestyle` or `together` is left alone even when the routine derives
+    /// something else. A derived default never overrides a decision.
+    ///
+    /// FREESTYLE IS NEVER WHAT A DEFAULT WRITES (owner decision 1, fix round
+    /// 1 / F1 — `LobbyStyleCardTests.testFreestyleIsNeverWrittenByTheDefault`
+    /// caught this on run 34781441881). `SessionStyleDefault` can only ever
+    /// answer `.rounds` or `.together`, so this refusal changes nothing that
+    /// production reaches today — which is exactly why it belongs here rather
+    /// than only there: this predicate is the LAST gate before the PATCH, and
+    /// the owner's rule is a property of what may be written silently, not of
+    /// one function's current return set. A fourth style, or a caller that
+    /// derives differently, meets the rule at the gate instead of getting a
+    /// crew's Freestyle written for them.
+    static func shouldApplyDefault(current: SessionStyle,
+                                   derived: SessionStyle,
+                                   hasApplied: Bool) -> Bool {
+        guard derived != .freestyle else { return false }
+        return !hasApplied && current == .rounds && derived != .rounds
+    }
+
+    /// Apply the derived default once, from the organizer's client only.
+    ///
+    /// ONE CLIENT WRITES. Every participant's lobby would derive the same
+    /// answer from the same rows, so letting all of them write it would be
+    /// four PATCHes racing to agree; the organizer is the one client
+    /// guaranteed to exist for a scheduled session.
+    ///
+    /// GLOBAL CONSTRAINT 11: a catalog build must not PATCH a fixture UUID.
+    /// `reload()` already returns early in catalog mode and never reaches
+    /// here; the guard below is belt as well as braces, the same shape
+    /// `openCoachThread()` uses.
+    ///
+    /// A failed write is NOT retried — the flag is set before the await, so a
+    /// re-render cannot re-fire it. That is the honest behaviour: the column
+    /// keeps its `rounds` default and the crew's own tap is the recovery, and
+    /// a lobby that kept retrying a PATCH on every 5 s poll would be worse
+    /// than a default that did not land.
+    @MainActor
+    private func applyStyleDefaultIfNeeded() async {
+        #if DEBUG
+        if catalog != nil { return }
+        #endif
+        guard isOrganizer, !hasAppliedStyleDefault else { return }
+        let rows = styleDefaultRows
+        guard !rows.isEmpty else { return }   // no plan yet: nothing to derive from
+        let derived = SessionStyleDefault.style(forExercises: rows)
+        guard Self.shouldApplyDefault(current: effectiveSession.style,
+                                      derived: derived,
+                                      hasApplied: hasAppliedStyleDefault) else { return }
+        hasAppliedStyleDefault = true
+        do {
+            try await SessionRepository.setStyle(sessionID: effectiveSession.id, style: derived)
+            currentSession?.style = derived
+        } catch {
+            AppLogger.db.error(
+                "style default failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// A crewmate's tap. Optimistic, then written.
+    ///
+    /// No new subscription: the session DB channel
+    /// (`LobbyRealtimeService.swift:147-157`) already watches `sessions`
+    /// UPDATE, so every other lobby re-reads this row through the path it
+    /// already had. This client shows the choice immediately and rolls back
+    /// if the write is refused.
+    ///
+    /// Setting the one-shot flag here too is what stops the derived default
+    /// from stomping a deliberate choice on the next `reload()`.
+    @MainActor
+    private func pickStyle(_ style: SessionStyle) async {
+        #if DEBUG
+        if catalog != nil { return }
+        #endif
+        hasAppliedStyleDefault = true
+        guard effectiveSession.style != style else { return }
+        let previous = effectiveSession.style
+        currentSession?.style = style
+        do {
+            try await SessionRepository.setStyle(sessionID: effectiveSession.id, style: style)
+            errorText = nil
+        } catch let error as GymSyncError {
+            currentSession?.style = previous
+            errorText = error.errorDescription
+        } catch {
+            currentSession?.style = previous
+            errorText = error.localizedDescription
+        }
+    }
+
     /// `navigationDestination(item:)` needs an `Identifiable`;
     /// `SessionCoachThread` is a plain value, so this is the wrapper rather
     /// than a conformance the model does not need.
@@ -1486,6 +1720,13 @@ struct LobbyView: View {
         // including the presence/realtime-triggered ones, not just the
         // first.
         await joinVoiceIfEligible()
+
+        // The style default (plan task S2). Here rather than in `openAndLoad`
+        // because this is where `currentSession`, `routineInfo` and
+        // `allExercises` all land — the leader may not have picked a routine
+        // when the lobby first opened, and there is nothing to derive from
+        // until they have. Its own one-shot flag makes the repeat calls free.
+        await applyStyleDefaultIfNeeded()
     }
 
     // MARK: - Check-In

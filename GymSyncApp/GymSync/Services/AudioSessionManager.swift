@@ -22,12 +22,14 @@ final class AudioSessionManager {
     private init() {}
 
     func configure() throws {
-        // .playback, NOT .ambient (owner 2026-08-14: "the soundboard does
-        // not play when the phone is silenced — Spotify plays through
-        // silent mode"): .ambient obeys the ringer switch by definition;
-        // .playback ignores it, which is the whole point of a gym
-        // soundboard. .mixWithOthers keeps the sacred half of the old
-        // behavior — we layer OVER the lifter's music, never replace it.
+        // .playback, NOT .ambient (owner 2026-08-14, originally written for
+        // the soundboard — since left the app, plan task S11 — but the
+        // reasoning still holds for every overlay sound this app plays:
+        // "it should not go silent when the phone is silenced — Spotify
+        // plays through silent mode"): .ambient obeys the ringer switch by
+        // definition; .playback ignores it. .mixWithOthers keeps the
+        // sacred half of the old behavior — we layer OVER the lifter's
+        // music, never replace it.
         try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
         try session.setActive(true)
     }
@@ -87,10 +89,15 @@ final class AudioSessionManager {
     /// Field #39 ("the PR sound pauses Spotify"): a mixable session is
     /// the invariant every overlay sound depends on, and something can
     /// leave it broken - iOS's default .soloAmbient pauses other apps'
-    /// audio the moment a player implicitly activates it. Called by
-    /// SoundboardPlayer right before play: restores the documented
-    /// baseline ONLY when mixWithOthers is missing, and never while a
-    /// voice room legitimately holds the session.
+    /// audio the moment a player implicitly activates it. Restores the
+    /// documented baseline ONLY when mixWithOthers is missing, and never
+    /// while a voice room legitimately holds the session.
+    ///
+    /// CALLERLESS since plan task S11: its one caller, SoundboardPlayer,
+    /// called this right before every play. Kept — not deleted on a hunch
+    /// — because the invariant it restores belongs to the whole app's
+    /// audio session, not to the soundboard specifically, and a future
+    /// overlay sound (or a returning one) would need it again.
     func ensureMixablePlayback() {
         guard !isInVoiceMode else { return }
         guard !session.categoryOptions.contains(.mixWithOthers) else { return }

@@ -95,8 +95,13 @@ const MARK = '[QA]'; // stable marker: name-prefix for fixture rows we own
 // Mirrors the deny-list in `set_logs_reject_prelive`, the BEFORE INSERT
 // trigger on set_logs (20260803000002_set_logs_reject_prelive.sql:19). It
 // raises P0001 "session has not started" for a log written against a session
-// in any of these states. Keep this list identical to the migration's.
-const PRELIVE_STATES = ['scheduled', 'lobby_open', 'editing', 'voting', 'locked'];
+// in any of these states. 20260913000103_session_states_narrow.sql dropped
+// 'editing'/'voting'/'locked' from sessions.state entirely, so no fixture
+// session can hold them; the trigger's own deny-list still names all five
+// defensively (a harmless superset now that three of them are unreachable),
+// but this list only needs the two states a session can actually be in
+// before it goes live.
+const PRELIVE_STATES = ['scheduled', 'lobby_open'];
 
 // Walks a fixture session live so the set_logs written into it are accepted:
 // start -> log -> complete, the same order a real client produces. Two
@@ -332,7 +337,7 @@ async function main() {
   // --- sessions in each state (group_id is stable, so this always finds
   //     and replaces last run's rows) --------------------------------------
   await rest(`sessions?group_id=eq.${group.id}`, { method: 'DELETE' });
-  const states = ['scheduled', 'lobby_open', 'voting', 'locked', 'in_progress', 'completed'];
+  const states = ['scheduled', 'lobby_open', 'abandoned', 'completed', 'in_progress', 'completed'];
   const now = new Date().toISOString();
   // Review push-5 (R-16): the lobby_open session's other member, looked up
   // here rather than reusing the `acceptedFriend` fetch below (that happens
@@ -350,12 +355,16 @@ async function main() {
     if (state === 'completed') { row.started_at = now; row.completed_at = now; }
     const [created] = await rest('sessions', { method: 'POST', headers: rep,
       body: JSON.stringify(row) });
-    // ONLY the completed one gets a participant row, and only because
+    // The completed sessions get a participant row, and only because
     // `group_consistency_honor` (20260911000001) credits ATTENDANCE rather
     // than the organizer — without it the CI account's crew has no honor line
-    // and `app-tab-social` proves nothing. The other four states are left
-    // exactly as they were: adding participants to them would change what
-    // testSessionRecap captures.
+    // and `app-tab-social` proves nothing. `states` now carries `completed`
+    // twice (20260913000103_session_states_narrow.sql: the dead 'voting' and
+    // 'locked' slots became 'abandoned' and a second 'completed', keeping six
+    // rows), so this branch fires once per occurrence and each gets its own
+    // credited row. The other three states (`scheduled`, `abandoned`,
+    // `in_progress`) are left exactly as they were: adding participants to
+    // them would change what testSessionRecap captures.
     if (state === 'completed') {
       await rest('session_participants', { method: 'POST',
         headers: { Prefer: 'resolution=merge-duplicates' },

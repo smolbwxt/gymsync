@@ -1,37 +1,82 @@
 import SwiftUI
 import UIKit
 
-// MARK: - GroupSessionLiveView
+// MARK: - SessionLiveView
 //
-// Proof-matched design (p06 Live Spotlight / p07 Live Roster / p29 PR Celebration):
-//   • Top bar: LIVE pulse + session name + elapsed timer + X (→ End Session confirmation)
-//   • My-turn state ("Spotlight"): exercise-headline turn card (accent fill) + SET TIMER /
-//     REST AFTER stat tiles + inline "LOG THIS SET" card (reps/weight steppers + RPE bar,
-//     no sheet) + ROTATION strip (NOW/NEXT/3RD/4TH) — primary "Log Set & Pass" pinned to
-//     the bottom action bar, NOT inside the card.
-//   • Spectating state ("Roster"): "CURRENT LIFT" headline + round/set progress bar +
-//     2-col roster grid (LIFTING NOW / UP NEXT / DONE / WAITING per participant) — bottom
-//     bar shows a dashed "you're up next" style hint instead of a CTA.
+// THE ONE SESSION BODY (plan task S5). Was `GroupSessionLiveView`, in
+// `Features/Sessions/`; the spectate sister page, the roster-failure layout,
+// the soundboard dock, the throw and the BOARD left in plan task S4, and what
+// remains is moved here under the name it earned — one body, three styles.
+//
+// `style` is handed in by `SessionInProgressView`, the style router, and it
+// has NO DEFAULT: an explicit argument at the one call site is what makes the
+// router readable. Rounds is a rotation, so the log control belongs to
+// whoever holds the turn (`logControlIsMine` below); Freestyle and Together
+// have no turn at all, so it is everyone's at once (spec §3.3).
+//
+// Proof-matched design (p06 Live Spotlight / p29 PR Celebration), AS IT
+// STANDS AFTER PLAN TASK S13's DEAD-MEMBER SWEEP (this list drifted twice
+// before — F4 fixed the Roster bullet, this pass fixes the other four
+// review finding 5 named):
+//   • Top bar: `turnHeaderRail` — session-elapsed timer (one-clock rule with the
+//     vitals card below it) + routine name + voice/chat entry points + X
+//     (→ End Session confirmation) + participant count.
+//   • My-turn page (`myTurnFixedPage`): `turnVitalsRow` (HR pill or session-elapsed,
+//     one-clock rule) + `turnExerciseCard` + `turnEntryCard` (reps/weight readout +
+//     RPE swipe track, no sheet) — or `turnLoaderExpanded` while the bar
+//     loader is open. `turnChrome`, pinned below via `bottomChrome`, carries
+//     the actual CTA: `LogControlButton` ("Log Set & Pass" — Freestyle and
+//     Together mount the SAME button in their own feet, ruling R-B17), the
+//     voice notices, the mic rail (`PTTDockRow`, compact) and, when burpees
+//     are owed, `burpeeDebtStrip` above it. The ROTATION strip
+//     (NOW/NEXT/3RD/4TH) moved to `RoundPieces.TurnStrip` (plan task S8);
+//     `SpotterView` mounts it now, not this page. `turnEntryCard` ITSELF is
+//     no longer this page's alone (fix round 4 / finding 1, ruling R-B21):
+//     Together and Freestyle mount the IDENTICAL view, directly above their
+//     own copy of the LOG foot — `togetherScreen`/`freestyleScreen` hand it
+//     in as `entryCard` — because the button those two styles already had
+//     could never enable with nowhere on screen to enter reps into.
+//     `logControlIsMine`, not `isMyTurn`, is what every prefill call site
+//     gates on now, so the same fix reaches all three styles at once.
 //   • Chess clock: Text(_, style: .timer), state-driven from currentTurnStartedAt — never
-//     a Swift Timer. Advance-turn flow (priorMax-before-logSet ordering, fire-and-forget
-//     PR record, advanceTurn call) is UNCHANGED — only the caller moved from a sheet's
-//     onLog closure to the inline card's commit action.
-//   • Penalty banner (accent fill, unchanged): "YOU OWE N burpees" + Log burpees button
-//     (still opens LogSetSheet — burpee logging is out of the proof's scope for this view).
-//   • Set feed: reverse-chron rows, cap 30, penalty rows tagged (unchanged).
-//   • Soundboard dock — favorites ribbon (Content Curation Task 3): "YOUR SOUNDS"
-//     kicker + Edit row, up to 4 favorite tiles (or the first 4 curated catalog
-//     sounds until favorites are chosen) + dashed "All" tile, both opening
-//     SoundLibrarySheet; tapping a tile plays locally + broadcasts (unchanged
-//     send path). Reaction pills (🔥💪😂👏) unchanged, below the ribbon.
-//   • Reaction overlay: incoming reactions float up as emoji pills (2s, opacity + offset).
-//   • Soundboard overlay: incoming sounds show transient "{username} 🔊 {name}" line.
+//     a Swift Timer. The log flow keeps its priorMax-before-logSet ordering
+//     and its fire-and-forget PR record; what follows the insert is now the
+//     STYLE'S answer, not one fixed call (`LogFollowUp.calls(for:)`, ruling
+//     R-B22): Rounds advances the turn and then offers to close the round,
+//     Together and Freestyle run neither, and a follow-up that fails never
+//     takes the saved set's entry card back down.
+//   • Burpee debt: `burpeeDebtStrip`, a compact accent-fill strip above
+//     `turnChrome`'s CTA — "YOU OWE N BURPEES" + LOG THEM, opens
+//     `LogSetSheet` for penalty-only logging. The full-page penalty banner
+//     this bullet used to describe was retired with the spectate page (plan
+//     task S4) and swept as dead code (plan task S13).
+//   • Set feed: retired with the spectate page (plan task S4) and swept as
+//     dead code (plan task S13) — no reverse-chron feed exists on this page
+//     anymore.
+//   • Reaction pills (🔥💪😂👏): moved to `RoundPieces.ReactionStrip` (plan task S6) —
+//     mounted on every page that shows a dock, which is all five (fix round 5,
+//     final review finding 6): the round wait's and spotter's own feet,
+//     `turnChrome` for Rounds-my-turn and Freestyle, and Together's foot. Tap
+//     to broadcast, incoming reactions float up as emoji pills (2s, opacity +
+//     offset) via `reactionOverlayLayer`.
 //   • PR Celebration: full-screen, USER-DISMISSED moment (p29) — replaces the old
-//     auto-dismissing toast. Share (ShareLink) + "Keep Lifting" dismiss.
+//     auto-dismissing toast. Share (ShareLink) + "Keep Lifting" dismiss. Its
+//     sound left with the soundboard (ruling R-B8, plan task S11); the haptic stays.
 //   • End Session: confirmation (via header X) → complete → HealthKit → SessionRecapView sheet
 
-struct GroupSessionLiveView: View {
+struct SessionLiveView: View {
     let session: WorkoutSession
+
+    /// How this crew moves (plan task S5). NO DEFAULT — `SessionInProgressView`
+    /// names it at the one call site, and the three styles mount different
+    /// bodies underneath (the round wait and spotter mode for `.rounds`, plan
+    /// tasks S6 and S8; Together's clock, S9; Freestyle's rail, S10).
+    ///
+    /// Read from `sessions.style` rather than `liveSession.style` so the whole
+    /// body agrees with the router that pushed it: the column is frozen the
+    /// moment `lifting_started_at` is stamped (`private.session_round_guard`,
+    /// plan task D3), so a live session's style cannot change under this view.
+    let style: SessionStyle
 
     /// True only when this view was reached via LobbyView ->
     /// `SessionInProgressView` (the Lobby<->Live push/pop pair for the SAME
@@ -58,7 +103,7 @@ struct GroupSessionLiveView: View {
     @State private var exerciseNames: [UUID: String] = [:]
     @State private var liveService = SessionLiveService()
 
-    // MARK: - Soundboard & broadcast state
+    // MARK: - Broadcast & heart-rate state
 
     @State private var broadcastService = SessionBroadcastService()
     /// Phase W Task 5 (watch-hr design §4) — separate `HeartRateBroadcastService`
@@ -66,21 +111,23 @@ struct GroupSessionLiveView: View {
     /// type's own doc comment on `heartRateBroadcast`); THIS instance is for
     /// SUBSCRIBING/rendering, mirroring how `broadcastService` above is this
     /// view's own subscribe-side `SessionBroadcastService` instance while
-    /// `WatchConnectivityBridge` holds a separate send-only one via
-    /// `LiveSoundboardBroadcasting`.
+    /// `WatchConnectivityBridge` holds a separate send-only
+    /// `HeartRateBroadcastService` of its own.
     @State private var heartRateService = HeartRateBroadcastService()
     /// Live HR readings keyed by participant userID — includes the CURRENT
     /// (self) user, since `heartRateService.subscribe`'s self-echo delivers
     /// this phone's own published samples back through the same callback
     /// (see that method's own doc comment). Consumed by `heartRateFor(_:)`
-    /// below, which both `rosterCard` (frame 2B) and `spotlightHeaderCard`
-    /// (frame 2A, self only) read from.
+    /// below — `rosterCard` and `spotlightHeaderCard` (frame 2A, self only)
+    /// were both readers until plan tasks S4 and S13's dead-member sweep
+    /// retired them in turn; spotter mode's crew rows (plan task S8) are
+    /// the live reader now.
     @State private var heartRates: [UUID: (bpm: Int, zone: HeartRateZone?, receivedAt: Date)] = [:]
     /// One self-clearing `Task` per userID (task-5-brief.md item 4:
     /// "pills fade/remove when no sample for >15s (sender may stop
     /// anytime)") — same "sleep, then clear if nothing newer arrived"
-    /// shape this file's own `showSoundOverlay`/`showReactionOverlay`
-    /// already use for their own transient overlay state, just keyed per
+    /// shape this file's own `showReactionOverlay` already uses for its own
+    /// transient overlay state, just keyed per
     /// user instead of a single shared property. Purely a memory-hygiene +
     /// re-render trigger: `heartRateFor(_:)` is the AUTHORITATIVE
     /// freshness check (`HeartRateFreshness.isFresh`, hermetically tested)
@@ -88,72 +135,14 @@ struct GroupSessionLiveView: View {
     /// render, only a slightly-late removal from this dictionary.
     @State private var heartRateExpiryTasks: [UUID: Task<Void, Never>] = [:]
     private static let heartRateStaleAfter: TimeInterval = 15
-    /// Full sound catalog (Task 3 — favorites ribbon + library sheet), populated
-    /// async on first appear. Failures degrade to an empty catalog silently —
-    /// `dockSounds` below falls back to the curated-first-4 behavior either way.
-    @State private var soundCatalog: [SoundboardSound] = []
-    /// User's chosen favorite slugs (ordered, max 4), populated async on first
-    /// appear from `SoundboardFavoritesRepository.get()`. Empty until chosen.
-    @State private var soundFavorites: [String] = []
-    /// Presents `SoundLibrarySheet` — both the dock's "Edit" and "All" affordances
-    /// open the same sheet.
-    @State private var showSoundLibrary = false
-    /// 1-second local gate: prevents double-fire and keeps local + remote in sync.
-    @State private var lastSoundTapAt: Date = .distantPast
-    /// Transient incoming-sound overlay: "{username} 🔊 {name}" — cleared after 2.5s.
-    @State private var soundOverlayText: String? = nil
     /// Transient floating reaction pill — cleared after 2s.
     @State private var reactionOverlay: String? = nil
     @State private var reactionOverlayVisible = false
-    /// Re-rack timers per slug (plate dock, composite v5): slug → when the
-    /// plate is throwable again. Entries are cleared by tapSound's expiry
-    /// task, which also restores the token's full opacity.
-    @State private var soundCooldowns: [String: Date] = [:]
-    /// Plates currently landed on the lifter card — capped at 5; each is
-    /// removed when its own sound's duration ends (the 5s cap bounds it).
-    @State private var landedPlates: [LandedPlate] = []
-
-    /// One plate on the lifter card: which sound, who threw it.
-    private struct LandedPlate: Identifiable, Equatable {
-        let id = UUID()
-        let slug: String
-        let sender: String
-        let durationMs: Int?
-    }
-
-    /// The plate mid-drag / mid-flight (phase-3 throw). Positions live in
-    /// the "liveArena" coordinate space, which covers page AND chrome so a
-    /// plate picked up from the dock can land on the lifter card.
-    private struct PlateDragState: Equatable {
-        let grabID = UUID()
-        let sound: SoundboardSound
-        var location: CGPoint
-        var startLocation: CGPoint
-        var isFlying = false
-    }
-    @State private var plateDrag: PlateDragState?
-    /// The lifter card's frame in "liveArena" — the throw's landing target,
-    /// reported via LifterCardFrameKey.
-    @State private var lifterCardFrame: CGRect = .zero
-
-    private struct LifterCardFrameKey: PreferenceKey {
-        static var defaultValue: CGRect = .zero
-        static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
-            value = nextValue()
-        }
-    }
-
-    /// Pre-session est-1RM ceilings per (lifter, exercise) — fetched lazily
-    /// when BOARD first opens, then cached for the session (the past doesn't
-    /// change mid-workout; reopening the board picks up exercises that
-    /// appeared since it last loaded).
-    @State private var scoreBaselines: [UUID: [UUID: Decimal]] = [:]
-    @State private var isLoadingBoard = false
     /// Task 5 (watch-hr design §4) — REMOVED (was: `@State private var
     /// shareHeartRate = false`, populated once from `UserSettingsRepository
     /// .get()` in `openAndSubscribe()`). That one-shot cache was the exact
     /// bug T4's review carried in: a mid-session toggle flip in `YouTabView`
-    /// never reached an already-open `GroupSessionLiveView` (this app's
+    /// never reached an already-open `SessionLiveView` (this app's
     /// `TabView` keeps a pushed session view alive across tab switches — it
     /// isn't torn down and re-`.task`-ed just by navigating to the You tab
     /// and back). Fixed by DERIVING the value live from `ThemeStore.shared
@@ -184,23 +173,22 @@ struct GroupSessionLiveView: View {
     @State private var showEndConfirmation  = false
     /// Task 3, Phase F — no canvas frame depicts a chat affordance on either
     /// live-session layout (proof-frame-06/07's headers show only LIVE +
-    /// routine name + timer + X). System-designed: a bordered icon-button in
-    /// `headerBar`, styled after the same header's own X button, opening a
-    /// sheet — see docs/design/accepted-deviations.json's "session-chat"
-    /// entry.
+    /// routine name + timer + X). System-designed: a bordered icon-button
+    /// in `turnHeaderRail` (`headerBar`'s replacement, since plan task S13's
+    /// dead-member sweep retired `headerBar` itself), styled after the same
+    /// header's own X button, opening a sheet — see
+    /// docs/design/accepted-deviations.json's "session-chat" entry.
     @State private var showChatSheet        = false
-    /// "Load the bar" expand/collapse for the inline `barLoaderCard` (user
-    /// direction 2026-07-28: a widget like the solo session's, not a header
-    /// button). The card renders in BOTH the my-turn and spectating branches
-    /// — your next weight is yours to plan while someone else lifts.
+    /// "Load the bar" expand/collapse for the my-turn page's `turnBarCard` /
+    /// `turnLoaderExpanded` pair (user direction 2026-07-28: a widget like the
+    /// solo session's, not a header button). It used to drive `barLoaderCard`
+    /// on the spectate page too — "plan your bar while someone else lifts" —
+    /// but that page left in plan task S4, `barLoaderCard` went callerless
+    /// with it, and plan task S13's dead-member sweep retired it in turn.
     @State private var showBarLoader        = false
     /// Success-haptic trigger for `.sensoryFeedback` — a count (not a Bool)
     /// so every logged set fires, including two in a row.
     @State private var logHapticTick        = 0
-    /// REST | BOARD switch on the spectate page (composite v5): false =
-    /// my recovery + prep, true = the crew board (crew HR grid until the
-    /// phase-4 scoreboard lands).
-    @State private var spectateShowsBoard   = false
     /// Session-local HR history behind YOUR RECOVERY — fed by the
     /// `.onChange(of: selfHeartRate?.bpm)` in `body`; pure math lives in
     /// RecoveryBuffer so the HRR numbers are unit-tested.
@@ -223,7 +211,9 @@ struct GroupSessionLiveView: View {
     /// Canvas Completion Task 4 fix round 1 (proof p31-errors, "Set didn't
     /// save"): dedicated to `logSetAndAdvance`'s failure only — deliberately
     /// separate from the generic `errorText` above (which stays the small
-    /// red caption for skipTurn/endSession/penalty-log failures, unchanged).
+    /// red caption for the crew skip / endSession / penalty-log failures —
+    /// `skipTurn()`, the organizer's old one-lifter skip, was swept in fix
+    /// round 5 with the rest of finding 4's orphans).
     /// Cleared optimistically at the start of every `logSetAndAdvance` call.
     @State private var logSetErrorText: String?
     /// Phase O Task 3 fix wave 1 (reviewer Finding 1): set when the most
@@ -236,6 +226,46 @@ struct GroupSessionLiveView: View {
     /// two different meanings. Cleared optimistically at the start of every
     /// `logSetAndAdvance` call, same convention as `logSetErrorText`.
     @State private var didQueueSetOffline = false
+    /// A FOLLOW-UP THAT FAILED ON AN ALREADY-SAVED SET (ruling R-B22) —
+    /// `advance_turn` / `advance_round` after the insert landed. Deliberately
+    /// NOT `logSetErrorText`: that one means "nothing was saved, try again"
+    /// and holds the entry card up for the retry, which is the one thing a
+    /// persisted set must never invite. This is a one-line note, it never
+    /// blocks anything, and it clears itself (`noteLogFollowUpFailure`) — the
+    /// set is safe, the rotation or the round will be nudged on by the next
+    /// lifter's own call, and there is nothing for this lifter to do.
+    @State private var logFollowUpNote: String?
+    /// THE CREW'S READINGS PER INTERVAL (plan task S9). Session-local,
+    /// bounded and it dies with this view -- `RecoveryBuffer`'s own category,
+    /// which is what spec §6's "no new store" blesses. Filled by
+    /// `receiveHeartRate` from the samples the broadcast already carries;
+    /// nothing else in the app remembers them, and without it Together's
+    /// timeline could only ever draw one column.
+    @State private var togetherTrace = TogetherTrace()
+    /// "I NEED A MINUTE", ONCE PER EXERCISE (plan task S7, owner decision
+    /// 11). The exercise ids the held lifter has already spent their minute
+    /// on -- a set rather than a flag, because the routine moves on and the
+    /// next exercise is a fresh minute.
+    @State private var minuteTakenForExercise: Set<UUID> = []
+    /// Extensions this client has SEEN this round, its own included. Any
+    /// count above one buys nothing (`RoundHold.threshold(_:extensionsTaken:)`
+    /// refuses to stack), which is exactly why a double-counted self-echo is
+    /// harmless -- and why this needs no de-duplication.
+    @State private var minuteExtensionsThisRound = 0
+    /// Freestyle's two suggestions, once acknowledged either way (plan task
+    /// S10, owner decision 4). NEITHER APPLIES A CHANGE — there is no rest
+    /// enforcement and no accessory-adding mechanism in this schema — so
+    /// "acknowledged" is the whole of what Accept and Not today do: the card
+    /// stops showing. The stretch is one suggestion for the whole session;
+    /// the accessory is keyed by exercise, because a lifter who accepts (or
+    /// declines) today's accessory should still see tomorrow's.
+    @State private var freestyleStretchAcknowledged = false
+    @State private var freestyleAcknowledgedAccessoryIDs: Set<UUID> = []
+    /// COACH'S DOOR (plan task S6, spec §3.6). The lobby's pair, mirrored —
+    /// see `openCoachThread()` below for why the thread is resolved on tap
+    /// and never on load.
+    @State private var openedCoachThread: OpenedCoachThread?
+    @State private var showCoachPaywall = false
     @State private var recapData: RecapData?          // non-nil → sheet
     // Coach debrief for MY sets (AI after-action, group mirror
     // 2026-08-22): assembled once at completion, same builder and same
@@ -314,14 +344,6 @@ struct GroupSessionLiveView: View {
     @State private var prOverlayPriorBest: Decimal = 0
     @State private var prOverlayMonthlyCount: Int? = nil
 
-    /// Frame 1: the dock shows the user's 4 favorites; before any are chosen,
-    /// the first four curated catalog sounds (matches today's fixed set).
-    private var dockSounds: [SoundboardSound] {
-        let bySlug = Dictionary(uniqueKeysWithValues: soundCatalog.map { ($0.slug, $0) })
-        let chosen = soundFavorites.compactMap { bySlug[$0] }
-        if !chosen.isEmpty { return Array(chosen.prefix(4)) }
-        return Array(soundCatalog.filter(\.isCurated).prefix(4))
-    }
     /// Reaction emojis per canvas reaction strip.
     private let reactionEmojis = ["🔥", "💪", "😂", "👏"]
 
@@ -336,15 +358,35 @@ struct GroupSessionLiveView: View {
     private var isMyTurn: Bool { liveSession.currentTurnUserID == selfID }
     private var isOrganizer: Bool { liveSession.organizerID == selfID }
 
+    /// WHOSE ACT THE LOG CONTROL IS — plan task S5's one behavioural change.
+    ///
+    /// Rounds is a rotation: the inline LOG THIS SET card belongs to whoever
+    /// holds the turn, which is the gate the spectate sister page used to
+    /// enforce by simply not drawing the card (plan task S4 deleted that page;
+    /// the round wait and spotter mode replace it in S6 and S8). Freestyle and
+    /// Together have NO TURN — spec §3.3 — so the control is everyone's at
+    /// once and `currentTurnUserID` is not consulted at all.
+    ///
+    /// `LogControlGate.isMine(style:isMyTurn:)` (`RoundPieces.swift`, fix
+    /// round 4 / finding 1) is the pure law behind this; every prefill call
+    /// site below reads THIS property rather than re-deriving the rule, so
+    /// the entry that fills the card and the button that logs it can never
+    /// disagree about whose turn it is.
+    private var logControlIsMine: Bool {
+        LogControlGate.isMine(style: style, isMyTurn: isMyTurn)
+    }
+
     // MARK: - Voice (Task 4 — PTT dock, Dossier §A.1's locked session-state scope)
 
     /// Mirrors `LobbyView`'s identical set — kept as a second literal copy
     /// rather than a shared constant since neither view currently has a
     /// common home for session-state helpers, and this codebase has no
     /// existing precedent of factoring session-state string sets out of
-    /// individual views.
+    /// individual views. `editing`/`voting`/`locked` narrowed out (D7's
+    /// five-state CHECK, mechanical cleanup decision 6, plan task S13): the
+    /// states no longer exist.
     private static let voiceEligibleStates: Set<String> = [
-        "lobby_open", "editing", "voting", "locked", "in_progress"
+        "lobby_open", "in_progress"
     ]
 
     private var isVoiceEligible: Bool {
@@ -400,8 +442,6 @@ struct GroupSessionLiveView: View {
     // single "current exercise" for the spotlight headline, the rotation math, and the
     // roster grid, so the displayed exercise always matches what "Log Set & Pass" will
     // actually log. Multi-exercise progression during a live session remains out of scope.
-
-    private enum RosterStatus { case lifting, upNext, done, waiting }
 
     /// Participants ordered by `turn_order` (nil last), stable by username.
     private var rotationOrder: [(participant: SessionParticipant, profile: Profile)] {
@@ -486,64 +526,19 @@ struct GroupSessionLiveView: View {
         }
     }
 
-    /// The CURRENT lifter's quiet scale for the shared current exercise,
-    /// if any - what the spectate card shows "during their set" (never
-    /// announced anywhere else).
-    private var currentLifterScale: SwapTarget? {
-        guard let turnID = liveSession.currentTurnUserID, turnID != selfID,
-              let ex = currentExerciseForSheet else { return nil }
-        return selfScales[turnID]?[ex.id]
-    }
-
     private var currentRoutineExercise: RoutineExercise? {
         guard let ex = currentExerciseForSheet else { return nil }
         return effectiveRoutineExercises.first(where: { $0.exerciseID == ex.id })
     }
 
-    private var targetSetsPerLifter: Int { currentRoutineExercise?.targetSets ?? 1 }
-
-    /// The set number about to be logged by whoever currently holds the turn — doubles as
-    /// the "Round N" figure on the roster header (one set per lifter per round).
-    private var currentTurnSetNumber: Int {
-        guard let turnID = liveSession.currentTurnUserID, let ex = currentExerciseForSheet else { return 1 }
-        return setCount(userID: turnID, exerciseID: ex.id) + 1
-    }
-
-    private var totalLoggedForCurrentExercise: Int {
-        guard let ex = currentExerciseForSheet else { return 0 }
-        return allSessionSets.filter { $0.exerciseID == ex.id && !$0.isPenalty }.count
-    }
-
-    private var totalExpectedForCurrentExercise: Int {
-        max(1, targetSetsPerLifter * max(participants.count, 1))
-    }
-
-    // Units sweep: stored weights (and the routine's free-text target, which
-    // carries canonical-lbs digits) render in the user's unit. Exact
+    // Units sweep: stored weights render in the user's unit. Exact
     // conversion, no plate snapping — these echo what was/should be lifted.
+    // (`targetWeightText`, the free-text-target sibling this block used to
+    // carry, went with `currentExerciseTargetText` in the fix-round-5 sweep
+    // below — it had no other caller.)
     private func weightText(_ pounds: Decimal) -> String {
         Units.format(pounds: pounds, unit: ThemeStore.shared.weightUnit,
                      rounded: false, includeUnit: false)
-    }
-
-    /// "185" → "84.09" for a kg user; non-numeric target strings pass
-    /// through untouched (they were never weights to begin with).
-    private func targetWeightText(_ target: String?) -> String {
-        guard let target else { return "—" }
-        guard let parsed = Decimal(string: target) else { return target }
-        return weightText(parsed)
-    }
-
-    private var currentExerciseTargetText: String? {
-        guard let re = currentRoutineExercise, re.targetReps != nil || re.targetWeight != nil else { return nil }
-        return "target \(targetWeightText(re.targetWeight)) × \(re.targetReps ?? "—")"
-    }
-
-    private func rosterStatus(for userID: UUID) -> RosterStatus {
-        if userID == liveSession.currentTurnUserID { return .lifting }
-        if userID == nextTurnUserID { return .upNext }
-        if hasLoggedCurrentExercise(userID) { return .done }
-        return .waiting
     }
 
     private func hasLoggedCurrentExercise(_ userID: UUID) -> Bool {
@@ -551,12 +546,17 @@ struct GroupSessionLiveView: View {
         return allSessionSets.contains { $0.userID == userID && $0.exerciseID == ex.id && !$0.isPenalty }
     }
 
-    private func lastSetForCurrentExercise(_ userID: UUID) -> SetLog? {
-        guard let ex = currentExerciseForSheet else { return nil }
-        return allSessionSets
-            .filter { $0.userID == userID && $0.exerciseID == ex.id && !$0.isPenalty }
-            .max(by: { $0.loggedAt < $1.loggedAt })
-    }
+    // Retired by the fix-round-5 sweep (final review, finding 4): the pages
+    // that read them left with plan task S4's spectate/roster strip, and plan
+    // task S13's own sweep inherited an incomplete list. All had exactly one
+    // occurrence left in the app — their own declaration — and Swift does not
+    // warn on an unused private member, so nothing but a grep would have said
+    // so. `targetSetsPerLifter`, `currentTurnSetNumber` (the old roster
+    // header's "Round N"), `currentExerciseTargetText` + `targetWeightText`,
+    // `lastSetForCurrentExercise`, `turnTunerStep` and `skipTurn()` — the
+    // organizer's old skip, superseded by `skipHeldLifter()` and the crew's
+    // own line (R-B13). The round's figure now comes from `liveSession.round`,
+    // the server's own count.
 
     private func lastSetAnyExercise(_ userID: UUID) -> SetLog? {
         allSessionSets
@@ -564,20 +564,6 @@ struct GroupSessionLiveView: View {
             .max(by: { $0.loggedAt < $1.loggedAt })
     }
 
-    /// Bottom-bar hint for spectators — "you're up next" or how many lifters are ahead.
-    /// Deliberately does NOT fabricate an ETA (the proof's "~2 min" isn't backed by any
-    /// duration data we track) — see visual-sweep-B p06/p07 findings.
-    private var upcomingTurnHint: String? {
-        guard let selfID, liveSession.currentTurnUserID != nil else { return nil }
-        if nextTurnUserID == selfID { return "You're up next" }
-        guard let idx = currentTurnIndex,
-              let myIdx = presentRotation.firstIndex(where: { $0.participant.userID == selfID }) else { return nil }
-        let n = presentRotation.count
-        guard n > 0 else { return nil }
-        let aheadCount = ((myIdx - idx) + n) % n
-        guard aheadCount > 0 else { return nil }
-        return "Waiting your turn — \(aheadCount) lifter\(aheadCount == 1 ? "" : "s") ahead"
-    }
 
     private func ordinal(_ n: Int) -> String {
         let suffix: String
@@ -607,8 +593,9 @@ struct GroupSessionLiveView: View {
 
     // MARK: - Init
 
-    init(session: WorkoutSession, voicePersistsOnPop: Bool = false) {
+    init(session: WorkoutSession, style: SessionStyle, voicePersistsOnPop: Bool = false) {
         self.session = session
+        self.style = style
         self.voicePersistsOnPop = voicePersistsOnPop
         _liveSession = State(initialValue: session)
     }
@@ -618,9 +605,11 @@ struct GroupSessionLiveView: View {
     // The my-turn state is a FIXED, non-scrolling page: fixed control heights,
     // ONE flexible child (the exercise card) absorbing device slack. Four
     // widgets — heart rate, load-the-bar, exercise (SETS|ROUTINE pager),
-    // entry — over a compact pinned chrome (56pt sound rail with the compact
-    // PTT mic + 64pt CTA). The spectating state keeps the old scroll layout
-    // and old dock untouched (sister-page round).
+    // entry — over a compact pinned chrome (the mic rail with the compact PTT
+    // mic + 57pt CTA; the rail was 56pt of soundboard plates until plan task
+    // S4 took them). This is now the ONLY page this body has: the spectate
+    // sister page and the roster-failure scroll layout left with S4, and the
+    // round wait (S6) and spotter mode (S8) are what render in their place.
     //
     // Recorded v1 deviations from final-proof (each deliberate, none silent):
     //   - CTA read-back omits "→ <next lifter>" (no verified next-name source
@@ -644,15 +633,14 @@ struct GroupSessionLiveView: View {
 
     /// Solo-in-a-group-session rest (user round 3): when a log-and-pass
     /// hands the turn straight back to you (nobody else checked in), the
-    /// my-turn screen "did nothing". Now it enters a REST interlude — the
-    /// spectate layout with a START SET CTA — until the rest window ends
-    /// or you cut it short. Nil = not resting.
+    /// my-turn screen "did nothing". It entered a REST interlude — the
+    /// spectate layout with a START SET CTA — until the window ended or you
+    /// cut it short. THE INTERLUDE'S LAYOUT LEFT WITH THE SPECTATE PAGE (plan
+    /// task S4): the window, its notifier and its store still run — the
+    /// recovery pill that used to render on top of it, and the boolean that
+    /// gated it, both went callerless with the page and plan task S13's
+    /// dead-member sweep retired them in turn. Nil = not resting.
     @State private var selfRotationRestUntil: Date?
-
-    private var isInSelfRotationRest: Bool {
-        guard let until = selfRotationRestUntil else { return false }
-        return until > .now
-    }
 
     /// TRANSIT flag for the current self-rotation rest window (2026-08):
     /// true when the set just logged completed its exercise, so the next
@@ -665,76 +653,19 @@ struct GroupSessionLiveView: View {
     /// Recovery-adaptive rest, group mirror of the solo wiring (owner
     /// 2026-08-12): window-open stamp + this session's end-of-rest HR
     /// drops. Applies to the SELF-ROTATION interlude only — crew-rotation
-    /// "rest" is spectating others' turns, not a timed window.
+    /// "rest" is the round wait (plan task S6), which measures its own
+    /// elapsed clock from the crew's logs and opens no window.
     @State private var selfRotationRestStartedAt: Date?
     @State private var selfRotationRestDrops: [Int] = []
     /// Owner item 7: latest logged body weight (canonical lbs), stamped
     /// onto bodyweight-exercise sets. Fetched once in reload's task.
     @State private var turnLatestBodyWeightLbs: Decimal?
 
-    /// Equipment-aware tuner step for the inline log card (owner
-    /// 2026-08-14: machines move a whole peg).
-    private var turnTunerStep: Double {
-        NSDecimalNumber(decimal: Units.tunerStep(
-            unit: .lbs, equipment: currentExerciseForSheet?.equipment)).doubleValue
-    }
-
     /// Mirror of the solo captureRestDrop — called before every path that
     /// clears `selfRotationRestUntil`; no-op without a window or HR data.
     private func captureSelfRotationRestDrop() {
         guard selfRotationRestUntil != nil, let drop = recoveryBuffer.drop, drop > 0 else { return }
         selfRotationRestDrops.append(drop)
-    }
-
-    /// GO EARLY / +30s pill for the self-rotation interlude — same
-    /// RestRecoveryMath judgment and house button anatomy as the solo rest
-    /// hero. +30s re-arms its own guarded auto-clear (the original task's
-    /// `until` guard goes stale on extension by design).
-    @ViewBuilder
-    private func selfRotationRecoveryPill(now: Date, start: Date, end: Date) -> some View {
-        let total = end.timeIntervalSince(start)
-        let progress = total > 0 ? min(1, max(0, now.timeIntervalSince(start) / total)) : 0
-        let verdict = RestRecoveryMath.verdict(
-            currentDrop: recoveryBuffer.drop,
-            baseline: RestRecoveryMath.baseline(priorDrops: selfRotationRestDrops),
-            progress: progress)
-        switch verdict {
-        case .ready:
-            Button {
-                captureSelfRotationRestDrop()
-                selfRotationRestUntil = nil
-            } label: {
-                Text("RECOVERED — GO EARLY")
-                    .font(GSFont.bold(11, relativeTo: .caption))
-                    .kerning(0.8)
-                    .foregroundStyle(theme.text)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-            }
-            .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip, cornerRadius: 10, lipHeight: 4))
-        case .lagging:
-            Button {
-                let extended = end.addingTimeInterval(30)
-                selfRotationRestUntil = extended
-                Task {
-                    try? await Task.sleep(for: .seconds(max(0, extended.timeIntervalSinceNow)))
-                    if selfRotationRestUntil == extended {
-                        captureSelfRotationRestDrop()
-                        selfRotationRestUntil = nil
-                    }
-                }
-            } label: {
-                Text("SLOW RECOVERY — +30s")
-                    .font(GSFont.bold(11, relativeTo: .caption))
-                    .kerning(0.8)
-                    .foregroundStyle(theme.text)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-            }
-            .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip, cornerRadius: 10, lipHeight: 4))
-        case nil:
-            EmptyView()
-        }
     }
 
     /// Prior-performance state (2026-07-30). ONE fetch feeds two features:
@@ -818,10 +749,6 @@ struct GroupSessionLiveView: View {
     private var turnVitalsState: TurnVitals {
         if let mine = selfHeartRate { return .live(mine.bpm) }
         return HeartRatePrimeStore.hasBeenAsked ? .elapsed : .undecided
-    }
-
-    private var myTurnActive: Bool {
-        isMyTurn && !(participants.isEmpty && rosterLoadFailed) && !isInSelfRotationRest
     }
 
     /// My non-penalty sets for the current exercise, oldest first.
@@ -1165,8 +1092,10 @@ struct GroupSessionLiveView: View {
         return parts.joined(separator: " · ")
     }
 
-    /// Bar/plate config shared by the strip and the expanded widget —
-    /// identical derivation to the (spectating-only) `barLoaderCard`.
+    /// Bar/plate config shared by `turnBarCard` and `turnLoaderExpanded`. It
+    /// was written as the twin of `barLoaderCard`'s own derivation — plan
+    /// task S4 deleted `barLoaderCard`'s only mount, and plan task S13's
+    /// dead-member sweep retired the callerless view itself.
     private var turnBarConfig: (unit: WeightUnit, plates: [Decimal], barInUnit: Decimal, prefill: Decimal?, targetInUnit: Decimal) {
         let unit = turnUnit
         let plates: [Decimal] = {
@@ -1679,7 +1608,36 @@ struct GroupSessionLiveView: View {
                 .frame(height: 20)
 
             Color.clear.frame(height: 6)
-            RPESwipeTrack(value: $logRPE, isFailed: $logIsFailed, theme: theme)
+            // The track and the log path's line share one child: this VStack
+            // already sits at ViewBuilder's ten-child ceiling.
+            VStack(alignment: .leading, spacing: 0) {
+                RPESwipeTrack(value: $logRPE, isFailed: $logIsFailed, theme: theme)
+
+                // THE LOG PATH'S ONE LINE (ruling R-B22). Two states, one
+                // line, because they are mutually exclusive by construction: a
+                // failed INSERT sets `logSetErrorText` and holds this card up
+                // for the retry; a failed FOLLOW-UP on an already-saved set
+                // sets `logFollowUpNote`, which clears itself and blocks
+                // nothing. Both were write-only until now — plan task S4
+                // deleted `legacyBottomChrome`, which was where the banner
+                // used to render, so a lifter whose set genuinely failed to
+                // save was told nothing at all. This card is the one surface
+                // every style's log path mounts (`myTurnFixedPage`, and
+                // Together/Freestyle through `entryCard:`), so it is where
+                // the line belongs.
+                if let line = logSetErrorText ?? logFollowUpNote {
+                    Color.clear.frame(height: 6)
+                    Text(line.uppercased())
+                        .font(GSFont.bold(11, relativeTo: .caption2))
+                        .tracking(0.6)
+                        .foregroundStyle(logSetErrorText == nil
+                                         ? theme.neutral700 : theme.text.opacity(0.82))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
         .padding(.horizontal, 14)
         .padding(.top, 12)
@@ -1690,15 +1648,12 @@ struct GroupSessionLiveView: View {
         .padding(.horizontal, 16)
     }
 
-    private var stepperRule: some View {
-        Rectangle().fill(theme.neutral700.opacity(0.55)).frame(width: 1, height: 30)
-    }
-
     private func turnStepButton(_ glyph: String, detail: String?, action: @escaping () -> Void) -> some View {
         TurnAutoRepeatButton(glyph: glyph, detail: detail, theme: theme, step: action)
     }
 
-    // Pinned chrome 152pt: sound rail (favourites + ALL + compact mic) + CTA.
+    // Pinned chrome: the mic rail + the CTA. (Was 152 pt with the plate
+    // rail; the plates left with the soundboard — plan task S4.)
     private var turnChrome: some View {
         VStack(spacing: 0) {
             GSDivider()
@@ -1707,67 +1662,62 @@ struct GroupSessionLiveView: View {
                 burpeeDebtStrip
                 Color.clear.frame(height: 6)
             }
-            turnSoundRail
+            needAMinuteRow
+            voiceNotices
+            // THE STRIP RIDES WITH THE DOCK (final review, finding 6). On
+            // master the reaction pills lived INSIDE `soundboardDock`, so
+            // every page that showed a dock could send one; plan task S4
+            // deleted that dock and S6/S8 re-hosted the strip on the round
+            // wait and spotter pages only, which left a lifter in Together or
+            // Freestyle — and a Rounds lifter on their own turn — with no way
+            // to react at all, though `tapReaction` and the broadcast path
+            // stayed wired the whole time. `turnChrome` is the foot Rounds'
+            // my-turn page and Freestyle share, so this mount is two of the
+            // three missing pages; Together's own foot carries the third.
+            // Same order as the round wait's foot: notices, strip, dock.
+            if !reactionEmojis.isEmpty {
+                ReactionStrip(emojis: reactionEmojis,
+                              onTap: { emoji in Task { await tapReaction(emoji: emoji) } })
+                Color.clear.frame(height: 6)
+            }
+            turnMicRail
             Color.clear.frame(height: 6)
 
-            // 3D pass (2026-08): the gs3D style owns the fill (accent face,
-            // or the theme's raised face for a failed set) + the 7pt lip;
-            // the failed look keeps its outline as a label overlay, landing
-            // exactly on the face rect. 57pt face + lip = the prior 64pt
-            // footprint.
-            Button { commitInlineLog() } label: {
-                ZStack {
-                    if logIsFailed {
-                        RoundedRectangle(cornerRadius: 16).strokeBorder(theme.text, lineWidth: 1.5)
-                    }
-                    VStack(spacing: 2) {
-                        if isLoggingSet {
-                            Text("LOGGING…")
-                                .font(GSFont.bold(17, relativeTo: .body))
-                                .tracking(0.9)
-                        } else {
-                            Text(logIsFailed ? "LOG FAIL & PASS" : "LOG SET & PASS")
-                                .font(GSFont.bold(17, relativeTo: .body))
-                                .tracking(0.9)
-                            Text(turnCTAReadback)
-                                .font(GSFont.bold(11, relativeTo: .caption2).monospacedDigit())
-                                .opacity(0.8)
-                        }
-                    }
-                    .foregroundStyle(logIsFailed ? theme.text : theme.bg)
-                    HStack {
-                        Spacer()
-                        Image(systemName: "arrow.right")
-                            .font(.system(size: 15, weight: .bold))
-                            .foregroundStyle(logIsFailed ? theme.text : theme.bg)
-                            .padding(.trailing, 16)
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: 57)
-            }
-            .buttonStyle(.gs3D(face: logIsFailed ? theme.raised3DFace : theme.accent,
-                               lip: logIsFailed ? theme.raised3DLip : nil,
-                               cornerRadius: 16))
-            .disabled(isLoggingSet || (leadingInt(logReps) == nil && !logIsFailed))
+            // `LogControlButton` (RoundPieces.swift, fix round 3 / F6):
+            // Together mounts the identical button in its own foot, both
+            // built from `logControlFoot` below, so the two mounts cannot
+            // draw two different buttons.
+            LogControlButton(
+                title: logControlFoot.title,
+                readback: logControlFoot.readback,
+                isFailed: logControlFoot.isFailed,
+                isDisabled: logControlFoot.isDisabled,
+                onTap: logControlFoot.onTap)
             .padding(.horizontal, 16)
             Color.clear.frame(height: 10)
         }
         .background(theme.bg)
-        .sheet(isPresented: $showSoundLibrary) {
-            SoundLibrarySheet(
-                catalog: soundCatalog,
-                favorites: soundFavorites,
-                onFavoritesChanged: { updated in
-                    soundFavorites = updated
-                    Task { try? await SoundboardFavoritesRepository.set(updated) }
-                },
-                onSend: { slug in Task { await tapSound(slug: slug) } }
-            )
-        }
+    }
+
+    /// The live log control's current state — shared by `turnChrome`
+    /// (Rounds/Freestyle) and `togetherScreen` (Together, fix round 3 /
+    /// F6, ruling R-B17). `logControlIsMine` (plan task S5) is what makes
+    /// mounting it unconditionally in Together safe: in Rounds the CTA is
+    /// the turn-holder's; in Freestyle and Together there is no turn to
+    /// hold, so it reads true for everyone. The readback says which, so a
+    /// dead button is never a silent one.
+    private var logControlFoot: LogControlFoot {
+        LogControlFoot(
+            title: isLoggingSet ? "LOGGING…" : (logIsFailed ? "LOG FAIL & PASS" : "LOG SET & PASS"),
+            readback: isLoggingSet ? nil : turnCTAReadback,
+            isFailed: logIsFailed,
+            isDisabled: isLoggingSet || !logControlIsMine
+                || (leadingInt(logReps) == nil && !logIsFailed),
+            onTap: { commitInlineLog() })
     }
 
     private var turnCTAReadback: String {
+        if !logControlIsMine { return "WAITING FOR YOUR TURN" }
         if leadingInt(logReps) == nil && !logIsFailed { return "ENTER REPS TO LOG" }
         let weight = logWeight.isEmpty ? "—" : logWeight
         let reps = leadingInt(logReps).map { "\($0)" } ?? "—"
@@ -1775,29 +1725,50 @@ struct GroupSessionLiveView: View {
         return "\(weight) \(turnUnit.label) × \(reps) · \(rpe)"
     }
 
-    /// The plate dock (composite v5), shared verbatim by turnChrome and
-    /// spectateChrome: up to four racked plates + ALL + compact mic.
-    private var turnSoundRail: some View {
+    /// THE TWO VOICE NOTICES, above whichever dock is on screen — the
+    /// degraded banner and the first-run coach mark (fix round 1 / F2, ruling
+    /// R-B12).
+    ///
+    /// Both lived in `legacyBottomChrome`, which plan task S4 deleted with the
+    /// page it served. That left `showVoiceCoachMark` and
+    /// `VoiceCoachMarkStore.markShown()` WRITE-ONLY: the one-shot flag was
+    /// consumed by a live session with nothing rendered, so a lifter who first
+    /// connected voice here (`BurpeeLedgerView`'s direct route does exactly
+    /// that) spent their single teaching moment on a blank screen. Neither
+    /// object is spectate furniture — the mark teaches the dock, and the
+    /// banner is how a degraded room is retried — so both come back above the
+    /// dock, same gates and same paddings as before the strip.
+    ///
+    /// `voicePersistsOnPop`'s doc comment is the reason this cannot be left to
+    /// `LobbyView`'s copy: the lobby is not always the route in.
+    /// ONE SPELLING FOR TWO FEET (plan task S6): the pinned `turnChrome` here
+    /// and the round wait's own pinned foot both render `VoiceNotices` from
+    /// this same value, so the mark cannot teach the dock on one page and not
+    /// the other.
+    private var voiceFoot: VoiceFoot {
+        VoiceFoot(isUnavailable: isVoiceEligible && isVoiceUnavailable,
+                  showsCoachMark: showVoiceCoachMark,
+                  onRetry: { Task { await VoiceRoomService.shared.retry() } },
+                  onDismissCoachMark: { showVoiceCoachMark = false })
+    }
+
+    /// Mirrors `isVoiceConnected` above — `VoiceRoomState` is not `Equatable`,
+    /// so the case test is spelled out.
+    private var isVoiceUnavailable: Bool {
+        if case .unavailable = VoiceRoomService.shared.state { return true }
+        return false
+    }
+
+    private var voiceNotices: some View {
+        VoiceNotices(foot: voiceFoot)
+    }
+
+    /// The mic rail: what is left of the plate dock (plan task S4) once the
+    /// plates and the ALL door left with the soundboard. Push-to-talk is NOT
+    /// collateral (plan constraint 21), and it sits exactly where it sat.
+    private var turnMicRail: some View {
         Group {
             HStack(spacing: 8) {
-                ForEach(dockSounds.prefix(4)) { sound in
-                    dockPlate(for: sound)
-                }
-                Button { showSoundLibrary = true } label: {
-                    Circle()
-                        .strokeBorder(theme.neutral700, style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
-                        .frame(width: 44, height: 44)
-                        .overlay {
-                            Text("ALL")
-                                .font(GSFont.bold(9, relativeTo: .caption2))
-                                .tracking(0.8)
-                                .foregroundStyle(theme.neutral700)
-                        }
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Open sound library")
-
                 Spacer(minLength: 4)
 
                 if isVoiceEligible {
@@ -1806,589 +1777,6 @@ struct GroupSessionLiveView: View {
             }
             .padding(.horizontal, 16)
         }
-    }
-
-    // MARK: - Sister page: spectating (2026-07-30)
-    // The my-turn page's fixed geometry with the my-turn organs swapped:
-    // the entry card and CTA give way to the CURRENT LIFTER card and the
-    // CREW grid — this is where everyone's heart rates live, per the user
-    // ruling ("we can view the crew heart rates when it's not our turn").
-    // Header rail and vitals row are the my-turn builders, reused verbatim,
-    // so paging between states never moves the top of the screen.
-
-    private var spectateActive: Bool {
-        (!isMyTurn || isInSelfRotationRest)
-            && !(participants.isEmpty && rosterLoadFailed)
-            && liveSession.currentTurnUserID != nil
-    }
-
-    // Composite v5 (2026-07-30): the lifter card is the platform up top;
-    // the middle band is REST (my recovery + prep) or BOARD (the crew
-    // grid, until the phase-4 scoreboard); the widget row (rotation +
-    // REST|BOARD switch) sits above the chrome. The my-turn vitals row is
-    // gone from this page — the recovery card carries my HR three-state
-    // and the prep card carries my bar.
-    private var spectateFixedPage: some View {
-        VStack(spacing: 0) {
-            turnHeaderRail
-            GSDivider()
-            Color.clear.frame(height: 10)
-            if showBarLoader {
-                turnLoaderExpanded
-            } else {
-                spectateLifterCard
-                Color.clear.frame(height: 12)
-                if spectateShowsBoard {
-                    spectateBoardCard
-                        .frame(maxHeight: .infinity)
-                } else {
-                    spectateRecoveryCard
-                    Color.clear.frame(height: 12)
-                    barLoaderCard
-                        .padding(.horizontal, 16)
-                    Spacer(minLength: 0)
-                }
-                Color.clear.frame(height: 12)
-                spectateWidgetRow
-            }
-            Color.clear.frame(height: 8)
-        }
-        .background(theme.bg)
-    }
-
-    /// Who has the bar right now — the platform (composite v5). Name at
-    /// display size, their live HR big, set number, turn clock, and their
-    /// last logged set as the honest "what's on the bar" (a set mid-lift
-    /// is unknowable until they log it). Reaction plates land on this card
-    /// in the next phase.
-    private var spectateLifterCard: some View {
-        let lifter = rotationOrder.first { $0.participant.userID == liveSession.currentTurnUserID }
-        let lastSet = currentLifterLastSet
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(lifter?.profile.username ?? "—")
-                    .font(GSFont.bold(26, relativeTo: .title2))
-                    .foregroundStyle(theme.text)
-                    .lineLimit(1)
-                Spacer()
-                Text("SET \(currentTurnSetNumber)")
-                    .font(GSFont.bold(12, relativeTo: .caption))
-                    .tracking(0.8)
-                    .foregroundStyle(theme.neutral700)
-            }
-            Color.clear.frame(height: 12)
-            HStack(alignment: .center) {
-                if let id = lifter?.participant.userID, let hr = heartRateFor(id) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "heart.fill")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(theme.text.opacity(0.78))
-                        Text("\(hr.bpm)")
-                            .font(GSFont.boldFixed(44).monospacedDigit())
-                            .foregroundStyle(theme.text)
-                    }
-                } else {
-                    Text("—")
-                        .font(GSFont.boldFixed(44))
-                        .foregroundStyle(theme.neutral700)
-                }
-                Spacer()
-                if let s = lastSet, let w = s.weight {
-                    VStack(alignment: .trailing, spacing: 4) {
-                        Text("\(Units.format(pounds: w, unit: turnUnit, rounded: false, includeUnit: false)) × \(s.reps ?? 0)")
-                            .font(GSFont.bold(22, relativeTo: .title3).monospacedDigit())
-                            .foregroundStyle(theme.text)
-                        Text("LAST SET · \(turnUnit.label.uppercased())")
-                            .font(GSFont.bold(9, relativeTo: .caption2))
-                            .tracking(1.0)
-                            .foregroundStyle(theme.neutral700)
-                    }
-                }
-            }
-            Color.clear.frame(height: 10)
-            HStack {
-                // Owner 2026-08-12: spectate's exercise name opens the
-                // exercise page too — small extruded chip, same contract as
-                // the my-turn card's title button.
-                if let ex = currentExerciseForSheet {
-                    Button {
-                        exerciseDetailSheet = ex
-                    } label: {
-                        HStack(spacing: 5) {
-                            // Quiet self-scale (owner ruling): shown on
-                            // their set, never announced anywhere else.
-                            Text(currentLifterScale.map { "\($0.name) · scaled" } ?? ex.name)
-                                .font(GSFont.bold(13, relativeTo: .footnote))
-                                .tracking(0.5)
-                                .foregroundStyle(theme.neutral700)
-                                .lineLimit(1)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(theme.neutral500)
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                    }
-                    .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip,
-                                       cornerRadius: 8, lipHeight: 2))
-                }
-                Spacer()
-                if let ts = liveSession.currentTurnStartedAt {
-                    Image(systemName: "timer")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(theme.neutral700)
-                    Text(ts, style: .timer)
-                        .font(GSFont.bold(14, relativeTo: .subheadline).monospacedDigit())
-                        .foregroundStyle(theme.text.opacity(0.78))
-                }
-            }
-        }
-        .padding(14)
-        .background(theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 20))
-        .overlay(alignment: .bottomTrailing) {
-            // Thrown weight lands here (composite v5) — deliberately ON
-            // TOP of the card's bottom row: plates are transient (≤5s,
-            // the sound cap) and the pile IS the point.
-            if !landedPlates.isEmpty {
-                HStack(spacing: 6) {
-                    ForEach(landedPlates) { plate in
-                        landedPlateChip(plate)
-                    }
-                }
-                .padding(.trailing, 12)
-                .padding(.bottom, 8)
-            }
-        }
-        .overlay(alignment: .bottomLeading) {
-            Capsule().fill(theme.accent)
-                .frame(width: 44, height: 3)
-                .padding(.leading, 14)
-        }
-        .padding(.horizontal, 16)
-        .background(
-            GeometryReader { geo in
-                Color.clear.preference(key: LifterCardFrameKey.self,
-                                       value: geo.frame(in: .named("liveArena")))
-            }
-        )
-    }
-
-    /// One landed plate: mini class-colored disc + sender tag.
-    private func landedPlateChip(_ plate: LandedPlate) -> some View {
-        let cls = PlateClass.forDuration(ms: plate.durationMs)
-        return HStack(spacing: 4) {
-            Circle()
-                .strokeBorder(GSBarLoader.plateColor(cls.denomination, unit: .lbs), lineWidth: 3)
-                .background(Circle().fill(theme.bg))
-                .frame(width: 20, height: 20)
-            Text(plate.sender)
-                .font(GSFont.bold(9, relativeTo: .caption2))
-                .foregroundStyle(theme.neutral700)
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .background(Capsule().fill(theme.surface))
-        .overlay(Capsule().strokeBorder(theme.neutral500.opacity(0.5), lineWidth: 1))
-        .transition(.scale(scale: 0.3).combined(with: .opacity))
-    }
-
-    /// The current lifter's most recent logged set for the exercise in
-    /// play — the honest "what's on the bar". Reads the UNCAPPED session
-    /// array, never the 30-row feed (the mySetCount lesson).
-    private var currentLifterLastSet: SetLog? {
-        guard let lifterID = liveSession.currentTurnUserID,
-              let ex = currentExerciseForSheet else { return nil }
-        return allSessionSets
-            .filter { $0.userID == lifterID && $0.exerciseID == ex.id && !$0.isPenalty }
-            .max(by: { $0.loggedAt < $1.loggedAt })
-    }
-
-    /// YOUR RECOVERY — live HR falling in real time while you rest, with
-    /// the peak-to-now drop and a session-local sparkline. Three-state
-    /// like the my-turn vitals card: dash (never asked) / session-elapsed
-    /// (asked, no strap) / live. The rest countdown deliberately does NOT
-    /// render here — the chrome's START SET CTA already carries it (the
-    /// one-clock rule).
-    private var spectateRecoveryCard: some View {
-        Button { if selfHeartRate == nil { showHRPairing = true } } label: {
-            VStack(alignment: .leading, spacing: 0) {
-                HStack {
-                    Text("YOUR RECOVERY")
-                        .font(GSFont.bold(10, relativeTo: .caption2))
-                        .tracking(1.1)
-                        .foregroundStyle(theme.neutral700)
-                    Spacer()
-                    if selfHeartRate != nil, let drop = recoveryBuffer.drop, drop > 0 {
-                        Text("−\(drop)")
-                            .font(GSFont.bold(14, relativeTo: .subheadline).monospacedDigit())
-                            .foregroundStyle(theme.text.opacity(0.78))
-                    }
-                }
-                Spacer(minLength: 6)
-                HStack(alignment: .bottom, spacing: 10) {
-                    if let hr = selfHeartRate {
-                        HStack(spacing: 6) {
-                            Image(systemName: "heart.fill")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(theme.text.opacity(0.78))
-                            Text("\(hr.bpm)")
-                                .font(GSFont.boldFixed(36).monospacedDigit())
-                                .foregroundStyle(theme.text)
-                        }
-                        Spacer()
-                        recoverySparkline
-                    } else if HeartRatePrimeStore.hasBeenAsked, let startedAt = liveSession.startedAt {
-                        Text(startedAt, style: .timer)
-                            .font(GSFont.boldFixed(30).monospacedDigit())
-                            .foregroundStyle(theme.text.opacity(0.78))
-                        Spacer()
-                    } else {
-                        Text("—")
-                            .font(GSFont.boldFixed(36))
-                            .foregroundStyle(theme.neutral700)
-                        Spacer()
-                    }
-                }
-            }
-            .padding(14)
-            .frame(height: 104)
-            .frame(maxWidth: .infinity)
-            .background(theme.surface)
-            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 20))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(selfHeartRate != nil)
-        .padding(.horizontal, 16)
-    }
-
-    /// 22-bar bpm history — the same bar language as the sound waveforms.
-    @ViewBuilder
-    private var recoverySparkline: some View {
-        let bars = recoveryBuffer.sparkline(barCount: 22)
-        if !bars.isEmpty {
-            HStack(alignment: .bottom, spacing: 2) {
-                ForEach(Array(bars.enumerated()), id: \.offset) { pair in
-                    Capsule().fill(theme.text.opacity(0.45))
-                        .frame(width: 3, height: max(3, CGFloat(pair.element) * 40))
-                }
-            }
-            .frame(height: 42, alignment: .bottom)
-            .accessibilityHidden(true)
-        }
-    }
-
-    /// ROTATION card + REST|BOARD switch — the widget row above the chrome.
-    private var spectateWidgetRow: some View {
-        HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text("ROTATION")
-                    .font(GSFont.bold(10, relativeTo: .caption2))
-                    .tracking(1.1)
-                    .foregroundStyle(theme.neutral700)
-                Spacer(minLength: 4)
-                HStack(spacing: 0) {
-                    ForEach(Array(presentRotation.enumerated()), id: \.element.participant.userID) { index, entry in
-                        let isLifting = entry.participant.userID == liveSession.currentTurnUserID
-                        let isMe = entry.participant.userID == selfID
-                        VStack(spacing: 5) {
-                            GSInitialsAvatar(name: entry.profile.username,
-                                             avatarURL: entry.profile.avatarURL, size: 30)
-                                .overlay {
-                                    if isLifting {
-                                        Circle().strokeBorder(theme.accent, lineWidth: 2)
-                                    } else if isMe {
-                                        Circle().strokeBorder(theme.neutral500,
-                                            style: StrokeStyle(lineWidth: 2, dash: [3, 3]))
-                                    }
-                                }
-                            Text(spectateSlotLabel(index: index))
-                                .font(GSFont.bold(9, relativeTo: .caption2))
-                                .tracking(0.8)
-                                .foregroundStyle(isLifting || isMe ? theme.text.opacity(0.78) : theme.neutral700)
-                        }
-                        .frame(maxWidth: .infinity)
-                    }
-                }
-                Spacer(minLength: 2)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(theme.surface)
-            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 20))
-
-            VStack(spacing: 8) {
-                spectateModeSeg("REST", active: !spectateShowsBoard) { spectateShowsBoard = false }
-                spectateModeSeg("BOARD", active: spectateShowsBoard) { spectateShowsBoard = true }
-            }
-            .padding(8)
-            .frame(width: 96)
-            .frame(maxHeight: .infinity)
-            .background(theme.surface)
-            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: 20))
-        }
-        .frame(height: 100)
-        .padding(.horizontal, 16)
-    }
-
-    /// One stacked pill of the REST|BOARD switch — the lbs|kg segmented
-    /// idiom turned vertical.
-    private func spectateModeSeg(_ label: String, active: Bool, action: @escaping () -> Void) -> some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.15)) { action() }
-        } label: {
-            Text(label)
-                .font(GSFont.bold(11, relativeTo: .caption2))
-                .tracking(0.9)
-                .foregroundStyle(active ? theme.bg : theme.neutral700)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(active ? theme.accent : Color.clear)
-                .cornerRadius(11)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// NOW / NEXT / YOU / ordinals, relative to whoever holds the bar —
-    /// over the PRESENT rotation, matching the server's next-picker.
-    private func spectateSlotLabel(index: Int) -> String {
-        let entry = presentRotation[index]
-        let lifterIdx = presentRotation.firstIndex {
-            $0.participant.userID == liveSession.currentTurnUserID
-        } ?? 0
-        let n = presentRotation.count
-        let rel = n == 0 ? 0 : (index - lifterIdx + n) % n
-        if rel == 0 { return "NOW" }
-        if entry.participant.userID == selfID { return "YOU" }
-        if rel == 1 { return "NEXT" }
-        let ordinals = ["3RD", "4TH", "5TH", "6TH", "7TH", "8TH"]
-        return rel - 2 < ordinals.count ? ordinals[rel - 2] : "\(rel + 1)TH"
-    }
-
-    /// Everyone in the rotation, with live bpm where it exists. The HR slot
-    /// is held (an em-dash, never a collapse) so tiles don't reflow as
-    /// signals come and go. The current lifter carries the accent underline
-    /// — the same "live" mark as everywhere else.
-    private var spectateCrewGrid: some View {
-        ScrollView {
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10),
-                                GridItem(.flexible(), spacing: 10)],
-                      spacing: 10) {
-                ForEach(rotationOrder, id: \.participant.userID) { entry in
-                    let isLifting = entry.participant.userID == liveSession.currentTurnUserID
-                    let isMe = entry.participant.userID == selfID
-                    let hr = heartRateFor(entry.participant.userID)
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(isMe ? "You" : entry.profile.username)
-                            .font(GSFont.bold(15, relativeTo: .subheadline))
-                            .foregroundStyle(isLifting ? theme.text : theme.text.opacity(0.78))
-                            .lineLimit(1)
-                        HStack(spacing: 4) {
-                            Image(systemName: "heart.fill")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(hr != nil ? theme.text.opacity(0.78) : theme.neutral500)
-                            Text(hr.map { "\($0.bpm)" } ?? "—")
-                                .font(GSFont.boldFixed(22).monospacedDigit())
-                                .foregroundStyle(hr != nil ? theme.text : theme.neutral700)
-                        }
-                    }
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(theme.surface)
-                    .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-                    .overlay(alignment: .bottomLeading) {
-                        if isLifting {
-                            Capsule().fill(theme.accent)
-                                .frame(width: 36, height: 3)
-                                .padding(.leading, 12)
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 4)
-        }
-    }
-
-    /// Spectating chrome: the shared sound rail over the rotation hint —
-    /// no CTA, because there is nothing to commit while you wait.
-    private var spectateChrome: some View {
-        VStack(spacing: 0) {
-            GSDivider()
-            Color.clear.frame(height: 6)
-            if burpeesRemaining > 0 {
-                burpeeDebtStrip
-                Color.clear.frame(height: 6)
-            }
-            turnSoundRail
-            Color.clear.frame(height: 6)
-            if isInSelfRotationRest {
-                // Recovery-adaptive pill (owner 2026-08-12, group mirror):
-                // judged against this session's own median end-of-rest
-                // drop; silent without HR or a 2-rest baseline.
-                if let until = selfRotationRestUntil, let restStart = selfRotationRestStartedAt {
-                    TimelineView(.periodic(from: .now, by: 5)) { context in
-                        selfRotationRecoveryPill(now: context.date, start: restStart, end: until)
-                    }
-                    Color.clear.frame(height: 6)
-                }
-                // Resting between your own sets — cut it short any time.
-                // 3D pass (2026-08): accent gs3D face, 57pt + 7pt lip =
-                // the prior 64pt CTA footprint.
-                Button {
-                    captureSelfRotationRestDrop()
-                    selfRotationRestUntil = nil
-                } label: {
-                    VStack(spacing: 2) {
-                        Text("START SET")
-                            .font(GSFont.bold(17, relativeTo: .body))
-                            .tracking(0.9)
-                        if let until = selfRotationRestUntil {
-                            HStack(spacing: 4) {
-                                // TRANSIT (2026-08): an exercise-change
-                                // window announces the station move.
-                                Text(selfRotationRestIsTransit
-                                     ? "TRANSIT · SET UP YOUR STATION" : "RESTING")
-                                    .font(GSFont.bold(11, relativeTo: .caption2))
-                                Text(timerInterval: .now...until, countsDown: true)
-                                    .font(GSFont.bold(11, relativeTo: .caption2).monospacedDigit())
-                            }
-                            .opacity(0.8)
-                        }
-                    }
-                    .foregroundStyle(theme.bg)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 57)
-                }
-                .buttonStyle(.gs3D(face: theme.accent, cornerRadius: 16))
-                .padding(.horizontal, 16)
-                Color.clear.frame(height: 10)
-            } else if let hint = upcomingTurnHint {
-                Text(hint)
-                    .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
-                    .foregroundStyle(theme.neutral700)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm)
-                        .strokeBorder(theme.divider, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
-                    .padding(.horizontal, 16)
-                Color.clear.frame(height: 10)
-            }
-        }
-        .background(theme.bg)
-    }
-
-    // MARK: - Warm-up page (2026-08 warm-up phase)
-
-    /// The fixed-page shell (header rail + divider, the same top chrome as
-    /// the my-turn/spectate pages so entering lifting never moves the top
-        // MARK: - Body
-
-    /// The pre-redesign scroll layout — reached only in the roster-failure
-    /// state now that my-turn and spectate both have fixed pages. Moved
-    /// verbatim out of `body` in the 2026-07-31 split.
-    private var legacyScrollLayout: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-
-                // ── HEADER ──────────────────────────────────────────────
-                headerBar
-
-                GSDivider()
-
-                // ── SPOTLIGHT (my turn) / ROSTER (spectating) ───────────
-                // Canvas Completion Task 4 fix round 1 (proof p31-errors,
-                // "Couldn't load the roster"): when the participants fetch
-                // has actually failed AND left the list blank, show the
-                // error card in place of both the spotlight and spectating
-                // blocks — both derive rotation/roster state from
-                // `participants`, so a blank list means neither block has
-                // anything real to show anyway (stale/placeholder text at
-                // best). A transient refresh failure that leaves an
-                // already-populated `participants` list intact never
-                // triggers this (matches the same best-effort contract as
-                // `GSErrorCard`'s other call sites).
-                if participants.isEmpty && rosterLoadFailed {
-                    GSErrorCard(
-                        title: "Couldn't load the roster",
-                        message: "Check your connection. Your workout keeps logging locally.",
-                        retry: { Task { await reload() } }
-                    )
-                    .padding(.horizontal, 16)
-                    .padding(.top, 14)
-                } else if isMyTurn {
-                    VStack(alignment: .leading, spacing: 12) {
-                        spotlightHeaderCard
-                        statTimerRow
-                        barLoaderCard
-                        logThisSetCard
-                        if let logSetErrorText {
-                            GSInlineErrorBanner(
-                                title: "Set didn't save.",
-                                message: "Check your connection, then try again — your reps are still filled in above.",
-                                retry: { commitInlineLog() }
-                            )
-                        } else if didQueueSetOffline {
-                            // Phase O Task 3 fix wave 1 (reviewer Finding 1) — see
-                            // `logSetAndAdvance`'s offline-queue branch for the full
-                            // rationale. No retry CTA: the set already saved locally,
-                            // so a retry here would only mint a duplicate queue entry.
-                            GSInlineNoticeBanner(
-                                title: "Saved on this phone.",
-                                message: "Your turn will pass once you're back online."
-                            )
-                        }
-                        if !rotationTiles.isEmpty {
-                            rotationStrip
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 14)
-                } else {
-                    VStack(alignment: .leading, spacing: 12) {
-                        spectatingHeaderCard
-                        barLoaderCard
-                        if !rotationOrder.isEmpty {
-                            rosterGrid
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 14)
-                }
-
-                // ── PENALTY BANNER ───────────────────────────────────────
-                if burpeesRemaining > 0 {
-                    penaltyBanner
-                        .padding(.top, 12)
-                }
-
-                // ── SET FEED ─────────────────────────────────────────────
-                if !feedSets.isEmpty {
-                    GSDivider()
-                        .padding(.horizontal, 16)
-                        .padding(.top, 14)
-
-                    feedSection
-                }
-
-                // ── ERROR ────────────────────────────────────────────────
-                if let errorText {
-                    Text(errorText)
-                        .font(GSFont.body(12, relativeTo: .footnote))
-                        .foregroundStyle(.red)
-                        .padding(.horizontal, 16)
-                        .padding(.top, 10)
-                }
-
-                Spacer(minLength: 88)
-            }
-        }
-        .background(theme.bg)
     }
 
     /// PR celebration (full-screen, user-dismissed — p29).
@@ -2432,17 +1820,18 @@ struct GroupSessionLiveView: View {
     // the pre-split body, then branch run 30602390405 at the content-split
     // body — extracting the ZStack content wasn't enough because the COST
     // is the ~25-modifier chain's nested generic depth, not the content):
-    // the chain itself is now layered — arenaBase (page + chrome +
-    // transient overlay) → arenaWithThrow (throw arena) → body (sheets,
-    // dialogs, lifecycle). Each layer is a separately-checked expression.
+    // the chain itself is layered — arenaBase (page + chrome) →
+    // arenaWithLifecycle (prefill + turn poll) → body (sheets, dialogs,
+    // lifecycle). Each layer is a separately-checked expression.
     /// Exercise whose detail page (video demo + history) is open as a sheet —
-    /// set by tapping the exercise name on the spotlight/spectate header
-    /// (user 2026-08-11). A sheet, not a push, so dismissing it lands
-    /// straight back in the session.
+    /// set by tapping the exercise name on `turnExerciseCard` (user
+    /// 2026-08-11; the spotlight/spectate headers that also raised it left in
+    /// plan task S4 and plan task S13's dead-member sweep in turn). A sheet,
+    /// not a push, so dismissing it lands straight back in the session.
     @State private var exerciseDetailSheet: Exercise?
 
     var body: some View {
-        arenaWithThrow
+        arenaWithLifecycle
         .overlay(alignment: .top) { swapVoteBanner }
         // Log Set sheet — penalty (burpee) logging only now; normal sets log inline.
         .scrollDismissesKeyboard(.interactively)
@@ -2544,8 +1933,13 @@ struct GroupSessionLiveView: View {
         }
         // Realtime lifecycle — SessionLiveService + SessionBroadcastService
         .task { await openAndSubscribe() }
-        .onChange(of: liveSession.currentTurnUserID) { _, newValue in
-            if newValue == selfID { prefillLogInputs() }
+        .onChange(of: liveSession.currentTurnUserID) { _, _ in
+            // `logControlIsMine`, not `newValue == selfID` (fix round 4 /
+            // finding 1, ruling R-B21): Together and Freestyle never carry
+            // a turn to compare against, so gating this on the turn holder
+            // left their entry blank forever. Rounds is unaffected — the
+            // predicate reduces to the same `isMyTurn` check it always was.
+            if logControlIsMine { prefillLogInputs() }
             // Phase W Task 2 — the turn passing is exactly the moment the
             // Watch's "whose turn" state goes stale; re-push immediately
             // rather than waiting for the next scenePhase/reload cycle.
@@ -2558,6 +1952,19 @@ struct GroupSessionLiveView: View {
         // policy in 20260803000003, this covers the mid-session swap).
         .onChange(of: liveSession.routineID) { _, _ in
             Task { await reload() }
+        }
+        // A new round is a new wait (plan task S7). The minute a lifter took
+        // in round 3 must not still be holding the crew off in round 4; the
+        // once-per-exercise gate is deliberately NOT reset here, because a
+        // minute is once per exercise and an exercise outlives a round.
+        // `liveSession.round` is the SERVER's round, arriving on the
+        // `sessions` UPDATE the realtime channel carries (or led by the log
+        // path's own `advance_round` return — ruling R-B22, which is what
+        // finally gives this handler something to fire on outside a crew
+        // skip). Ruling R-B23: the round wait reads that live value and
+        // nothing cached.
+        .onChange(of: liveSession.round) { _, _ in
+            minuteExtensionsThisRound = 0
         }
         // Rest buzz (owner 2026-08-14) — one observation point for the
         // self-rotation interlude, same shape as solo's restEndAt wire.
@@ -2667,7 +2074,7 @@ struct GroupSessionLiveView: View {
         }
         .onDisappear {
             // Only clear the suppression flag if it's still pointing at THIS
-            // session — a second GroupSessionLiveView push (or a fast
+            // session — a second SessionLiveView push (or a fast
             // navigate-away-and-back) could have already overwritten it with
             // a different session's id by the time this onDisappear fires,
             // and clearing unconditionally would un-suppress banners for
@@ -2698,7 +2105,7 @@ struct GroupSessionLiveView: View {
             // Fix wave 1 (reviewer finding, CRITICAL) — clears the trigger
             // set in `.onAppear` above. Unconditional (no "still points at
             // THIS session" guard the way `appState.activeSessionID`'s
-            // clear above needs): only one `GroupSessionLiveView` is ever
+            // clear above needs): only one `SessionLiveView` is ever
             // genuinely live-on-screen at a time in this app's navigation
             // model, so there's no sibling instance whose hook this could
             // wrongly clear — leaving it set would let a departed view's
@@ -2750,22 +2157,28 @@ struct GroupSessionLiveView: View {
 
     // MARK: - Body layers (the 2026-07-31 chain split)
 
-    /// Layer 1: the page switch + pinned chrome + transient sound overlay.
+    /// Layer 1: the page + the pinned chrome.
     private var arenaBase: some View {
         ZStack(alignment: .bottom) {
-            // Redesign 2026-07-30: my-turn is the FIXED page (no scroll);
-            // spectating (and the roster-failure state) keep the original
-            // scroll layout untouched until the sister-page round.
-            // THREE WAYS AGAIN (plan task S9). The warm-up page was a
-            // fourth: `SessionRunnerView` now shows `WarmUpScreen` BEFORE
-            // this view ever mounts, so by the time the arena exists lifting
-            // has begun and the session's first turn is simply active.
-            if myTurnActive {
-                myTurnFixedPage
-            } else if spectateActive {
-                spectateFixedPage
+            // THE PAGE, CHOSEN BY STYLE AND WHOSE TURN IT IS (plan tasks S4,
+            // S6, S10). The spectate sister page and the roster-failure
+            // scroll layout are gone; in Rounds, a crewmate who is not
+            // lifting gets the ROUND WAIT in their place, and everyone else —
+            // every lifter on their turn — gets the my-turn page. Freestyle
+            // and Together have no turn at all (S5), so every lifter in
+            // either gets that style's own page instead; Freestyle's still
+            // composes above `bottomChrome`'s pinned `turnChrome` for the
+            // actual log control (`freestylePage`'s own doc comment).
+            if style == .together {
+                togetherPage
+            } else if style == .freestyle {
+                freestylePage
+            } else if showsSpotter {
+                spotterPage
+            } else if showsRoundWait {
+                roundWaitPage
             } else {
-                legacyScrollLayout
+                myTurnFixedPage
             }
             prOverlayLayer
             reactionOverlayLayer
@@ -2777,10 +2190,9 @@ struct GroupSessionLiveView: View {
             guard let newValue else { return }
             recoveryBuffer.append(bpm: newValue, at: Date().timeIntervalSinceReferenceDate)
         }
-        // Pushed via LobbyView → SessionInProgressView; the soundboard dock +
-        // bottom action bar below are bottom-pinned — see GSComponents.swift's
-        // GSHidesDock for why the custom app dock can't reach them via
-        // safeAreaInset alone.
+        // Pushed via LobbyView → SessionInProgressView; the bottom action bar
+        // below is bottom-pinned — see GSComponents.swift's GSHidesDock for
+        // why the custom app dock can't reach it via safeAreaInset alone.
         .gsHidesDock()
         // Keyboard overlays EVERYTHING, chrome included (user round 3: the
         // CTA was still lifting above the numpad, leaving a stacked buffer).
@@ -2789,35 +2201,25 @@ struct GroupSessionLiveView: View {
         // bottom and everything is exactly where it was on dismiss.
         .ignoresSafeArea(.keyboard, edges: .bottom)
         .safeAreaInset(edge: .bottom) { bottomChrome }
-        // Incoming-sound transient overlay (inline, above dock area)
-        .overlay(alignment: .bottom) { soundOverlayPill }
-        .animation(.easeInOut(duration: 0.25), value: soundOverlayText)
     }
 
-    /// Layer 2: the phase-3 throw arena — one coordinate space covering
-    /// page + chrome, the lifter-card target frame, and the dragged/flying
-    /// plate drawn above everything. The pick-up haptic fires on grab.
-    private var arenaWithThrow: some View {
+    /// Layer 2: the lifecycle chain. Was `arenaWithThrow` — the throw arena's
+    /// coordinate space, its drag overlay and its grab haptic left with the
+    /// throw itself, and the BOARD's baseline load left with the BOARD (plan
+    /// task S4). The LAYER stays: the split exists for the type-checker, not
+    /// for the throw (see the note above `body`).
+    private var arenaWithLifecycle: some View {
         arenaBase
-            .coordinateSpace(name: "liveArena")
-            .onPreferenceChange(LifterCardFrameKey.self) { lifterCardFrame = $0 }
-            .overlay {
-                if let drag = plateDrag { flyingPlateOverlay(drag) }
-            }
-            .sensoryFeedback(trigger: plateDrag?.grabID) { old, new in
-                new != nil && old == nil ? .impact(weight: .medium) : nil
-            }
-            // BOARD baselines load when the board opens (composite v5 phase 4).
-            .onChange(of: spectateShowsBoard) { _, shows in
-                guard shows else { return }
-                Task { await loadScoreBaselines() }
-            }
             // The exercise advancing (RoutineProgression) re-prefills the
             // entry. Field bug 2026-07-31: the squat weight rode into the
             // curls because prefill only fired on turn CHANGES — and a solo
             // rotation's turn never changes (self → self).
             .onChange(of: currentExerciseForSheet?.id) { _, _ in
-                if isMyTurn { prefillLogInputs() }
+                // `logControlIsMine`, not `isMyTurn` (fix round 4 / finding
+                // 1, ruling R-B21) — Freestyle progresses through exercises
+                // per lifter same as Rounds, but `isMyTurn` never becomes
+                // true there, so the old gate never re-prefilled it.
+                if logControlIsMine { prefillLogInputs() }
             }
             // Realtime fallback: the turn state POLLS every 10s while live
             // (field 2026-07-31: one phone's dead websocket — "Voice
@@ -2842,64 +2244,48 @@ struct GroupSessionLiveView: View {
                     }
                 }
             }
+            // THE STATION SPLIT (plan task S3). `.task(id:)` rather than
+            // `.onChange` so the crew's FIRST exercise is assigned too, and
+            // `set_session_stations`' idempotency on the exercise position is
+            // what makes every repeat free.
+            .task(id: currentRoutineExercise?.position) {
+                guard let position = currentRoutineExercise?.position else { return }
+                await remixStations(exercisePosition: position)
+            }
+            // COACH'S ROOM (plan task S6). On THIS layer rather than on
+            // `body`: the split above exists because `body`'s ~25-modifier
+            // chain twice blew the type-checker's budget (two CI timeouts),
+            // and a `navigationDestination` plus a `sheet` are two more links
+            // in whichever chain they join.
+            .navigationDestination(item: $openedCoachThread) { opened in
+                CoachThreadView(thread: CoachChatThread(
+                    id: opened.thread.threadID,
+                    title: SessionCopy.talkToCoach,
+                    summary: "",
+                    summarizedThrough: nil,
+                    updatedAt: liveSession.scheduledFor ?? liveSession.createdAt))
+                    .background(theme.bg)
+                    .navigationTitle(SessionCopy.talkToCoach)
+                    .navigationBarTitleDisplayMode(.inline)
+            }
+            // The door's paywall, for the branch `open()` takes when the crew
+            // cannot reach the room. No `highlight`: none of
+            // `Monetization.Feature`'s cases names a session Coach room, and
+            // inventing one is a product decision this task is not making.
+            .sheet(isPresented: $showCoachPaywall) {
+                PaywallView()
+            }
     }
 
     /// The pinned bottom chrome (extracted from the safeAreaInset closure).
-    /// Redesign 2026-07-30: my-turn gets the compact 152pt chrome; the
-    /// legacy dock composition survives for the roster-failure state.
+    ///
+    /// EMPTY WHILE A CREW PAGE IS UP (plan tasks S6 and S8): `RoundPage` pins
+    /// its own foot inside the page, so a chrome here would put a second dock
+    /// under the first one. The my-turn page has no foot of its own, which is
+    /// why it still needs this.
     @ViewBuilder
     private var bottomChrome: some View {
-        if myTurnActive {
-            turnChrome
-        } else if spectateActive {
-            spectateChrome
-        } else {
-            legacyBottomChrome
-        }
-    }
-
-    private var legacyBottomChrome: some View {
-        VStack(spacing: 0) {
-            // ── VOICE DEGRADED BANNER ────────────────────────────────
-            // "Inserted above the dock" per Dossier §A.2's live-session
-            // unavailable frame — above the whole sticky composition
-            // (soundboard + PTT + action bar), matching that frame's
-            // literal ordering.
-            if isVoiceEligible, case .unavailable = VoiceRoomService.shared.state {
-                GSVoiceUnavailableBanner(retry: {
-                    Task { await VoiceRoomService.shared.retry() }
-                })
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                .background(theme.bg)
-            }
-            // ── SOUNDBOARD DOCK ──────────────────────────────────────
-            soundboardDock
-            // First-run coach mark (Phase O Task 5 item 5) — mirrors
-            // LobbyView's identical placement directly above the dock.
-            if showVoiceCoachMark {
-                GSVoiceCoachMark(onDismiss: { showVoiceCoachMark = false })
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 6)
-            }
-            // ── PUSH-TO-TALK DOCK ────────────────────────────────────
-            // Dossier §A.2 confirms the exact insertion point: between
-            // the HYPE strip and the bottom action bar.
-            if isVoiceEligible {
-                // Same retry closure the degraded banner above receives, so
-                // the dock's RETRY and the banner's Retry are one action and
-                // cannot disagree.
-                PTTDockRow(otherParticipantNames: otherParticipantNames,
-                           onRetry: { Task { await VoiceRoomService.shared.retry() } })
-            }
-            // ── BOTTOM ACTION BAR ────────────────────────────────────
-            // My turn → pinned "Log Set & Pass" CTA (per proof, lives OUTSIDE the
-            // spotlight card). Spectating → dashed rotation hint, no CTA.
-            // (End Session moved off this bar — the header X already triggers the
-            // same confirmation; the proof's live screens never show a second
-            // "End Session" affordance alongside the primary action.)
-            bottomActionBar
-        }
+        if style != .together, !showsCrewPage { turnChrome }
     }
 
     /// Squad-swap vote banner: visible to everyone while a proposal is
@@ -3004,900 +2390,30 @@ struct GroupSessionLiveView: View {
         }
     }
 
-    /// "{username} 🔊 {name}" — floats above the dock while a sound plays.
-    @ViewBuilder
-    private var soundOverlayPill: some View {
-        if let txt = soundOverlayText {
-            HStack(spacing: 6) {
-                Image(systemName: "speaker.wave.2")
-                    .font(.system(size: 11, weight: .semibold))
-                Text(txt)
-                    .font(GSFont.bold(11, relativeTo: .caption2))
-                    .lineLimit(1)
-            }
-            .foregroundStyle(theme.neutral700)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 5)
-            .background(theme.surface)
-            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-            .padding(.bottom, 130)  // float above dock
-            .transition(.opacity)
-            .id(txt)
-        }
-    }
-
-    // MARK: - Soundboard Dock
-    // Frame 1 (favorites ribbon): "YOUR SOUNDS" kicker + Edit row, 4 favorite
-    // tiles + dashed "All" expand button — sits above the reaction-pill strip
-    // (unchanged) and the PTT dock. Both Edit and All open SoundLibrarySheet.
-
-    private var soundboardDock: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            GSDivider()
-
-            VStack(alignment: .leading, spacing: 10) {
-                // "YOUR SOUNDS" kicker + Edit
-                HStack {
-                    Text("YOUR SOUNDS")
-                        .font(GSFont.bold(9, relativeTo: .caption2))
-                        .tracking(0.9)
-                        .foregroundStyle(theme.neutral500)
-                    Spacer()
-                    Button {
-                        showSoundLibrary = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text("Edit")
-                                .font(GSFont.bold(11, relativeTo: .caption))
-                            Image(systemName: "viewfinder")
-                                .font(.system(size: 11, weight: .semibold))
-                        }
-                        .foregroundStyle(theme.accent700)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                // Favorite tiles + "All" expand button
-                HStack(spacing: 6) {
-                    ForEach(dockSounds) { sound in
-                        Button {
-                            Task { await tapSound(slug: sound.slug) }
-                        } label: {
-                            VStack(spacing: 4) {
-                                Text(sound.icon ?? "🔊")
-                                    .font(.system(size: 22))
-                                Text(sound.label)
-                                    .font(GSFont.bold(10, relativeTo: .caption2))
-                                    .lineLimit(1)
-                            }
-                            .foregroundStyle(theme.text)
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                            .padding(.vertical, 10)
-                            .padding(.horizontal, 4)
-                            .background(theme.surface)
-                            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    Button {
-                        showSoundLibrary = true
-                    } label: {
-                        VStack(spacing: 4) {
-                            Image(systemName: "square.grid.2x2")
-                                .font(.system(size: 16, weight: .semibold))
-                            Text("All")
-                                .font(GSFont.bold(9, relativeTo: .caption2))
-                        }
-                        .foregroundStyle(theme.accent)
-                        .frame(width: 52)
-                        .frame(minHeight: 44)
-                        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.accent, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Open sound library")
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 9)
-
-            // Reaction pills (unchanged — out of Task 3's scope).
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 5) {
-                    ForEach(reactionEmojis, id: \.self) { emoji in
-                        Button {
-                            Task { await tapReaction(emoji: emoji) }
-                        } label: {
-                            Text(emoji)
-                                .font(.system(size: 13))
-                                .padding(.horizontal, 9)
-                                .padding(.vertical, 6)
-                                .background(theme.surface)
-                                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
-                        .fixedSize()
-                    }
-                }
-                .padding(.horizontal, 12)
-            }
-            .padding(.bottom, 9)
-        }
-        .background(theme.bg)
-        .sheet(isPresented: $showSoundLibrary) {
-            SoundLibrarySheet(
-                catalog: soundCatalog,
-                favorites: soundFavorites,
-                onFavoritesChanged: { updated in
-                    soundFavorites = updated
-                    Task { try? await SoundboardFavoritesRepository.set(updated) }
-                },
-                onSend: { slug in Task { await tapSound(slug: slug) } }
-            )
-        }
-    }
-
-    // MARK: - Header bar
-    // Canvas: LIVE pulse + session name (routine) + elapsed since startedAt + X button
-    // (X → end-session confirmation; this is the proof's only end-session affordance
-    // on the live screens, so the old separately-pinned "End Session" bar was removed).
-
-    private var headerBar: some View {
-        HStack(spacing: 10) {
-            // LIVE indicator
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(theme.accent)
-                    .frame(width: 9, height: 9)
-                Text("LIVE")
-                    .font(GSFont.bold(12, relativeTo: .caption2))
-                    .tracking(0.8)
-                    .foregroundStyle(theme.accent)
-            }
-
-            Text(routineName ?? "Session")
-                .font(GSFont.bold(13, relativeTo: .subheadline))
-                .foregroundStyle(theme.text)
-                .lineLimit(1)
-
-            Spacer()
-
-            // "Connecting voice…" pill — Dossier §A.2: "header shows the
-            // same connecting pill as the lobby frame."
-            if case .connecting = VoiceRoomService.shared.state {
-                GSConnectingVoicePill()
-            }
-
-            // Session elapsed — Text timer, never a Swift Timer
-            if let startedAt = liveSession.startedAt {
-                Text(startedAt, style: .timer)
-                    .font(.custom("Archivo-Bold", size: 14).monospacedDigit())
-                    .foregroundStyle(theme.neutral700)
-                    .monospacedDigit()
-            }
-
-            // Voice mixer entry point (Phase O Task 5 item 5) — same
-            // bordered-square idiom as the chat/X buttons beside it; no
-            // canvas frame shows WHERE the mixer opens from (only its own
-            // content), see docs/design/accepted-deviations.json's
-            // "voice-mixer-entry-point" entry.
-            if isVoiceConnected {
-                Button {
-                    showVoiceMixerSheet = true
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(theme.neutral700)
-                        .frame(width: 30, height: 30)
-                        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-
-            // ("Load the bar" was a bordered-square header button here until
-            // 2026-07-28 — it is now the inline `barLoaderCard` widget in the
-            // content column, matching the solo session. See that property.)
-
-            // Session chat (Task 3) — same bordered-square idiom as the X
-            // button beside it (30×30 glyph in a 44×44 tap target); no
-            // canvas frame shows this affordance, see `showChatSheet`'s doc
-            // comment.
-            Button {
-                showChatSheet = true
-            } label: {
-                Image(systemName: "bubble.left.and.bubble.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(theme.neutral700)
-                    .frame(width: 30, height: 30)
-                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                showEndConfirmation = true
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(theme.neutral700)
-                    .frame(width: 30, height: 30)
-                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-    }
-
-    // MARK: - Spotlight header card (my turn) — p06
-    // Exercise-name headline (not the lifter's name — per finding p06 #1), "Set N of M ·
-    // target W × R" subtitle. BPM waveform decoration from the proof is skipped (no
-    // continuous waveform data source exists — the pill's bpm NUMBER is now real,
-    // Phase W Task 5, but the small sparkline under it in frame 2A stays chrome-only:
-    // this app's HR feed is discrete ~5s samples, not a continuous trace to plot).
-
-    private var spotlightHeaderCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 10) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("YOUR TURN")
-                        .font(GSFont.bold(10, relativeTo: .caption2))
-                        .tracking(1.4)
-                        .foregroundStyle(theme.bg.opacity(0.85))
-
-                    Button {
-                        exerciseDetailSheet = currentExerciseForSheet
-                    } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(currentExerciseForSheet?.name ?? "Exercise")
-                                .font(GSFont.heading(26, relativeTo: .title))
-                                .foregroundStyle(theme.bg)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.leading)
-                            Image(systemName: "chevron.right.circle.fill")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(theme.bg.opacity(0.7))
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-                Spacer(minLength: 8)
-                // Phase W Task 5 (watch-hr design §4) — canvas frame 2A's
-                // own HR pill: this is the SPOTLIGHT hero, "your turn" —
-                // always the current (self) user, so `selfID` is the only
-                // key this slot ever reads. See `GSHeartRatePill`'s header
-                // comment for the frame citation.
-                //
-                // Fix wave 1 (CI compile error, `selfID` is `UUID?` —
-                // `appState.currentProfile?.id`, line 234 — but
-                // `heartRateFor(_:)` takes a non-optional `UUID`): unwrapped
-                // here rather than force-unwrapped or defaulted. A nil
-                // `selfID` (no signed-in profile resolved yet) means no
-                // pill — the honest choice, matching every OTHER optional
-                // guard on `selfID` elsewhere in this file (e.g. line 407's
-                // `guard let selfID, ... else { return nil }`).
-                if let selfID, let mine = heartRateFor(selfID) {
-                    GSHeartRatePill(
-                        bpm: mine.bpm,
-                        zone: mine.zone,
-                        showsLiveSuffix: true,
-                        captionColor: theme.bg.opacity(0.85)
-                    )
-                }
-            }
-
-            HStack(spacing: 4) {
-                Text("Set \(currentTurnSetNumber) of \(targetSetsPerLifter)")
-                if let targetText = currentExerciseTargetText {
-                    Text("· \(targetText)")
-                }
-            }
-            .font(GSFont.body(13, relativeTo: .subheadline))
-            .foregroundStyle(theme.bg.opacity(0.85))
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.accent)
-        .cornerRadius(GSMetrics.radiusMd)   // redesign: rounded accent surface
-    }
-
-    // MARK: - Stat timer row (SET TIMER / REST AFTER) — p06
-    // SET TIMER is the live chess clock (state-driven from currentTurnStartedAt).
-    // REST AFTER shows the routine's configured rest duration for this exercise — a
-    // static value, not a running countdown (no rest-phase-active state exists in the
-    // data model; adding one is a behavior change out of scope for this layout wave).
-
-    private var statTimerRow: some View {
-        HStack(spacing: 10) {
-            statTile(kicker: "SET TIMER") {
-                if let ts = liveSession.currentTurnStartedAt {
-                    Text(ts, style: .timer)
-                        .font(.custom("Archivo-Bold", size: 26).monospacedDigit())
-                        .foregroundStyle(theme.text)
-                        .monospacedDigit()
-                } else {
-                    Text("—")
-                        .font(.custom("Archivo-Bold", size: 26))
-                        .foregroundStyle(theme.neutral500)
-                }
-            }
-            statTile(kicker: "REST AFTER") {
-                Text(restAfterText)
-                    .font(.custom("Archivo-Bold", size: 26).monospacedDigit())
-                    .foregroundStyle(theme.text)
-            }
-        }
-    }
-
-    private var restAfterText: String {
-        let seconds = currentRoutineExercise?.restSeconds ?? 120
-        return String(format: "%02d:%02d", seconds / 60, seconds % 60)
-    }
-
-    private func statTile<Content: View>(kicker: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(kicker)
-                .font(GSFont.bold(9, relativeTo: .caption2))
-                .tracking(0.8)
-                .foregroundStyle(theme.neutral500)
-            content()
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-    }
-
-    // MARK: - Load the bar (inline widget — parity with the solo session)
+    // MARK: - Reaction strip
     //
-    // User direction 2026-07-28: "Group session load the bar should be the
-    // same as the solo workout. Not a small button, but a widget." This is
-    // `WorkoutSessionView.barLoaderCard`'s design verbatim — collapsed card
-    // with a `GSBarLoaderMini` preview, expanding to the full
-    // `BarLoaderWidget` — and it renders in BOTH the my-turn and spectating
-    // branches, preserving the original "reachable whether or not it's your
-    // turn" property (plan your bar while someone else lifts).
-    //
-    // Bar/plate settings come from `ThemeStore`'s already-cached
-    // `user_settings` row rather than a fetch of this view's own, matching
-    // how this file already reads `weightUnit`.
-    @ViewBuilder
-    private var barLoaderCard: some View {
-        if let ex = currentExerciseForSheet, ex.equipment.lowercased() == "barbell" {
-            let unit = ThemeStore.shared.weightUnit
-            let plates: [Decimal] = {
-                if let custom = ThemeStore.shared.plateInventory, !custom.isEmpty {
-                    return custom.sorted(by: >)
-                }
-                return unit.standardPlates
-            }()
-            let barInUnit: Decimal = {
-                var value = Units.fromPounds(ThemeStore.shared.barWeightLbs, to: unit)
-                var rounded = Decimal()
-                NSDecimalRound(&rounded, &value, 2, .plain)
-                return rounded
-            }()
-            // Prefill priority mirrors solo: the programmed target, else the
-            // last set I logged for THIS exercise.
-            let prefill: Decimal? = {
-                if let target = currentRoutineExercise?.targetWeight,
-                   let parsed = Decimal(string: target), parsed > 0 { return parsed }
-                return feedSets.first { $0.userID == selfID && $0.exerciseID == ex.id && !$0.isFailed }?.weight
-            }()
-            let targetInUnit = prefill.map { Units.fromPounds($0, to: unit) } ?? barInUnit
-            // Spectate prep face (composite v5): lead with the per-side
-            // plate delta from what's on the bar now (the lifter's last
-            // logged set) to my next weight. My-turn keeps the original
-            // face; so does spectate when either weight is unknown.
-            let prepHeadline: String? = {
-                guard spectateActive, let mine = prefill, mine > 0,
-                      let lifterPounds = currentLifterLastSet?.weight else { return nil }
-                let fromInUnit = Units.fromPounds(lifterPounds, to: unit)
-                let d = PlateDelta.delta(fromWeight: fromInUnit, toWeight: targetInUnit,
-                                         barWeight: barInUnit, plates: plates)
-                return d.isNoChange ? PlateDelta.headline(d)
-                                    : "\(PlateDelta.headline(d)) · PER SIDE"
-            }()
-
-            VStack(alignment: .leading, spacing: 0) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.18)) { showBarLoader.toggle() }
-                } label: {
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "scalemass")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(theme.accent)
-                                Text(prepHeadline != nil ? "Your next" : "Load the bar")
-                                    .font(GSFont.bold(15, relativeTo: .body))
-                                    .foregroundStyle(theme.text)
-                                if prepHeadline != nil, let prefill {
-                                    Text(Units.format(pounds: prefill, unit: unit, rounded: false))
-                                        .font(GSFont.bold(13, relativeTo: .subheadline).monospacedDigit())
-                                        .foregroundStyle(theme.neutral500)
-                                }
-                            }
-                            if let prepHeadline {
-                                Text(prepHeadline)
-                                    .font(GSFont.bold(14, relativeTo: .subheadline).monospacedDigit())
-                                    .foregroundStyle(theme.text.opacity(0.78))
-                            } else {
-                                Text(prefill.map { "\(Units.format(pounds: $0, unit: unit, rounded: false)) · plates & warm-up" }
-                                     ?? "Plates & warm-up ramp")
-                                    .font(GSFont.body(11.5, relativeTo: .caption))
-                                    .foregroundStyle(theme.neutral500)
-                            }
-                        }
-                        Spacer(minLength: 8)
-                        GSBarLoaderMini(target: targetInUnit, barWeight: barInUnit,
-                                        plates: plates, unit: unit)
-                        Image(systemName: showBarLoader ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(theme.neutral500)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 14)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                if showBarLoader {
-                    // Whatever gets dialled in lands in the inline LOG THIS
-                    // SET card's weight field, in the display unit.
-                    BarLoaderWidget(initialPounds: prefill,
-                                    onEnteredPoundsChange: { pounds in
-                                        guard let pounds else { return }
-                                        logWeight = Units.format(pounds: pounds, unit: unit,
-                                                                 rounded: false, includeUnit: false)
-                                    })
-                        .padding(.horizontal, 14)
-                        .padding(.bottom, 14)
-                }
-            }
-            .background(theme.surface)
-            .cornerRadius(GSMetrics.radiusMd)
-        }
-    }
-
-    // MARK: - Inline "LOG THIS SET" card — p06
-    // Replaces the modal LogSetSheet for normal (non-penalty) set logging so logging
-    // happens without leaving the screen, per finding p06 #3. The proof only shows
-    // reps/weight steppers + an RPE scale; a compact "Failed set" toggle + optional note
-    // field are kept (smaller, secondary) so the fail/note capability the old sheet
-    // offered isn't silently dropped.
-
-    private var logThisSetCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("LOG THIS SET")
-                .font(GSFont.bold(10, relativeTo: .caption2))
-                .tracking(1.2)
-                .foregroundStyle(theme.neutral500)
-
-            HStack(spacing: 10) {
-                stepperCell(
-                    theme: theme,
-                    label: "Reps",
-                    value: $logReps,
-                    borderColor: theme.divider,
-                    valueColor: theme.text,
-                    keyboard: .numberPad,
-                    onDecrement: { decrementInt(&logReps) },
-                    onIncrement: { incrementInt(&logReps) }
-                )
-                stepperCell(
-                    theme: theme,
-                    // Units sweep: the USER'S unit, not the exercise's
-                    // default — commitInlineLog parses in this.
-                    // Design language §9 (T8.2): the kicker states the
-                    // loading convention, same helper as the turn card.
-                    label: Units.weightKicker(unit: ThemeStore.shared.weightUnit,
-                                              equipment: currentExerciseForSheet?.equipment,
-                                              unilateral: currentExerciseForSheet?.unilateral),
-                    accessibilityLabel: "Weight",
-                    value: $logWeight,
-                    // Accent discipline (design language §2): the weight cell
-                    // matches Reps beside it — flat, neutral furniture.
-                    borderColor: theme.divider,
-                    valueColor: theme.text,
-                    keyboard: .decimalPad,
-                    onDecrement: { decrementDecimal(&logWeight, step: turnTunerStep) },
-                    onIncrement: { incrementDecimal(&logWeight, step: turnTunerStep) }
-                )
-            }
-
-            // Fix wave 1 (inline-card extension) — reuses `PlateStackDisclosure`
-            // (LogSetSheet.swift:397), the same free-standing view LogSetSheet's own
-            // "Plates" row renders (LogSetSheet.swift:124), instead of copy-pasting its
-            // body per the reviewer's explicit ruling against that approach. Same
-            // hidden/inert-for-empty/invalid/non-positive-weight gate as LogSetSheet
-            // and the same `Decimal.parseUserInput(_:)` locale-safe parse idiom
-            // `commitInlineLog()` (below) already uses for this exact field (Phase O
-            // Task 2 — was the bare `Decimal(string:)` initializer) — this card just
-            // holds its weight in `logWeight` rather than LogSetSheet's `weight`
-            // (LogSetSheet.swift:22).
-            if let targetWeight = Decimal.parseUserInput(logWeight), targetWeight > 0 {
-                // Units sweep: `target` is what the user TYPED, i.e. already
-                // in their unit — the disclosure now runs its plate math
-                // natively in that unit (see PlateStackDisclosure).
-                PlateStackDisclosure(target: targetWeight, theme: theme,
-                                     unit: ThemeStore.shared.weightUnit,
-                                     isExpanded: $showPlateStack)
-            }
-
-            // Redesign 2026-07-30: RPESwipeTrack replaces the segment bar AND
-            // the separate "Failed set" Toggle — FAIL is the terminal position
-            // of the same scale, and arming it snaps the value to 10 (a fail
-            // IS an RPE 10; storage writes isFailed = true AND rpe = 10).
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("RPE · effort")
-                        .font(GSFont.body(11, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                    Spacer()
-                    Text(logIsFailed ? "10 · Miss" : "\(Int(logRPE)) · \(rpeLabel(logRPE))")
-                        .font(GSFont.heading(12, relativeTo: .caption))
-                        .foregroundStyle(theme.accent700)
-                }
-                RPESwipeTrack(value: $logRPE, isFailed: $logIsFailed, theme: theme)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("NOTE")
-                    .font(GSFont.bodyMedium(9, relativeTo: .caption2))
-                    .tracking(1.0)
-                    .foregroundStyle(theme.neutral500)
-                TextField("Anything to remember?", text: $logNote, axis: .vertical)
-                    .lineLimit(1...2)
-                    .font(GSFont.body(13, relativeTo: .body))
-                    .foregroundStyle(theme.text)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-    }
+    // MOVED TO `Live/RoundPieces.swift` as the value-in `ReactionStrip` (plan
+    // task S6, fix round 1 / F3). It sat here with no call site from S4 until
+    // then, which meant the crew could not react from the live view at all.
+    // Fix round 5 (final review, finding 6) finished the job: on master the
+    // pills lived INSIDE the dock, so the strip belongs on every page that
+    // shows one — the round wait's and spotter's feet, `turnChrome`
+    // (Rounds-my-turn and Freestyle) and Together's foot, five of five.
+    // `reactionEmojis` above is still the one list. Nothing about the pills'
+    // drawing changed.
 
     // Reps/weight stepper cell and its arithmetic helpers now live in LogSetSheet.swift
     // (shared, internal — see `stepperCell`, `decrementInt`/`incrementInt`/
     // `decrementDecimal`/`incrementDecimal`) so this view no longer duplicates them.
 
     // MARK: - Rotation strip (my turn) — p06 "NOW / NEXT / 3RD / 4TH" tiles
-
-    private var rotationStrip: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("ROTATION")
-                .font(GSFont.bold(10, relativeTo: .caption2))
-                .tracking(1.2)
-                .foregroundStyle(theme.neutral500)
-
-            HStack(spacing: 6) {
-                ForEach(rotationTiles, id: \.userID) { tile in
-                    let isNow = tile.label == "NOW"
-                    // Speaking ring (Task 4) — see `rosterCard`'s comment on
-                    // why only the "talking" sub-state is derivable here.
-                    let isSpeaking = VoiceRoomService.shared.speakingParticipantIDs
-                        .contains(tile.userID.uuidString.lowercased())
-                    VStack(spacing: 4) {
-                        Text(tile.label)
-                            .font(GSFont.bold(9, relativeTo: .caption2))
-                            .tracking(0.6)
-                            .foregroundStyle(isNow ? theme.bg.opacity(0.85) : theme.neutral500)
-                        Text(tile.userID == selfID ? "You" : tile.profile.username)
-                            .font(GSFont.bold(13, relativeTo: .body))
-                            .foregroundStyle(isNow ? theme.bg : theme.text)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.8)
-                    }
-                    .padding(.vertical, 10)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .background(isNow ? theme.accent : theme.surface)
-                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(
-                        isSpeaking ? theme.accent700 : (isNow ? Color.clear : theme.divider),
-                        lineWidth: isSpeaking ? 2 : 1))
-                }
-            }
-        }
-    }
-
-    // MARK: - Spectating header card ("CURRENT LIFT") — p07
-
-    private var spectatingHeaderCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("CURRENT LIFT")
-                .font(GSFont.bold(10, relativeTo: .caption2))
-                .tracking(1.2)
-                .foregroundStyle(theme.neutral500)
-
-            HStack(alignment: .firstTextBaseline) {
-                Button {
-                    exerciseDetailSheet = currentExerciseForSheet
-                } label: {
-                    HStack(alignment: .firstTextBaseline, spacing: 7) {
-                        Text(currentExerciseForSheet?.name ?? "Exercise")
-                            .font(GSFont.heading(22, relativeTo: .title2))
-                            .foregroundStyle(theme.text)
-                            .multilineTextAlignment(.leading)
-                        Image(systemName: "chevron.right.circle.fill")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(theme.neutral500)
-                    }
-                }
-                .buttonStyle(.plain)
-                Spacer()
-                VStack(alignment: .trailing, spacing: 1) {
-                    Text("Round \(currentTurnSetNumber)")
-                        .font(GSFont.body(11, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                    Text("Set \(totalLoggedForCurrentExercise) / \(totalExpectedForCurrentExercise)")
-                        .font(GSFont.bodyMedium(11, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral700)
-                }
-            }
-
-            progressSegments
-
-            if isOrganizer && liveSession.currentTurnUserID != nil {
-                Button {
-                    Task { await skipTurn() }
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "forward.end")
-                            .font(.system(size: 11))
-                        Text("Skip turn")
-                            .font(GSFont.bodyMedium(12, relativeTo: .caption))
-                    }
-                    .foregroundStyle(theme.accent)
-                }
-                .buttonStyle(.plain)
-                .frame(minHeight: 44)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-    }
-
-    private var progressSegments: some View {
-        let total = max(totalExpectedForCurrentExercise, 1)
-        let filled = min(totalLoggedForCurrentExercise, total)
-        return HStack(spacing: 2) {
-            ForEach(0..<total, id: \.self) { i in
-                Rectangle()
-                    .fill(i < filled ? theme.accent : theme.neutral400)
-                    .frame(height: 5)
-            }
-        }
-    }
-
-    // MARK: - Roster grid (spectating) — p07 2×2 status cards
-    // "JORDAN IS LOGGING" live-typing preview from the proof is skipped: it would require
-    // broadcasting in-progress form input, which doesn't exist anywhere in the realtime
-    // model (documented per instructions to skip anything requiring absent data).
-
-    private var rosterGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
-            ForEach(rotationOrder, id: \.participant.userID) { item in
-                rosterCard(item)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func rosterCard(_ item: (participant: SessionParticipant, profile: Profile)) -> some View {
-        let status = rosterStatus(for: item.participant.userID)
-        let isLifting = status == .lifting
-        // Speaking ring (Task 4, Dossier §A.2's lobby-strip "talking" state,
-        // reused here for the live-session roster grid).
-        let identity = item.participant.userID.uuidString.lowercased()
-        let voice = VoiceRoomService.shared
-        let isSpeaking = voice.speakingParticipantIDs.contains(identity)
-        // Phase O Task 5 item 4 ("muted-others roster rows") — mirrors
-        // LobbyView.participantRow's identical derivation now that
-        // VoiceRoomService exposes a roster + both mute-state sets; see
-        // that view's doc comment for the full "muted" definition (own-mic
-        // mute OR muted-by-you via the mixer, one shared caption for both).
-        let isInVoiceRoom = voice.connectedParticipantIDs.contains(identity)
-        let isMuted = isInVoiceRoom && !isSpeaking &&
-            (voice.remoteMutedParticipantIDs.contains(identity) || voice.locallyMutedParticipantIDs.contains(identity))
-
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 5) {
-                Text(rosterStatusLabel(status))
-                    .font(GSFont.bold(9, relativeTo: .caption2))
-                    .tracking(0.8)
-                    .foregroundStyle(isLifting ? theme.bg.opacity(0.85) : theme.neutral500)
-                if status == .done {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(theme.accent700)
-                }
-                if isSpeaking {
-                    GSTalkingBars(color: isLifting ? theme.bg : theme.accent700, barWidth: 2, maxHeight: 9)
-                    Text("talking")
-                        .font(GSFont.bold(9, relativeTo: .caption2))
-                        .foregroundStyle(isLifting ? theme.bg.opacity(0.85) : theme.accent700)
-                } else if isMuted {
-                    Text("muted")
-                        .font(GSFont.body(9, relativeTo: .caption2))
-                        .foregroundStyle(isLifting ? theme.bg.opacity(0.7) : theme.neutral500)
-                }
-            }
-
-            HStack(spacing: 6) {
-                ZStack {
-                    Rectangle()
-                        .fill(isLifting ? theme.bg.opacity(0.25) : theme.neutral400)
-                        .frame(width: 26, height: 26)
-                    Text(String(item.profile.username.prefix(2)).uppercased())
-                        .font(GSFont.bold(10, relativeTo: .caption2))
-                        .foregroundStyle(isLifting ? theme.bg : theme.text)
-                }
-                // Avatar glow while talking — blessed frames' solid 3px
-                // accent-30% spread (live-voice frame 2's audible-now rows);
-                // bg-tinted on the accent-filled lifting card so it stays
-                // visible against the accent fill.
-                .background {
-                    if isSpeaking {
-                        Rectangle()
-                            .fill((isLifting ? theme.bg : theme.accent).opacity(0.3))
-                            .frame(width: 32, height: 32)
-                    }
-                }
-                Text(item.participant.userID == selfID ? "You" : item.profile.username)
-                    .font(GSFont.bold(13, relativeTo: .body))
-                    .foregroundStyle(isLifting ? theme.bg : theme.text)
-                    .lineLimit(1)
-            }
-
-            rosterCardDetail(item.participant.userID, status: status)
-
-            // Phase W Task 5 (watch-hr design §4) — zone-colored HR pill,
-            // canvas frame 2B's exact heart+number+"BPM" shape (see
-            // `GSHeartRatePill`'s own header comment for the frame
-            // citation + the "any status, not just LIFTING NOW" generalization).
-            if let hr = heartRateFor(item.participant.userID) {
-                GSHeartRatePill(
-                    bpm: hr.bpm,
-                    zone: hr.zone,
-                    captionColor: isLifting ? theme.bg.opacity(0.85) : theme.neutral500
-                )
-                .padding(.top, 2)
-            }
-        }
-        .padding(10)
-        .frame(maxWidth: .infinity, minHeight: 84, alignment: .leading)
-        .background(isLifting ? theme.accent : theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(
-            isSpeaking ? theme.accent700 : (isLifting ? Color.clear : theme.divider),
-            lineWidth: isSpeaking ? 2 : 1))
-        .opacity(isMuted ? 0.7 : 1)
-    }
-
-    private func rosterStatusLabel(_ status: RosterStatus) -> String {
-        switch status {
-        case .lifting: return "LIFTING NOW"
-        case .upNext:  return "UP NEXT"
-        case .done:    return "DONE"
-        case .waiting: return "WAITING"
-        }
-    }
-
-    @ViewBuilder
-    private func rosterCardDetail(_ userID: UUID, status: RosterStatus) -> some View {
-        switch status {
-        case .lifting:
-            if let re = currentRoutineExercise {
-                Text("Set \(setCount(userID: userID, exerciseID: currentExerciseForSheet?.id ?? UUID()) + 1) · target \(targetWeightText(re.targetWeight)) × \(re.targetReps ?? "—")")
-                    .font(GSFont.body(11, relativeTo: .caption))
-                    .foregroundStyle(theme.bg.opacity(0.9))
-            }
-        case .upNext:
-            if let last = lastSetAnyExercise(userID) {
-                Text("Last set")
-                    .font(GSFont.body(10, relativeTo: .caption2))
-                    .foregroundStyle(theme.neutral500)
-                Text("\(last.weight.map(weightText) ?? "—") × \(last.reps.map { "\($0)" } ?? "—")")
-                    .font(GSFont.bodyMedium(13, relativeTo: .body))
-                    .foregroundStyle(theme.text)
-            } else {
-                Text("Get ready")
-                    .font(GSFont.body(11, relativeTo: .caption))
-                    .foregroundStyle(theme.accent700)
-            }
-        case .done:
-            if let last = lastSetForCurrentExercise(userID) {
-                Text("\(last.weight.map(weightText) ?? "—") × \(last.reps.map { "\($0)" } ?? "—")")
-                    .font(GSFont.bodyMedium(13, relativeTo: .body))
-                    .foregroundStyle(theme.text)
-                // A failed set stores rpe = 10 (see RPE terminal-position
-                // decision), so rendering rpe alone would show a miss as
-                // "RPE 10.0" — the signature of a max-effort SUCCESS, to the
-                // whole crew. isFailed is the authoritative signal and wins.
-                // neutral700 not neutral500: neutral500 measures 2.96:1 on
-                // surface, and a label this consequential has to be readable.
-                if last.isFailed {
-                    Text("FAIL")
-                        .font(GSFont.bodyMedium(10, relativeTo: .caption2))
-                        .tracking(0.6)
-                        .foregroundStyle(theme.neutral700)
-                } else if let rpe = last.rpe {
-                    Text("RPE \(decimalString(rpe))")
-                        .font(GSFont.body(10, relativeTo: .caption2))
-                        .foregroundStyle(theme.neutral500)
-                }
-            }
-        case .waiting:
-            if let re = currentRoutineExercise, re.targetWeight != nil || re.targetReps != nil {
-                Text("Target \(targetWeightText(re.targetWeight)) × \(re.targetReps ?? "—")")
-                    .font(GSFont.body(11, relativeTo: .caption))
-                    .foregroundStyle(theme.neutral500)
-            } else {
-                Text("Waiting")
-                    .font(GSFont.body(11, relativeTo: .caption))
-                    .foregroundStyle(theme.neutral500)
-            }
-        }
-    }
-
-    // MARK: - Bottom action bar
-    // My turn → pinned primary CTA (commits the inline card's state via logSetAndAdvance,
-    // UNCHANGED order of operations). Spectating → dashed rotation hint, no CTA (matches
-    // p07's "You're up next — ~2 min" treatment, minus the fabricated ETA — see
-    // `upcomingTurnHint`).
-
-    @ViewBuilder
-    private var bottomActionBar: some View {
-        if isMyTurn {
-            Button {
-                commitInlineLog()
-            } label: {
-                HStack {
-                    if isLoggingSet {
-                        ProgressView()
-                            .controlSize(.small)
-                            .tint(theme.bg)
-                        Text("Logging…")
-                            .font(GSFont.bold(16, relativeTo: .body))
-                        Spacer()
-                    } else {
-                        Text("Log Set & Pass")
-                            .font(GSFont.bold(16, relativeTo: .body))
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 15, weight: .semibold))
-                    }
-                }
-                .foregroundStyle(theme.bg)
-                .padding(.horizontal, 16)
-                // 12.5pt vertical (was 16): content + 25 + the gs3D style's
-                // 7pt lip keeps the CTA's exact prior footprint.
-                .padding(.vertical, 12.5)
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.gs3D(face: theme.accent, cornerRadius: GSMetrics.radiusSm))
-            // `leadingInt` — a rep range must not dead-end the CTA (see the
-            // helper in LogSetSheet.swift).
-            .disabled(isLoggingSet || (leadingInt(logReps) == nil && !logIsFailed))
-            .background(theme.bg)
-        } else if let hint = upcomingTurnHint {
-            Text(hint)
-                .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
-                .foregroundStyle(theme.neutral700)
-                .frame(maxWidth: .infinity, minHeight: 48)
-                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(theme.bg)
-        }
-    }
+    //
+    // MOVED TO `Live/RoundPieces.swift` as the value-in `TurnStrip` (plan
+    // task S8). It had had no call site since the strip took the page that
+    // mounted it; spotter mode is the caller, and `turnStripTiles` below
+    // builds its tiles from `rotationTiles`, which is unchanged. Nothing
+    // about the drawing changed — only who owns it and whether the current
+    // tile is filled with accent, which is now the caller's to say.
 
     // MARK: - Penalty banner
     // Canvas: accent fill "YOU OWE N BURPEES" kicker, large count, Log burpees button
@@ -3930,167 +2446,6 @@ struct GroupSessionLiveView: View {
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 16)
-    }
-
-    private var penaltyBanner: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("YOU OWE")
-                .font(GSFont.bold(10, relativeTo: .caption2))
-                .tracking(1.4)
-                .foregroundStyle(theme.bg.opacity(0.85))
-
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("\(burpeesRemaining)")
-                    .font(GSFont.bold(48, relativeTo: .largeTitle))
-                    .foregroundStyle(theme.bg)
-                    .lineLimit(1)
-                Text("burpees")
-                    .font(GSFont.bold(18, relativeTo: .title2))
-                    .foregroundStyle(theme.bg)
-            }
-
-            Button {
-                showLogSetSheet = true
-            } label: {
-                HStack {
-                    Text("Log burpees")
-                        .font(GSFont.bold(14, relativeTo: .body))
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
-                }
-                // theme.bg, NOT theme.accent (UI audit 2026-07-29 measured
-                // ~1.78:1). `GSTheme.withAccent` collapses accent600/700/800
-                // onto accent.base, so this label and the accent-filled
-                // banner behind it resolved to the SAME colour — accent text
-                // on accent fill. The kicker and count two lines above
-                // already use theme.bg; this now matches them.
-                .foregroundStyle(theme.bg)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .frame(minHeight: 44)
-                .background(theme.bg.opacity(0.15))
-                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.bg.opacity(0.4), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-
-            // Secondary entry into the group-wide Burpee Ledger (Canvas
-            // Completion Task 3, proof p25) — only for group sessions;
-            // ad-hoc/solo sessions have no group-scoped ledger to show.
-            if let ledgerGroup {
-                NavigationLink {
-                    // Fix wave 1 (reviewer Finding F4): threads this view's
-                    // own session id through so BurpeeLedgerView's "Log
-                    // burpees now" CTA can tell whether ITS target session
-                    // is the SAME one already live further down the nav
-                    // stack — see that property's doc comment for why.
-                    BurpeeLedgerView(group: ledgerGroup, pushedFromLiveSessionID: session.id)
-                } label: {
-                    HStack(spacing: 4) {
-                        Text("Crew ledger")
-                            .font(GSFont.bodyMedium(12, relativeTo: .caption))
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .semibold))
-                    }
-                    .foregroundStyle(theme.bg.opacity(0.85))
-                    .frame(minHeight: 44)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.accent700.opacity(0.85))
-        .padding(.horizontal, 16)
-    }
-
-    // MARK: - Set feed
-    // Reverse-chron, cap 30 rows; penalty rows tagged; username · exercise · reps×weight
-
-    private var feedSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            GSSectionHeader("Live Feed")
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .padding(.bottom, 8)
-
-            // feedSets is already newest-first (prepended on INSERT)
-            ForEach(feedSets.prefix(30)) { log in
-                feedRow(log)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-
-                if log.id != feedSets.prefix(30).last?.id {
-                    Rectangle()
-                        .fill(theme.divider)
-                        .frame(height: 1)
-                        .padding(.horizontal, 16)
-                }
-            }
-        }
-    }
-
-    private func feedRow(_ log: SetLog) -> some View {
-        HStack(spacing: 8) {
-            // Avatar initial for the logger
-            let loggerInitials: String = {
-                let name = participants.first(where: { $0.participant.userID == log.userID })?.profile.username ?? "?"
-                return String(name.prefix(2)).uppercased()
-            }()
-            ZStack {
-                Rectangle()
-                    .fill(log.userID == selfID ? theme.accent : theme.neutral400)
-                    .frame(width: 28, height: 28)
-                Text(loggerInitials)
-                    .font(GSFont.bold(10, relativeTo: .caption2))
-                    .foregroundStyle(theme.bg)
-            }
-
-            VStack(alignment: .leading, spacing: 1) {
-                let username = participants.first(where: { $0.participant.userID == log.userID })?.profile.username ?? "?"
-                let exerciseName = exerciseNames[log.exerciseID] ?? "Exercise"
-
-                HStack(spacing: 4) {
-                    Text(username)
-                        .font(GSFont.bold(12, relativeTo: .caption))
-                        .foregroundStyle(theme.text)
-                    Text("· \(exerciseName)")
-                        .font(GSFont.body(12, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                        .lineLimit(1)
-                }
-
-                let repsText = log.reps.map { "\($0)" } ?? "—"
-                // Units sweep: stored-lbs → display unit (renamed from
-                // `weightText` so it can't shadow the helper it calls).
-                let weightStr = log.weight.map { weightText($0) } ?? "—"
-                HStack(spacing: 4) {
-                    Text("\(repsText) × \(weightStr)")
-                        .font(GSFont.bodyMedium(13, relativeTo: .body))
-                        .foregroundStyle(theme.text)
-                    if log.isPenalty {
-                        GSTag(text: "penalty", style: .accent)
-                    }
-                    if log.isFailed {
-                        GSTag(text: "failed", style: .neutral)
-                    }
-                    // Phase O Task 3 — syncing indicator (system-designed, no canvas
-                    // frame; docs/design/accepted-deviations.json's
-                    // "offline-syncing-indicator" entry). Same GSTag(.outline) chip
-                    // idiom this row's own penalty/failed tags already use.
-                    if OfflineSetLogQueue.shared.pendingSetLogIDs.contains(log.id) {
-                        GSTag(text: "syncing", style: .outline)
-                    }
-                }
-            }
-
-            Spacer()
-
-            // Elapsed time since logged
-            Text(log.loggedAt, style: .relative)
-                .font(GSFont.body(10, relativeTo: .caption2))
-                .foregroundStyle(theme.neutral500)
-        }
     }
 
     // MARK: - LogSetSheet content (penalty / burpee logging only — normal sets log inline)
@@ -4254,9 +2609,20 @@ struct GroupSessionLiveView: View {
         showPlateStack = false
     }
 
-    /// Commit the inline "LOG THIS SET" card — delegates to `logSetAndAdvance` UNCHANGED
-    /// (same priorMax-before-insert ordering, same PR pipeline, same advanceTurn call).
-    /// Only the caller changed (was a sheet's onLog closure).
+    /// Commit the inline "LOG THIS SET" card — delegates to `logSetAndAdvance`
+    /// (same priorMax-before-insert ordering, same PR pipeline). Only the
+    /// caller changed (was a sheet's onLog closure).
+    ///
+    /// THE INSERT IS THE TRANSACTION (ruling R-B22): `logSetAndAdvance`
+    /// answers `true` the moment the set is durably recorded, so everything
+    /// below — closing the loader, dismissing the keyboard, re-prefilling —
+    /// runs on every saved set in every style, whatever the follow-up RPCs
+    /// went on to return. `false` now means one thing only: nothing was
+    /// saved. That is what makes the retry this card offers honest, and it is
+    /// what closes the duplicate hazard the final review found (finding 1),
+    /// where a P0001 from `advance_turn` — raised at every Together and
+    /// Freestyle lifter who was not the turn holder — kept the card up over a
+    /// set that was already in the database.
     ///
     /// `isLoggingSet` guards against re-entrancy: the CTA stays tappable for the whole
     /// async round-trip otherwise, and a double-tap would double-insert the set and
@@ -4298,11 +2664,19 @@ struct GroupSessionLiveView: View {
             // logging over the open loader looked like nothing happened) —
             // close the loader and keyboard so the my-turn page is reset when
             // the rotation returns, and let the turn advance flip the body to
-            // the spectate layout. Failure keeps everything up for a retry —
-            // it also must NOT enter the rest interlude below.
+            // the round wait (plan task S6). A set that never saved keeps
+            // everything up for a retry — it also must NOT enter the rest
+            // interlude below.
             withAnimation(.easeInOut(duration: 0.18)) { showBarLoader = false }
             UIApplication.shared.sendAction(
                 #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            // Together and Freestyle have no turn to hand the card back
+            // through (fix round 4 / finding 1, ruling R-B21) — Rounds gets
+            // its reset from the turn/exercise-change handlers above once
+            // the rotation returns to this lifter; these two styles never
+            // see that handler fire, so they get the reset explicitly here,
+            // on every successful log.
+            if style != .rounds { prefillLogInputs() }
             // Solo-in-a-rotation: the pass came straight back. Enter the
             // rest interlude instead of silently staying on my-turn — the
             // screen visibly changes, the rest is real, and START SET cuts
@@ -4382,20 +2756,16 @@ struct GroupSessionLiveView: View {
     /// fetched models — `liveSession` (`WorkoutSession`), `rotationOrder`
     /// (`[(SessionParticipant, Profile)]`, this file's line 257),
     /// `currentExerciseForSheet` (`Exercise`, this file's own property
-    /// above) — the exact same
-    /// derivations `spotlightHeaderCard`/`spectatingHeaderCard` already
-    /// render, not a second computation. See `WatchConnectivityBridge`'s
+    /// above) — the exact same derivations the my-turn page already
+    /// renders, not a second computation. See `WatchConnectivityBridge`'s
     /// header doc comment for why the bridge itself accepts this
     /// already-built payload instead of re-deriving it. Called from
     /// `.onAppear` (initial snapshot), `.onChange(of: liveSession.currentTurnUserID)`
     /// (turn passes — the state most likely to matter to someone glancing
     /// at their Watch), `.onChange(of: liveSession.state)` (Task 3 fix wave
     /// 1 addition, immediately above both `.onChange` blocks in `body` —
-    /// see that handler's own comment), `openAndSubscribe()` twice (once
-    /// right after `reload()`, once more — Task 3 addition — after
-    /// `soundFavorites` finishes loading, since that fetch runs LATER in the
-    /// same function and this payload's `soundboardFavorites` field would
-    /// otherwise stay empty until the next turn change), and `endSession()`.
+    /// right after `reload()`, once more once the live subscription is up),
+    /// and `endSession()`.
     /// Best-effort: `WatchConnectivityBridge.updateSessionState` itself
     /// never throws into this call site.
     ///
@@ -4447,24 +2817,6 @@ struct GroupSessionLiveView: View {
             isMyTurn: isMyTurn,
             burpeesOwed: burpeesRemaining,
             burpeesPaid: penaltyLogged,
-            // Task 3 fix wave 1 (reviewer finding, IMPORTANT 1 + 2) —
-            // `dockSounds` (line 166 above) already encodes the EXACT same
-            // "favorites, or the first 4 curated sounds until any are
-            // chosen" fallback the phone's own soundboard dock ribbon
-            // renders. Sending raw `soundFavorites` here (the old shape)
-            // diverged from that: an empty-favorites watch showed "No
-            // favorites yet" while the phone's own dock, right next to it,
-            // was showing 4 curated tiles. `.label` (`displayName ?? slug`,
-            // `Models/Soundboard.swift:16`) is ADDITIVE alongside the
-            // slugs, same order — the watch's TAP path
-            // (`SoundboardView.soundTile` -> `WatchSessionStore.
-            // tapSoundboard(slug:)` -> `WatchConnectivityBridge.
-            // handleSoundboardTap`) still sends the SLUG back for playback,
-            // unchanged; labels are display-only, resolved here so
-            // `SoundboardSound`/`SoundboardRepository` (`GymSync`-only,
-            // Supabase-shaped) never need to compile into the watch target.
-            soundboardFavorites: dockSounds.map(\.slug),
-            soundboardFavoriteLabels: dockSounds.map(\.label),
             isActive: WatchDisplayFormatting.isSessionActive(state: liveSession.state),
             // Task 5 (watch-hr design §4) — tells the Watch whether to start
             // its HR sampler for this session. DERIVED live from
@@ -4526,7 +2878,7 @@ struct GroupSessionLiveView: View {
                 ledgerGroup = try await GroupRepository.fetch(id: groupID)
             } catch {
                 AppLogger.sessions.warning(
-                    "GroupSessionLiveView openAndSubscribe: GroupRepository.fetch failed for group \(groupID, privacy: .public) on a real group session — completion will downgrade to SessionRecapView instead of frame-8 GroupRecapView: \(error, privacy: .public)")
+                    "SessionLiveView openAndSubscribe: GroupRepository.fetch failed for group \(groupID, privacy: .public) on a real group session — completion will downgrade to SessionRecapView instead of frame-8 GroupRecapView: \(error, privacy: .public)")
             }
         }
         await liveService.subscribe(
@@ -4562,10 +2914,6 @@ struct GroupSessionLiveView: View {
                 }
             }
         )
-        // Favorites ribbon (Task 3): catalog + chosen favorites. Failures degrade
-        // to the curated-first-4 fallback in `dockSounds` — never blocks the session.
-        soundCatalog = (try? await SoundboardRepository.fetchCatalog()) ?? []
-        soundFavorites = (try? await SoundboardFavoritesRepository.get()) ?? []
         // Task 5 — the `shareHeartRate` fetch that used to live here was
         // removed: `pushWatchSessionState()` now reads `ThemeStore.shared
         // .shareHeartRate` live on every call instead (see that call site's
@@ -4574,44 +2922,40 @@ struct GroupSessionLiveView: View {
         // "runs on every launch that reaches signed-in + profile-loaded
         // state"), well before a user can navigate deep enough to reach a
         // live session, so no separate fetch is needed here.
-        // Phase W Task 3 — `soundFavorites` finishes loading AFTER the
-        // `pushWatchSessionState()` call above (which itself already re-runs
-        // post-`reload()`), so a Watch that's already reachable would
-        // otherwise never see the soundboard favorites until the next turn
-        // change. Re-push once more now that they're actually in.
+        // Re-push now that the live subscription is up, so a Watch that was
+        // already reachable sees this session's current state.
         pushWatchSessionState()
         await subscribeBroadcast()
-        if isMyTurn { prefillLogInputs() }
+        // `logControlIsMine`, not `isMyTurn` (fix round 4 / finding 1,
+        // ruling R-B21) — this is the PAGE-APPEAR prefill, and Together and
+        // Freestyle open with no turn at all, so `isMyTurn` never fired it:
+        // the entry sat blank, forever, for every lifter in either style.
+        if logControlIsMine { prefillLogInputs() }
         // Initial heartbeat — the scenePhase→active heartbeat above only
         // fires on a later transition, so this covers "already foreground,
         // just opened the session" (push-dossier.md §A.4).
         try? await SessionRepository.touchActivity(sessionID: liveSession.id)
     }
 
-    /// Subscribe to broadcast events (soundboard + reaction). Mirrors the SessionLiveService
+    /// Subscribe to broadcast events (reactions + swaps). Mirrors the SessionLiveService
     /// lifecycle — call from .task and re-call on scenePhase → active reload path.
     @MainActor
     private func subscribeBroadcast() async {
         await broadcastService.subscribe(
             sessionID: liveSession.id,
-            onSoundboard: { userID, slug in
-                // Skip own soundboard echo — sender already played locally on tap.
-                guard userID != selfID else { return }
-                // Incoming remote sound: play locally, land the plate on the
-                // lifter card, show the transient overlay.
-                // Closures are @MainActor, so @State mutations are safe here.
-                landPlate(slug: slug, senderID: userID)
-                Task { @MainActor in
-                    await SoundboardPlayer.shared.play(slug: slug)
-                    let name = await SoundboardPlayer.shared.displayName(for: slug)
-                    let username = participants
-                        .first(where: { $0.participant.userID == userID })?.profile.username
-                        ?? "Someone"
-                    await showSoundOverlay("\(username) 🔊 \(name)")
-                }
-            },
+            // The soundboard PARAMETER left with the service's soundboard
+            // half in plan task S11; the reaction stream beside it stays
+            // (plan constraint 21).
             onReaction: { _, emoji in
                 Task { @MainActor in
+                    // "I need a minute" rides this channel (plan task S7):
+                    // the marker extends THIS client's threshold as well as
+                    // floating its glyph, so the whole crew's skip offer
+                    // moves out together. Any count above one buys nothing,
+                    // so a self-echo double-count is harmless.
+                    if emoji == RoundCopy.minuteMarker {
+                        minuteExtensionsThisRound += 1
+                    }
                     await showReactionOverlay(emoji)
                 }
             },
@@ -4620,15 +2964,15 @@ struct GroupSessionLiveView: View {
             }
         )
         // Phase W Task 5 (watch-hr design §4) — subscribes alongside the
-        // soundboard/reaction broadcast subscribe immediately above, per
-        // the task brief's explicit instruction to add this "alongside its
-        // existing broadcast subscriptions." `onHeartRate` is already
+        // reaction broadcast subscribe immediately above, per the task
+        // brief's explicit instruction to add this "alongside its existing
+        // broadcast subscriptions." `onHeartRate` is already
         // `@MainActor`-typed (`HeartRateBroadcastService.subscribe`'s own
-        // signature), so `receiveHeartRate` is called directly here, same
-        // as `onSoundboard`'s guard-then-mutate shape — no extra `Task {
-        // @MainActor in ... }` wrapper needed the way `onReaction` above
-        // uses one (that wrapper exists only because `showReactionOverlay`
-        // is itself `async`; `receiveHeartRate` is synchronous).
+        // signature), so `receiveHeartRate` is called directly here — no
+        // extra `Task { @MainActor in ... }` wrapper needed the way
+        // `onReaction` above uses one (that wrapper exists only because
+        // `showReactionOverlay` is itself `async`; `receiveHeartRate` is
+        // synchronous).
         await heartRateService.subscribe(
             sessionID: liveSession.id,
             onHeartRate: { userID, bpm, zone in
@@ -4826,7 +3170,17 @@ struct GroupSessionLiveView: View {
     @MainActor
     private func receiveHeartRate(userID: UUID, bpm: Int, zone: String?) {
         let now = Date()
-        heartRates[userID] = (bpm, HeartRateZone(rawValue: zone ?? ""), now)
+        let parsedZone = HeartRateZone(rawValue: zone ?? "")
+        heartRates[userID] = (bpm, parsedZone, now)
+        // Together's timeline (plan task S9): the last reading of each
+        // interval, per lifter. A no-op for the other two styles, which draw
+        // no timeline -- and free, because the sample is already here.
+        // The BROADCAST zone rides along (fix round 3 / F7) -- the same
+        // `parsedZone` the live pill above reads, never recomputed a
+        // second time from `bpm`.
+        if style == .together, let position = togetherPosition {
+            togetherTrace.record(userID: userID, bpm: bpm, zone: parsedZone, interval: position.index)
+        }
         heartRateExpiryTasks[userID]?.cancel()
         heartRateExpiryTasks[userID] = Task { @MainActor in
             try? await Task.sleep(nanoseconds: UInt64(Self.heartRateStaleAfter * 1_000_000_000))
@@ -4849,22 +3203,15 @@ struct GroupSessionLiveView: View {
     /// Freshness-gated read — `HeartRateFreshness.isFresh` (`Services/
     /// HeartRateZone.swift`) is the AUTHORITATIVE staleness check (see that
     /// type's own doc comment); the auto-purge `Task` above is memory
-    /// hygiene + a re-render trigger, not the source of truth. `rosterCard`
-    /// and `spotlightHeaderCard` both call this rather than reading
+    /// hygiene + a re-render trigger, not the source of truth.
+    /// `selfHeartRate`, `crewHeartRateRows` (plan task S8) and
+    /// `togetherLanes` (plan task S9) all call this rather than reading
     /// `heartRates` directly.
     private func heartRateFor(_ userID: UUID) -> (bpm: Int, zone: HeartRateZone?)? {
         guard let entry = heartRates[userID],
               HeartRateFreshness.isFresh(receivedAt: entry.receivedAt, now: Date(), staleAfter: Self.heartRateStaleAfter)
         else { return nil }
         return (entry.bpm, entry.zone)
-    }
-
-    /// Show the incoming-sound transient overlay for 2.5 seconds.
-    @MainActor
-    private func showSoundOverlay(_ text: String) async {
-        soundOverlayText = text
-        try? await Task.sleep(nanoseconds: 2_500_000_000)
-        if soundOverlayText == text { soundOverlayText = nil }
     }
 
     /// Show a floating reaction pill for 2 seconds (opacity + offset animation per canvas).
@@ -4912,7 +3259,7 @@ struct GroupSessionLiveView: View {
                 exerciseNames[id] = name
             }
         } catch {
-            AppLogger.sessions.error("GroupSessionLiveView reload: \(error, privacy: .public)")
+            AppLogger.sessions.error("SessionLiveView reload: \(error, privacy: .public)")
             rosterLoadFailed = true
         }
 
@@ -4945,338 +3292,805 @@ struct GroupSessionLiveView: View {
         }
     }
 
-    // MARK: - Soundboard & Reaction Actions
+    // MARK: - The round wait (spec §2 and §3.3, plan task S6)
+    //
+    // What a crewmate who is not lifting sees. It replaces the spectate sister
+    // page plan task S4 deleted, and the difference is spec §5's whole point:
+    // that page was a scoreboard, this one is the crew.
+    //
+    // Every model below is built from state this view ALREADY HOLDS --
+    // `participants`, `allSessionSets`, `liveSession`, `recoveryBuffer`,
+    // `effectiveRoutineExercises`. No fetch is added, and no store: spec §6's
+    // "no new store" is what makes the recovery curve `RecoveryBuffer`'s
+    // sparkline rather than a second history.
 
-    /// Local 1-second gate covers both the local play AND the remote send so they stay
-    /// perfectly in sync — if the gate blocks, we skip both without queuing.
-    @MainActor
-    private func tapSound(slug: String) async {
-        let now = Date()
-        guard now.timeIntervalSince(lastSoundTapAt) >= 1.0 else { return }
-        // Plate re-rack (composite v5): a cooling plate can't be thrown.
-        if let until = soundCooldowns[slug], until > now { return }
-        lastSoundTapAt = now
-        let cls = PlateClass.forDuration(
-            ms: soundCatalog.first { $0.slug == slug }?.durationMs)
-        soundCooldowns[slug] = now.addingTimeInterval(cls.cooldown)
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(cls.cooldown))
-            // Only clear an unchanged entry — a re-throw after expiry has
-            // already written a NEWER date this stale task must not erase.
-            if let until = soundCooldowns[slug], until.timeIntervalSinceNow <= 0 {
-                soundCooldowns[slug] = nil
-            }
+    /// ROUNDS ONLY, and only when somebody else holds the turn — the state in
+    /// which this body shows THE CREW rather than my own entry card.
+    ///
+    /// `currentTurnUserID != nil` and a non-empty roster are both required
+    /// because `isMyTurn` is an equality on two optionals: with no signed-in
+    /// profile and no current turn it answers `true`, and with a roster that
+    /// failed to load it would answer `false` and strand the reader on a page
+    /// with no stations. Either way the my-turn page -- which is what renders
+    /// today -- is the honest fallback.
+    private var showsCrewPage: Bool {
+        style == .rounds
+            && liveSession.currentTurnUserID != nil
+            && !isMyTurn
+            && !participants.isEmpty
+    }
+
+    /// SPOTTER MODE takes the crew page when my prescription has no set left
+    /// in this round (plan task S8, owner decision 7); the round wait takes it
+    /// otherwise. Two pages, one gate, so they can never both be up.
+    private var showsSpotter: Bool { showsCrewPage && hasNoSetThisRound }
+    private var showsRoundWait: Bool { showsCrewPage && !hasNoSetThisRound }
+
+    /// Have I finished my prescription for the exercise the crew is on?
+    ///
+    /// Answered from the ROUTINE'S OWN target and my own logged count, which
+    /// is what `turnSetsPage` already counts with. A routine with no target
+    /// sets prescribes no end, so it never answers yes — an unbounded
+    /// prescription is not a finished one.
+
+    /// The page, on a one-second tick.
+    ///
+    /// `TimelineView(.periodic(by: 1))` rather than a `Timer`, and rather than
+    /// a `@State` date the 10 s turn poll refreshes: the elapsed rest is the
+    /// biggest numeral on the screen and a clock that jumped ten seconds at a
+    /// time would read as broken. The house already drives three surfaces this
+    /// way (`WarmUpPhaseView`, `WorkoutSessionView`, `HomeView`). The VIEW
+    /// still owns no clock -- `RoundWaitView` takes an already-formatted
+    /// string -- so the catalog's frame stays deterministic (constraint 11).
+    private var roundWaitPage: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            RoundWaitView(
+                kicker: RoundCopy.kicker(crew: ledgerGroup?.name ?? "",
+                                         round: liveSession.round),
+                title: "The round",
+                stations: roundStationModels,
+                rest: restModel(now: context.date),
+                planKicker: "THE SESSION · WHERE WE ARE",
+                rungLine: routineName ?? "",
+                plan: roundPlanRows,
+                coach: CoachDoorRow.Model(title: SessionCopy.talkToCoach,
+                                          detail: SessionCopy.talkToCoachDetail),
+                waitingOn: waitingOnNames,
+                dockNames: otherParticipantNames,
+                reactionEmojis: reactionEmojis,
+                voice: voiceFoot,
+                skip: skipOffer(now: context.date),
+                onCoachTap: { Task { await openCoachThread() } },
+                onReaction: { emoji in Task { await tapReaction(emoji: emoji) } },
+                onSkip: { Task { await skipHeldLifter() } })
         }
-        // My own plate lands too — the broadcast self-echo is suppressed,
-        // so the tap is the one place it can come from.
-        landPlate(slug: slug, senderID: selfID)
-        // Local play (immediately) + remote send (fire-and-forget).
-        async let playTask: Void = SoundboardPlayer.shared.play(slug: slug)
-        async let sendTask: Void = broadcastService.sendSound(
-            sessionID: liveSession.id,
-            groupID: liveSession.groupID,
-            slug: slug
-        )
-        _ = await (playTask, sendTask)
     }
 
-    /// Drop a plate on the lifter card. Slides off when the sound's own
-    /// duration ends — the 5-second cap guarantees it never outlives half
-    /// a rest.
-    @MainActor
-    private func landPlate(slug: String, senderID: UUID?) {
-        let sender: String = {
-            guard let senderID else { return "?" }
-            if senderID == selfID { return "YOU" }
-            let username = participants
-                .first(where: { $0.participant.userID == senderID })?.profile.username ?? "?"
-            return String(username.prefix(2)).uppercased()
-        }()
-        let sound = soundCatalog.first { $0.slug == slug }
-        let plate = LandedPlate(slug: slug, sender: sender, durationMs: sound?.durationMs)
-        withAnimation(.spring(duration: 0.35)) {
-            landedPlates.append(plate)
-            if landedPlates.count > 5 {
-                landedPlates.removeFirst(landedPlates.count - 5)
-            }
+    /// THE ROUND'S OWN PREDICATE, mirroring `public.advance_round` (plan task
+    /// D3): a non-penalty `set_logs` row at or after `round_started_at`.
+    ///
+    /// Spelled the same way here as there so the tick on a station card and
+    /// the server's decision to close the round cannot disagree. THE WINDOW
+    /// IS `RoundWindow.openedAt(...)` (ruling R-B23), the same
+    /// `COALESCE(round_started_at, lifting_started_at, ...)` the RPC itself
+    /// evaluates: `round_started_at` is NULL until the first round closes, and
+    /// round 1 opens when the crew started LIFTING — fix-forward
+    /// `20260913000105` was written precisely so a warm-up set does not count
+    /// toward it. Both values ride the `sessions` UPDATE the realtime channel
+    /// already delivers, so this reads the live server round.
+    ///
+    /// The old round-1 stand-in, "has logged this exercise at all", survives
+    /// as the LAST resort only — the server's own `'-infinity'` arm, reachable
+    /// only in a session with no lifting stamp, which is a session with no
+    /// round wait on screen. Until this fix it was the round-1 answer itself,
+    /// and it counted a warm-up set the server does not (final review,
+    /// finding 3).
+    private func hasLoggedThisRound(_ userID: UUID) -> Bool {
+        guard let since = RoundWindow.openedAt(roundStartedAt: liveSession.roundStartedAt,
+                                               liftingStartedAt: liveSession.liftingStartedAt) else {
+            return hasLoggedCurrentExercise(userID)
         }
-        let lifetime = Double(sound?.durationMs ?? 2000) / 1000
-        Task { @MainActor in
-            try? await Task.sleep(for: .seconds(lifetime))
-            withAnimation(.easeOut(duration: 0.3)) {
-                landedPlates.removeAll { $0.id == plate.id }
-            }
+        return allSessionSets.contains {
+            $0.userID == userID && !$0.isPenalty && $0.loggedAt >= since
         }
     }
 
-    /// The bare token + its visual states — kept as its own small
-    /// function so each piece stays inside the type-checker budget
-    /// (the inline let + Group form was part of the 2026-07-31 timeout).
-    private func dockPlateToken(_ sound: SoundboardSound) -> some View {
-        GSPlateToken(
-            name: sound.plateName,
-            envelope: sound.envelope,
-            durationMs: sound.durationMs,
-            isClipped: sound.isClipped,
-            cooldownUntil: soundCooldowns[sound.slug]
-        )
-        .opacity(plateDrag?.sound.slug == sound.slug ? 0.25 : 1)
-        .contentShape(Circle())
-    }
-
-    /// One dock plate. Tap = quick send; drag = the throw (spectate only,
-    /// never over the open loader). The flick is the fun path, never the
-    /// toll.
-    @ViewBuilder
-    private func dockPlate(for sound: SoundboardSound) -> some View {
-        Group {
-            if spectateActive && !showBarLoader {
-                dockPlateToken(sound).gesture(plateThrowGesture(sound))
-            } else {
-                dockPlateToken(sound)
-            }
-        }
-        .onTapGesture { Task { await tapSound(slug: sound.slug) } }
-        .accessibilityLabel("Send \(sound.label)")
-        .accessibilityAddTraits(.isButton)
-    }
-
-    // MARK: - The throw (composite v5 phase 3 — Hearthstone rules)
-
-    private func plateThrowGesture(_ sound: SoundboardSound) -> some Gesture {
-        DragGesture(minimumDistance: 8, coordinateSpace: .named("liveArena"))
-            .onChanged { value in
-                guard soundCooldowns[sound.slug] == nil else { return }
-                if plateDrag == nil {
-                    plateDrag = PlateDragState(sound: sound,
-                                               location: value.location,
-                                               startLocation: value.startLocation)
-                } else if plateDrag?.sound.slug == sound.slug,
-                          plateDrag?.isFlying == false {
-                    plateDrag?.location = value.location
-                }
-            }
-            .onEnded { value in
-                guard plateDrag?.sound.slug == sound.slug,
-                      plateDrag?.isFlying == false else { return }
-                releasePlate(at: value.location, predicted: value.predictedEndLocation)
-            }
-    }
-
-    /// Release over the platform → the throw completes ballistically and
-    /// the sound fires ON LANDING (tapSound IS the landing: pile, play,
-    /// broadcast, cooldown). Release anywhere else → the plate springs
-    /// home — no sound, no send, a free cancel. Reduce Motion sends
-    /// without the flight.
-    @MainActor
-    private func releasePlate(at location: CGPoint, predicted: CGPoint) {
-        guard let drag = plateDrag else { return }
-        let target = lifterCardFrame.insetBy(dx: -24, dy: -24)
-        let hit = !lifterCardFrame.isEmpty
-            && (target.contains(location) || target.contains(predicted))
-        let slug = drag.sound.slug
-        if hit {
-            if UIAccessibility.isReduceMotionEnabled {
-                plateDrag = nil
-                Task { await tapSound(slug: slug) }
-                return
-            }
-            plateDrag?.isFlying = true
-            plateDrag?.location = CGPoint(x: lifterCardFrame.midX,
-                                          y: lifterCardFrame.maxY - 30)
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(200))
-                plateDrag = nil
-                await tapSound(slug: slug)
-            }
+    /// One card per rack, from `sessions.stations` -- plan task S3's own
+    /// write, read back.
+    ///
+    /// A crew of three or fewer never has a stored assignment (`remixStations`
+    /// leaves the column alone: there is nothing to split), so the whole
+    /// present rotation becomes one rack. `StationSplit.name(0)` gives it the
+    /// same word a written assignment would.
+    private var roundStationModels: [StationCard.Model] {
+        let racks: [(name: String, ids: [UUID])]
+        if let stored = liveSession.stations, !stored.stations.isEmpty {
+            racks = stored.stations.map { ($0.name, $0.turnOrder) }
         } else {
-            let grabID = drag.grabID
-            plateDrag?.location = drag.startLocation
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(320))
-                // Only clear THIS grab — a re-grab mid-return owns the state.
-                if plateDrag?.grabID == grabID, plateDrag?.isFlying == false {
-                    plateDrag = nil
-                }
-            }
+            racks = [(StationSplit.name(0), presentRotation.map(\.participant.userID))]
+        }
+        return racks.map { rack in
+            StationCard.Model(
+                name: rack.name,
+                lifters: rack.ids.compactMap { stationLifter($0) },
+                liftingID: rack.ids.first(where: { $0 == liveSession.currentTurnUserID }))
         }
     }
 
-    /// The plate under the finger / in flight, drawn above page + chrome.
-    /// Depth is scale + shadow + tilt (how Hearthstone fakes its table);
-    /// the carry spring's stiffness is the class's heft — the 45 drags a
-    /// beat behind the finger, the 5 snaps to it.
-    private func flyingPlateOverlay(_ drag: PlateDragState) -> some View {
-        GSPlateToken(
-            name: drag.sound.plateName,
-            envelope: drag.sound.envelope,
-            durationMs: drag.sound.durationMs,
-            isClipped: drag.sound.isClipped,
-            cooldownUntil: nil
-        )
-        .scaleEffect(drag.isFlying ? 1.0 : 1.3)
-        .shadow(color: .black.opacity(0.45),
-                radius: drag.isFlying ? 4 : 14,
-                y: drag.isFlying ? 4 : 12)
-        .rotationEffect(.degrees(plateTilt(drag)))
-        .position(drag.location)
-        .allowsHitTesting(false)
-        .animation(drag.isFlying ? .easeIn(duration: 0.18) : plateCarrySpring(drag.sound),
-                   value: drag.location)
-        .animation(.easeOut(duration: 0.15), value: drag.isFlying)
+    /// A lifter nobody in the roster can name is left OUT of the rack rather
+    /// than drawn as a blank column: a station is people, and a column with no
+    /// name is not one of them.
+    private func stationLifter(_ userID: UUID) -> StationCard.Lifter? {
+        guard let profile = participants.first(where: { $0.participant.userID == userID })?.profile
+        else { return nil }
+        return StationCard.Lifter(
+            id: userID,
+            name: profile.username,
+            isYou: userID == selfID,
+            hasLogged: hasLoggedThisRound(userID),
+            // Spec §3.4 mode 2 -- quiet, and only where the crew already looks.
+            scaleDown: currentExerciseForSheet.flatMap { selfScales[userID]?[$0.id]?.name })
     }
 
-    private func plateCarrySpring(_ sound: SoundboardSound) -> Animation {
-        switch PlateClass.forDuration(ms: sound.durationMs) {
-        case .five: return .interpolatingSpring(stiffness: 420, damping: 28)
-        case .ten: return .interpolatingSpring(stiffness: 300, damping: 24)
-        case .twentyFive: return .interpolatingSpring(stiffness: 200, damping: 20)
-        case .fortyFive: return .interpolatingSpring(stiffness: 120, damping: 16)
+    /// Who the round is still waiting on, first names, me excluded -- if I had
+    /// not logged, it would be my turn and this page would not be up.
+    private var waitingOnNames: [String] {
+        presentRotation
+            .filter { $0.participant.userID != selfID && !hasLoggedThisRound($0.participant.userID) }
+            .map { SessionCopy.firstName($0.profile.username) }
+    }
+
+    /// THE SESSION · WHERE WE ARE -- the whole routine with MY progress on it.
+    ///
+    /// Mine and not the crew's, because `mySetCount(for:)` is what the rest of
+    /// this view counts with and a row that mixed the two would answer a
+    /// question nobody asked. Spec §2's "is the plan still achievable" is
+    /// about the exercises that are LEFT, which is what these rows show.
+    private var roundPlanRows: [SessionPlanRow] {
+        effectiveRoutineExercises.map { re in
+            SessionPlanRow(
+                id: re.id,
+                name: allExercises.first(where: { $0.id == re.exerciseID })?.name
+                    ?? exerciseNames[re.exerciseID] ?? "Exercise",
+                prescription: SessionPlanRow.prescription(for: re),
+                isCurrent: re.exerciseID == currentExerciseForSheet?.id,
+                setsDone: mySetCount(for: re.exerciseID),
+                sets: re.targetSets ?? 0)
         }
     }
 
-    private func plateTilt(_ drag: PlateDragState) -> Double {
-        guard !drag.isFlying else { return 4 }
-        let dx = drag.location.x - drag.startLocation.x
-        return max(-14, min(14, dx / 9))
+    /// The rest card's world. `now` comes from the page's `TimelineView`, so
+    /// this function reads no clock of its own.
+    private func restModel(now: Date) -> RestModel {
+        let mine = selfHeartRate
+        return RestModel(
+            elapsed: RoundCopy.elapsed(since: myLastLoggedAt, now: now),
+            // NO NEW STORE (spec §6): the same buffer the my-turn page's
+            // `.onChange(of: selfHeartRate?.bpm)` already fills.
+            curve: recoveryBuffer.sparkline(barCount: 10),
+            // A stale reading is NO reading -- `heartRateFor(_:)`'s 15 s gate
+            // returns nil and the card prints an em dash, never a last-known
+            // number.
+            bpm: mine?.bpm,
+            zone: mine?.zone,
+            nextPrescription: RoundCopy.nextPrescription(
+                setNumber: myTurnSets.count + 1,
+                targetSets: currentRoutineExercise?.targetSets,
+                exercise: currentExerciseForSheet?.name,
+                prescription: currentTargetLine),
+            achievability: RoundCopy.achievability(
+                lastMoved: lastMovedText,
+                target: targetWeightLine,
+                isUnderTarget: isLastSetUnderTarget))
     }
 
-    // MARK: - ROUND SCOREBOARD (composite v5 phase 4)
-
-    /// Sets · % SELF · LOAD, self-referenced only. Rows carry a small live
-    /// bpm so crew heart rates stay visible here (the 2026-07-27 ruling)
-    /// now that the board replaced the crew grid.
-    private var spectateBoardCard: some View {
-        let rows = SessionScoreboard.rows(
-            participants: rotationOrder.map(\.participant.userID),
-            sessionSets: allSessionSets,
-            baselines: scoreBaselines
-        )
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("ROUND SCOREBOARD")
-                    .font(GSFont.bold(10, relativeTo: .caption2)).tracking(1.3)
-                    .foregroundStyle(theme.neutral700)
-                Spacer()
-                if isLoadingBoard {
-                    ProgressView().controlSize(.mini).tint(theme.neutral500)
-                } else {
-                    Text("VS YOURSELF")
-                        .font(GSFont.bold(10, relativeTo: .caption2)).tracking(1.1)
-                        .foregroundStyle(theme.neutral700)
-                }
-            }
-            Color.clear.frame(height: 12)
-            HStack(spacing: 8) {
-                Text("CREW")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text("SETS").frame(width: 34, alignment: .trailing)
-                Text("% SELF").frame(width: 56, alignment: .trailing)
-                Text("LOAD").frame(width: 44, alignment: .trailing)
-            }
-            .font(GSFont.bold(9, relativeTo: .caption2))
-            .foregroundStyle(theme.neutral700)
-            Rectangle().fill(theme.divider).frame(height: 1)
-                .padding(.top, 8)
-            ScrollView {
-                VStack(spacing: 4) {
-                    ForEach(rows) { row in
-                        boardRow(row)
-                    }
-                }
-                .padding(.top, 6)
-            }
-            Text("% SELF = TODAY VS YOUR OWN BEST-EVER EST-1RM · LOAD = Σ REPS × RPE")
-                .font(GSFont.bold(8, relativeTo: .caption2)).tracking(0.6)
-                .foregroundStyle(theme.neutral500)
-                .padding(.top, 8)
-        }
-        .padding(14)
-        .background(theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(theme.neutral500.opacity(0.35), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 20))
-        .padding(.horizontal, 16)
+    /// When my rest started: my own last non-penalty log, anywhere in this
+    /// session. Nil before I have logged at all, which reads `0:00`.
+    private var myLastLoggedAt: Date? {
+        guard let selfID else { return nil }
+        return lastSetAnyExercise(selfID)?.loggedAt
     }
 
-    private func boardRow(_ row: SessionScoreboard.Row) -> some View {
-        let entry = rotationOrder.first { $0.participant.userID == row.userID }
-        let isMe = row.userID == selfID
-        let hr = heartRateFor(row.userID)
-        return HStack(spacing: 8) {
-            GSInitialsAvatar(name: entry?.profile.username ?? "?",
-                             avatarURL: entry?.profile.avatarURL, size: 28)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(isMe ? "You" : (entry?.profile.username ?? "—"))
-                    .font(GSFont.bold(15, relativeTo: .subheadline))
-                    .foregroundStyle(row.ceilingBroken || isMe ? theme.text : theme.text.opacity(0.78))
-                    .lineLimit(1)
-                if row.ceilingBroken {
-                    Text("CEILING BROKEN")
-                        .font(GSFont.bold(8, relativeTo: .caption2)).tracking(1.0)
-                        .foregroundStyle(theme.accent)
-                } else if let hr {
-                    Text("♥ \(hr.bpm)")
-                        .font(GSFont.bold(9, relativeTo: .caption2).monospacedDigit())
-                        .foregroundStyle(theme.neutral700)
-                } else if row.pctSelf == nil {
-                    Text("NO BASELINE · SETS ONLY")
-                        .font(GSFont.bold(8, relativeTo: .caption2)).tracking(0.8)
-                        .foregroundStyle(theme.neutral500)
-                }
-            }
-            Spacer(minLength: 4)
-            Text("\(row.sets)")
-                .font(GSFont.bold(16, relativeTo: .subheadline).monospacedDigit())
-                .foregroundStyle(theme.text.opacity(0.78))
-                .frame(width: 34, alignment: .trailing)
-            Text(row.pctSelf.map { "\($0)%" } ?? "—")
-                .font(GSFont.bold(17, relativeTo: .subheadline).monospacedDigit())
-                .foregroundStyle(row.ceilingBroken ? theme.accent
-                                 : (row.pctSelf != nil ? theme.text.opacity(0.78) : theme.neutral500))
-                .frame(width: 56, alignment: .trailing)
-            Text(row.load > 0 ? "\(row.load)" : "—")
-                .font(GSFont.bold(15, relativeTo: .subheadline).monospacedDigit())
-                .foregroundStyle(row.load > 0 ? theme.text.opacity(0.78) : theme.neutral500)
-                .frame(width: 44, alignment: .trailing)
-        }
-        .padding(.vertical, 9)
-        .padding(.horizontal, row.ceilingBroken ? 8 : 0)
-        .background {
-            if row.ceilingBroken {
-                RoundedRectangle(cornerRadius: 12).fill(theme.accent.opacity(0.16))
-            }
-        }
-        .overlay {
-            if row.ceilingBroken {
-                RoundedRectangle(cornerRadius: 12).strokeBorder(theme.accent, lineWidth: 1.5)
-            }
+    /// `225 × 5` -- the routine's own prescription for the current exercise,
+    /// in my unit. Nil when the routine prescribes neither.
+    private var currentTargetLine: String? {
+        guard let re = currentRoutineExercise else { return nil }
+        let weight = targetPounds.map { weightText($0) }
+        switch (weight, re.targetReps) {
+        case let (weight?, reps?): return "\(weight) × \(reps)"
+        case let (weight?, nil):   return weight
+        case let (nil, reps?):     return "× \(reps)"
+        default:                   return nil
         }
     }
 
-    /// Fetch each participant's pre-session ceilings, once per BOARD
-    /// opening. Best-effort per (lifter, exercise): a blocked or empty
-    /// history just leaves that lifter's honest dash — never a fake
-    /// number. Reopening the board picks up newly-lifted exercises.
+    private var targetPounds: Decimal? {
+        currentRoutineExercise?.targetWeight.flatMap { Decimal(string: $0) }
+    }
+
+    private var targetWeightLine: String? {
+        targetPounds.map { weightText($0) }
+    }
+
+    /// What I last actually moved on this exercise -- failed sets excluded,
+    /// because a miss is not a load the plan can be judged against.
+    private var lastMovedPounds: Decimal? {
+        myTurnSets.last(where: { !$0.isFailed && $0.weight != nil })?.weight
+    }
+
+    private var lastMovedText: String? {
+        lastMovedPounds.map { weightText($0) }
+    }
+
+    private var isLastSetUnderTarget: Bool {
+        guard let last = lastMovedPounds, let target = targetPounds else { return false }
+        return last < target
+    }
+
+    // MARK: - Coach's door (spec §3.6, plan task S6)
+
+    /// `navigationDestination(item:)` needs an `Identifiable`;
+    /// `SessionCoachThread` is a plain value. `LobbyView`'s identical wrapper.
+    private struct OpenedCoachThread: Identifiable, Hashable {
+        let thread: SessionCoachThread
+        var id: UUID { thread.threadID }
+
+        static func == (lhs: OpenedCoachThread, rhs: OpenedCoachThread) -> Bool {
+            lhs.thread == rhs.thread
+        }
+        func hash(into hasher: inout Hasher) { hasher.combine(thread.threadID) }
+    }
+
+    /// Find-or-create this session's Coach room, then open it.
+    ///
+    /// `LobbyView.openCoachThread()`, mirrored rather than shared: the two
+    /// views hold different session values and neither has a common home for
+    /// session-side helpers, which is the same reasoning `voiceEligibleStates`
+    /// and `otherParticipantNames` above already carry.
+    ///
+    /// ON TAP, NEVER ON LOAD. A screen that opened a Coach room every time it
+    /// appeared would create a thread for a session nobody asked Coach about
+    /// -- and the round wait appears on every turn that is not yours.
     @MainActor
-    private func loadScoreBaselines() async {
-        guard !isLoadingBoard else { return }
-        isLoadingBoard = true
-        defer { isLoadingBoard = false }
-        let exercisesByUser = Dictionary(
-            grouping: allSessionSets.filter { !$0.isPenalty }, by: \.userID)
-            .mapValues { Set($0.map(\.exerciseID)) }
-        for (userID, exercises) in exercisesByUser {
-            for exerciseID in exercises where scoreBaselines[userID]?[exerciseID] == nil {
-                guard let history = try? await SessionRepository.exerciseHistory(
-                    userID: userID, exerciseID: exerciseID, limit: 200) else { continue }
-                let base = SessionScoreboard.baseline(history: history,
-                                                     excludingSessionID: session.id)
-                if let ceiling = base[exerciseID] {
-                    scoreBaselines[userID, default: [:]][exerciseID] = ceiling
-                }
+    private func openCoachThread() async {
+        do {
+            let thread = try await SessionCoachThreadRepository.open(sessionID: liveSession.id)
+            // Branch on reachability rather than navigating unconditionally.
+            // Inert today (`Monetization.paywallEnabled` is false, so
+            // `isReachable` is always true) -- this is what makes the branch
+            // correct once it flips live.
+            if SessionCoachThreadRepository.isReachable(thread) {
+                openedCoachThread = OpenedCoachThread(thread: thread)
+            } else {
+                showCoachPaywall = true
             }
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
         }
     }
+
+    private var hasNoSetThisRound: Bool {
+        guard let exercise = currentExerciseForSheet,
+              let target = currentRoutineExercise?.targetSets, target > 0 else { return false }
+        return mySetCount(for: exercise.id) >= target
+    }
+
+    // MARK: - Spotter mode (spec §1, owner decision 7, plan task S8)
+
+    private var spotterPage: some View {
+        SpotterView(
+            kicker: RoundCopy.kicker(crew: ledgerGroup?.name ?? "", round: liveSession.round),
+            title: "You're spotting",
+            turn: turnStripTiles,
+            stillToGo: stillToGoLine,
+            crew: crewHeartRateRows,
+            coach: CoachDoorRow.Model(title: SessionCopy.talkToCoach,
+                                      detail: SessionCopy.talkToCoachDetail),
+            dockNames: otherParticipantNames,
+            reactionEmojis: reactionEmojis,
+            voice: voiceFoot,
+            onCoachTap: { Task { await openCoachThread() } },
+            onReaction: { emoji in Task { await tapReaction(emoji: emoji) } },
+            onCheer: { Task { await tapReaction(emoji: RoundCopy.cheerEmoji) } })
+    }
+
+    /// `rotationTiles`, worded for the strip. The speaking ring is resolved
+    /// here because only this view holds the identity map
+    /// (`VoiceRoomService` knows LiveKit identity strings, never usernames).
+    private var turnStripTiles: [TurnStrip.Tile] {
+        rotationTiles.map { tile in
+            TurnStrip.Tile(
+                id: tile.userID,
+                label: tile.label,
+                name: tile.userID == selfID ? "You" : tile.profile.username,
+                isNow: tile.label == "NOW",
+                isSpeaking: VoiceRoomService.shared.speakingParticipantIDs
+                    .contains(tile.userID.uuidString.lowercased()))
+        }
+    }
+
+    /// `2 STILL TO GO` — how much of this round is left. Empty when nobody
+    /// is outstanding, so no count is drawn rather than a zero.
+    private var stillToGoLine: String {
+        let outstanding = presentRotation.filter { !hasLoggedThisRound($0.participant.userID) }.count
+        return outstanding > 0 ? RoundCopy.stillToGo(outstanding) : ""
+    }
+
+    /// The crew's readings, in rotation order so the card and the strip above
+    /// it agree about who is who.
+    ///
+    /// EVERY ROW READS `heartRateFor(_:)`, the 15 s freshness gate, so a
+    /// reading that stopped arriving becomes `nil` here and an em dash on the
+    /// card — never a last-known number.
+    private var crewHeartRateRows: [CrewHeartRatesCard.Row] {
+        presentRotation.map { row in
+            let reading = heartRateFor(row.participant.userID)
+            return CrewHeartRatesCard.Row(
+                id: row.participant.userID,
+                name: row.participant.userID == selfID ? "You" : row.profile.username,
+                isLifting: row.participant.userID == liveSession.currentTurnUserID,
+                bpm: reading?.bpm,
+                zone: reading?.zone)
+        }
+    }
+
+    // MARK: - Together (spec §3.3, owner decisions 1 and 13, plan task S9)
+
+    /// The routine's cardio rows as intervals. A routine with none is ONE
+    /// OPEN interval, which `TogetherIntervals.plan(from:)` decides -- not
+    /// this view, and not a literal.
+    private var togetherIntervals: [TogetherIntervals.Interval] {
+        TogetherIntervals.plan(from: effectiveRoutineExercises.map { re in
+            (id: re.id,
+             name: allExercises.first(where: { $0.id == re.exerciseID })?.name
+                 ?? exerciseNames[re.exerciseID] ?? TogetherIntervals.openIntervalName,
+             cardioZone: re.cardioZone,
+             cardioMinutes: re.cardioMinutes)
+        })
+    }
+
+    /// Where the crew is, measured from LIFTING START -- not `startedAt`,
+    /// which is when the session opened and includes the warm-up phase
+    /// (`20260803000004_session_warmup_phase.sql`; the same distinction
+    /// `advance_round` was fixed for in 20260913000105).
+    ///
+    /// Nil before lifting begins, which is the honest answer: no interval has
+    /// started.
+    private var togetherPosition: TogetherIntervals.Position? {
+        guard let start = liveSession.liftingStartedAt else { return nil }
+        return TogetherIntervals.position(in: togetherIntervals,
+                                          elapsed: Date().timeIntervalSince(start))
+    }
+
+    /// The page, on a one-second tick -- the countdown is the screen's
+    /// largest numeral, and the same reasoning as the round wait's clock.
+    private var togetherPage: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            togetherScreen(now: context.date)
+        }
+    }
+
+    private func togetherScreen(now: Date) -> TogetherClockView {
+        let intervals = togetherIntervals
+        let elapsed = liveSession.liftingStartedAt.map { now.timeIntervalSince($0) } ?? 0
+        let position = TogetherIntervals.position(in: intervals, elapsed: elapsed)
+        let index = position?.index ?? 0
+        let current = intervals.indices.contains(index) ? intervals[index] : nil
+        let next = intervals.indices.contains(index + 1) ? intervals[index + 1] : nil
+        return TogetherClockView(
+            kicker: togetherKicker,
+            title: routineName ?? "Together",
+            intervalKicker: RoundCopy.intervalKicker(index: index, count: max(intervals.count, 1)),
+            phase: (current?.name ?? TogetherIntervals.openIntervalName).uppercased(),
+            phaseDetail: current?.detail ?? "",
+            // An OPEN interval counts UP: there is no end to count down to,
+            // and a zero would claim one.
+            readout: RoundCopy.clock(position?.remaining ?? position?.elapsedInInterval ?? 0),
+            progress: position?.progress ?? 0,
+            nextLine: RoundCopy.nextInterval(next.map { $0.detail.isEmpty ? $0.name : $0.detail }),
+            lanes: togetherLanes(intervalCount: intervals.count),
+            axisStart: RoundCopy.intervalKicker(index: 0, count: intervals.count),
+            axisEnd: RoundCopy.intervalKicker(index: max(intervals.count - 1, 0),
+                                              count: intervals.count),
+            dockNames: otherParticipantNames,
+            reactionEmojis: reactionEmojis,
+            voice: voiceFoot,
+            // The IDENTICAL entry card the my-turn page mounts (fix round 4
+            // / finding 1, ruling R-B21) — Together has no turn to render
+            // `myTurnFixedPage` at all, so without this the LOG button
+            // above had nothing to enable it. One view, injected, rather
+            // than a second copy: logging a set is one code path
+            // regardless of which of the three styles is on screen.
+            entryCard: AnyView(turnEntryCard),
+            logControl: logControlFoot,
+            onReaction: { emoji in Task { await tapReaction(emoji: emoji) } },
+            onEnd: { showEndConfirmation = true })
+    }
+
+    private var togetherKicker: String {
+        let crew = (ledgerGroup?.name ?? "").uppercased()
+        return crew.isEmpty ? "TOGETHER" : "\(crew) · TOGETHER"
+    }
+
+    /// One lane per present lifter, on the shared interval axis.
+    private func togetherLanes(intervalCount: Int) -> [TogetherLane] {
+        presentRotation.map { row in
+            let reading = heartRateFor(row.participant.userID)
+            return TogetherLane(
+                id: row.participant.userID,
+                name: row.participant.userID == selfID
+                    ? "You" : SessionCopy.firstName(row.profile.username),
+                bpm: reading?.bpm,
+                zone: reading?.zone,
+                trace: togetherTrace.trace(for: row.participant.userID,
+                                           count: max(intervalCount, 1)))
+        }
+    }
+
+    // MARK: - Freestyle (spec §3.3, owner decision 4, plan task S10)
+
+    /// The routine's own total prescribed sets — own pace has no round to
+    /// count within, so the rail's denominator is the whole plan.
+    private var freestyleTotalSets: Int {
+        effectiveRoutineExercises.reduce(0) { $0 + ($1.targetSets ?? 0) }
+    }
+
+    /// Every non-penalty set this lifter has logged, across the whole
+    /// routine — `setCount(userID:exerciseID:)`'s own count, summed.
+    private func freestyleSetsDone(_ userID: UUID) -> Int {
+        effectiveRoutineExercises.reduce(0) { $0 + setCount(userID: userID, exerciseID: $1.exerciseID) }
+    }
+
+    private var freestyleRailModel: FreestyleRailModel {
+        FreestyleRailModel(
+            lifters: presentRotation.map { row in
+                FreestyleRailModel.Lifter(
+                    id: row.participant.userID,
+                    name: SessionCopy.firstName(row.profile.username),
+                    isYou: row.participant.userID == selfID,
+                    setsDone: freestyleSetsDone(row.participant.userID))
+            },
+            totalSets: freestyleTotalSets)
+    }
+
+    /// `nil` with no signed-in profile answers `.level` (`FreestylePace`'s own
+    /// default) — the honest fallback, the same one `isMyTurn` takes.
+    private var freestyleStanding: FreestylePace.Standing {
+        guard let selfID else { return .level }
+        let sets = presentRotation.map {
+            FreestylePace.Lifter(userID: $0.participant.userID,
+                                 setsDone: freestyleSetsDone($0.participant.userID))
+        }
+        return FreestylePace.standing(sets: sets, for: selfID)
+    }
+
+    /// THE PLAN'S OWN ISOLATION ROWS, never an invented recommendation —
+    /// `exercises.category` (`20260709000002:5`) is the only "what kind of
+    /// exercise is this" signal the schema carries.
+    private var freestyleAccessoryCandidates: [FreestylePace.AccessoryCandidate] {
+        effectiveRoutineExercises.compactMap { re in
+            guard let exercise = allExercises.first(where: { $0.id == re.exerciseID }) else { return nil }
+            return FreestylePace.AccessoryCandidate(
+                id: re.id, name: exercise.name, category: exercise.category,
+                prescription: SessionPlanRow.prescription(for: re))
+        }
+    }
+
+    private var freestyleStartedExerciseIDs: Set<UUID> {
+        guard let selfID else { return [] }
+        return Set(effectiveRoutineExercises
+            .filter { setCount(userID: selfID, exerciseID: $0.exerciseID) > 0 }
+            .map(\.id))
+    }
+
+    private var freestyleAccessorySuggestion: FreestylePace.AccessoryCandidate? {
+        FreestylePace.accessorySuggestion(from: freestyleAccessoryCandidates,
+                                          startedIDs: freestyleStartedExerciseIDs)
+    }
+
+    /// `PUSH CREW · FREESTYLE` — `togetherKicker`'s own pattern.
+    private var freestyleKicker: String {
+        let crew = (ledgerGroup?.name ?? "").uppercased()
+        return crew.isEmpty ? "FREESTYLE" : "\(crew) · FREESTYLE"
+    }
+
+    /// The page, on a one-second tick — the rest clock is the biggest numeral
+    /// on it, `roundWaitPage`'s own reasoning.
+    private var freestylePage: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            freestyleScreen(now: context.date)
+        }
+    }
+
+    /// Exactly one of three things follows the rest card: nothing (level),
+    /// two suggestions (ahead), or a stated wait with nothing to accept
+    /// (behind) — never more than one shape at once.
+    private func freestyleScreen(now: Date) -> FreestyleRailView {
+        let standing = freestyleStanding
+        var stretch: FreestyleSuggestion?
+        var accessory: FreestyleSuggestion?
+        var behind: String?
+
+        if case .ahead(let by) = standing {
+            if !freestyleStretchAcknowledged {
+                stretch = FreestyleSuggestion(
+                    kicker: RoundCopy.freestyleStretchKicker,
+                    sentence: RoundCopy.freestyleStretchSentence(setsAhead: by))
+            }
+            if let candidate = freestyleAccessorySuggestion,
+               !freestyleAcknowledgedAccessoryIDs.contains(candidate.id) {
+                accessory = FreestyleSuggestion(
+                    kicker: RoundCopy.freestyleAccessoryKicker,
+                    sentence: RoundCopy.freestyleAccessorySentence(
+                        name: candidate.name, prescription: candidate.prescription))
+            }
+        } else if case .behind = standing {
+            behind = RoundCopy.freestyleBehindLine
+        }
+
+        return FreestyleRailView(
+            kicker: freestyleKicker,
+            title: RoundCopy.freestyleTitle,
+            rail: freestyleRailModel,
+            restElapsed: RoundCopy.elapsed(since: myLastLoggedAt, now: now),
+            standing: standing,
+            stretchSuggestion: stretch,
+            accessorySuggestion: accessory,
+            behindLine: behind,
+            // The IDENTICAL entry card the my-turn page mounts (fix round 4
+            // / finding 1, ruling R-B21) — Freestyle still owns no LOG foot
+            // of its own (the header comment's reasoning is unchanged), but
+            // it had nothing on screen to fill the reps `turnChrome`'s
+            // button needed, so the button below it could never enable.
+            entryCard: AnyView(turnEntryCard),
+            // NEITHER APPLIES A CHANGE (owner decision 4) — acknowledging
+            // either way just stops the card from showing again.
+            onAcceptStretch: { freestyleStretchAcknowledged = true },
+            onDeclineStretch: { freestyleStretchAcknowledged = true },
+            onAcceptAccessory: { freestyleAcknowledgeAccessory() },
+            onDeclineAccessory: { freestyleAcknowledgeAccessory() })
+    }
+
+    private func freestyleAcknowledgeAccessory() {
+        guard let id = freestyleAccessorySuggestion?.id else { return }
+        freestyleAcknowledgedAccessoryIDs.insert(id)
+    }
+
+    // MARK: - The hold, the skip and the minute (spec §9a, plan task S7)
+
+    /// The present crew's own measured rests, this session.
+    ///
+    /// The WHOLE session and not the round: the threshold wants each lifter's
+    /// typical pace, and one round is one data point. `allSessionSets` is the
+    /// uncapped `logged_at ASC` array -- never `feedSets`, which caps at 30
+    /// rows across all participants.
+    private var sessionRestMedians: [UUID: TimeInterval] {
+        RestMeasure.medians(from: allSessionSets,
+                            since: liveSession.startedAt ?? .distantPast)
+    }
+
+    /// The single lifter this round is still waiting on, if there is exactly
+    /// one. More than one and nobody is being held; none and the round closes
+    /// on its own.
+    private var heldLifter: (participant: SessionParticipant, profile: Profile)? {
+        let outstanding = presentRotation.filter { !hasLoggedThisRound($0.participant.userID) }
+        return outstanding.count == 1 ? outstanding.first : nil
+    }
+
+    /// When the crew began waiting: the SECOND-TO-LAST log of the round, from
+    /// `allSessionSets` and never from a view timer (`RoundHold`'s own law).
+    ///
+    /// The round's window is `RoundWindow.openedAt(...)` — the same live
+    /// server values `hasLoggedThisRound` reads (ruling R-B23), so the lifter
+    /// the crew is held on and the clock they are held by are measured over
+    /// one window, not two.
+    private var holdStartedAt: Date? {
+        let since = RoundWindow.openedAt(roundStartedAt: liveSession.roundStartedAt,
+                                         liftingStartedAt: liveSession.liftingStartedAt)
+        let times = presentRotation.compactMap { row -> Date? in
+            allSessionSets
+                .filter { log in
+                    log.userID == row.participant.userID && !log.isPenalty
+                        && (since.map { start in log.loggedAt >= start } ?? true)
+                }
+                .map(\.loggedAt)
+                .max()
+        }
+        return RoundHold.holdStartedAt(roundLogTimes: times,
+                                       presentCount: presentRotation.count)
+    }
+
+    /// The held lifter's own median, or the CREW'S when nobody has measured
+    /// them yet -- a lifter with one log has no median (`RestMeasure`'s law),
+    /// and falling back to zero would put the bare 90 s floor on the person
+    /// the crew is waiting for. With no crew median either, zero floors it,
+    /// which is the honest answer for a session nobody has rested in yet.
+    private var heldMedianRest: TimeInterval {
+        let medians = sessionRestMedians
+        if let held = heldLifter, let mine = medians[held.participant.userID] { return mine }
+        guard !medians.isEmpty else { return 0 }
+        return medians.values.reduce(0, +) / Double(medians.count)
+    }
+
+    /// The three lines, once the crew is past the threshold. Nil the rest of
+    /// the time, which is nearly always.
+    ///
+    /// ANY CREWMATE MAY TAP IT (ruling R-B13, fix-forward `20260913000107`,
+    /// applied live). The organizer-only button and the note-for-others it
+    /// used to fall back to are gone: `SessionRepository.advanceRound`'s
+    /// `force` parameter bypasses the server's close predicate once the
+    /// round is genuinely old enough (the server's own 90 s floor, checked
+    /// server-side — never a client-side gate), so the tap now does what
+    /// spec §9a always asked for regardless of who is present.
+    private func skipOffer(now: Date) -> SkipOffer? {
+        guard let held = heldLifter, let since = holdStartedAt else { return nil }
+        let median = heldMedianRest
+        guard RoundHold.isHeld(since: since, now: now,
+                               medianRestSeconds: median,
+                               extensionsTaken: minuteExtensionsThisRound) else { return nil }
+        return SkipOffer(
+            name: SessionCopy.firstName(held.profile.username),
+            waited: now.timeIntervalSince(since),
+            threshold: RoundHold.threshold(medianRestSeconds: median,
+                                           extensionsTaken: minuteExtensionsThisRound))
+    }
+
+    /// The crew's tap. NOTHING HAPPENS ON ITS OWN (spec §9a) and nothing is
+    /// recorded against the skipped lifter: their set stays in their plan,
+    /// no `skipped` flag is written, no penalty row is inserted, and they
+    /// rejoin at the top of the next round. The task's job here is to not add
+    /// anything that would make that untrue, and it adds nothing.
+    ///
+    /// `advanceRound(force: true)` is what actually moves the crew on now
+    /// (ruling R-B13) -- the server's close predicate is bypassed once the
+    /// round has genuinely run long enough, checked server-side against
+    /// `holdStartedAt`'s own clock, not this client's. `advanceTurn` still
+    /// runs first when the tapper is the organizer -- it authorises only the
+    /// current lifter and the organizer
+    /// (`20260801000001_advance_turn_version_guard.sql:84-86`) -- as a
+    /// bonus nudge to the rotation's own turn pointer; it is no longer what
+    /// makes the round close, so a non-organizer's tap skips it and goes
+    /// straight to the call that does. Both calls are safe to repeat and
+    /// safe to lose.
+    @MainActor
+    private func skipHeldLifter() async {
+        do {
+            if isOrganizer {
+                try await SessionRepository.advanceTurn(sessionID: liveSession.id)
+            }
+            _ = try await SessionRepository.advanceRound(sessionID: liveSession.id,
+                                                         expectedRound: liveSession.round,
+                                                         force: true)
+        } catch let error as GymSyncError {
+            errorText = error.errorDescription
+        } catch {
+            errorText = error.localizedDescription
+        }
+    }
+
+    /// Is "I need a minute" mine to tap right now?
+    ///
+    /// Only in Rounds, only when the crew is genuinely waiting on ME, and only
+    /// once for this exercise. It appears BEFORE the threshold on purpose --
+    /// the point is to head the offer off, not to answer it after the fact.
+    private var canTakeAMinute: Bool {
+        guard style == .rounds, let selfID, let exercise = currentExerciseForSheet else { return false }
+        guard heldLifter?.participant.userID == selfID else { return false }
+        return !minuteTakenForExercise.contains(exercise.id)
+    }
+
+    /// Spend it: remember the exercise, extend this client's own threshold,
+    /// and tell the crew.
+    ///
+    /// The message rides the EXISTING reaction channel (plan task S7 -- no new
+    /// channel, no new broadcast kind), carrying `RoundCopy.minuteMarker`.
+    /// Every client, this one included through the self-echo, reads that
+    /// marker in `subscribeBroadcast` and extends its own threshold, so the
+    /// whole crew's offer moves out together. Double-counting is harmless:
+    /// `RoundHold.threshold(_:extensionsTaken:)` refuses to stack.
+    @MainActor
+    private func takeAMinute() async {
+        guard let exercise = currentExerciseForSheet else { return }
+        minuteTakenForExercise.insert(exercise.id)
+        minuteExtensionsThisRound += 1
+        await broadcastService.sendReaction(sessionID: liveSession.id,
+                                            emoji: RoundCopy.minuteMarker)
+    }
+
+    /// The held lifter's own control, on their own screen -- the my-turn
+    /// page's chrome, because in Rounds the last outstanding lifter is the one
+    /// holding the turn.
+    ///
+    /// A FLAT, QUIET row above the mic rail. It is not a second accent (rule
+    /// 2): the my-turn page already spends its accent on LOG SET & PASS, and
+    /// asking for a minute is not the act the screen is for.
+    @ViewBuilder
+    private var needAMinuteRow: some View {
+        if canTakeAMinute {
+            Button {
+                Task { await takeAMinute() }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "hourglass")
+                        .font(.system(size: 12, weight: .bold))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(RoundCopy.needAMinute)
+                            .font(GSFont.bold(13, relativeTo: .subheadline))
+                        Text(RoundCopy.needAMinuteDetail)
+                            .font(GSFont.body(11, relativeTo: .caption2))
+                            .foregroundStyle(theme.neutral500)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(theme.neutral700)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(theme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .padding(.horizontal, 16)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - The station split (spec §3.3, owner decisions 2 and 6)
+
+    /// Write the crew's station assignment for one exercise (plan task S3).
+    ///
+    /// A crew of three or fewer IS one station: there is nothing to split and
+    /// nothing to re-mix, so the column is left alone rather than written with
+    /// an answer nobody reads.
+    ///
+    /// The roster sent is `presentRotation` — `check_in_state` in
+    /// online/ready/late, `advance_turn`'s own next-picker
+    /// (`20260802000001_rotation_presence.sql:77,87`) — which is exactly the
+    /// set `set_session_stations` validates against (plan ruling R-B7). An
+    /// invited lifter who never arrived is not standing at a rack.
+    ///
+    /// The medians are measured over the WHOLE SESSION, not the round: the
+    /// re-mix wants each lifter's typical pace, and one round is one data
+    /// point. `allSessionSets` is the uncapped, `logged_at ASC` array — never
+    /// `feedSets`, which caps at 30 rows across all participants.
+    ///
+    /// FAILURE IS NOT FATAL. A re-mix that cannot be written leaves the
+    /// previous assignment standing and logs: a station split must never block
+    /// a round.
+    @MainActor
+    private func remixStations(exercisePosition: Int) async {
+        let lifters = presentRotation.map(\.participant.userID)
+        guard lifters.count > 3 else { return }
+
+        let medians = RestMeasure.medians(
+            from: allSessionSets,
+            since: liveSession.startedAt ?? .distantPast)
+        let split = StationSplit.assign(
+            lifters: lifters,
+            // `nil`: no session -> venue link and no rack COUNT exist, so the
+            // cap is a parameter B1 never fills (the plan's data decision 3).
+            count: StationSplit.count(crew: lifters.count, equipmentCap: nil),
+            restMedians: medians,
+            previous: liveSession.stations)
+
+        do {
+            // `StationSplit.rows` is the ONE place `lifterIDs` and `turnOrder`
+            // are paired: `set_session_stations` validates the shape and the
+            // roster but not `turn_order`'s contents (D4), so that invariant
+            // is the client's to keep and it is kept in one function.
+            liveSession.stations = try await SessionRepository.setStations(
+                sessionID: liveSession.id,
+                exercisePosition: exercisePosition,
+                stations: StationSplit.rows(from: split))
+        } catch {
+            AppLogger.sessions.error(
+                "station re-mix failed at exercise \(exercisePosition, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    // MARK: - Reaction actions
 
     /// Tap a reaction emoji — sends broadcast; own pill shows via onReaction callback.
     @MainActor
@@ -5302,6 +4116,9 @@ struct GroupSessionLiveView: View {
         // convention) so a retry that succeeds drops the banner immediately,
         // and a retry that fails re-sets it fresh below.
         logSetErrorText = nil
+        // Same convention for the follow-up note (ruling R-B22): a fresh
+        // attempt never shows the previous set's leftover.
+        logFollowUpNote = nil
         // Field report #20 instrumentation: failed-set sends reportedly
         // hang for seconds with no obvious synchronous culprit. Every
         // await on the critical path gets a millisecond stamp, tagged by
@@ -5426,9 +4243,18 @@ struct GroupSessionLiveView: View {
                 // manually in the meantime, or a no-show is marked, the
                 // queued advance quietly does nothing instead of shoving the
                 // rotation forward a second time.
-                PendingTurnAdvanceStore.shared.record(
-                    sessionID: session.id,
-                    observedVersion: liveSession.turnVersion)
+                //
+                // ONLY IN A STYLE THAT HAS TURNS (ruling R-B22): a recorded
+                // advance is an `advance_turn` deferred, not a different call,
+                // so it answers to the same law as the online path below. A
+                // Together or Freestyle lifter who logged offline would
+                // otherwise have that replay fire on reconnect and raise
+                // P0001 against a rotation their style does not run.
+                if LogFollowUp.calls(for: style).contains(.advanceTurn) {
+                    PendingTurnAdvanceStore.shared.record(
+                        sessionID: session.id,
+                        observedVersion: liveSession.turnVersion)
+                }
                 didQueueSetOffline = true
             }
             // The set is durably recorded either way (server insert or offline
@@ -5481,24 +4307,65 @@ struct GroupSessionLiveView: View {
                 }
             }
 
-            // Phase O Task 3 fix wave 1 (reviewer Finding 1) — skip advanceTurn
-            // entirely when this attempt queued offline; see the queuing
-            // branch's comment above for the full rationale. The normal
-            // ONLINE path is unaffected: `didQueueSetOffline` stays false, so
-            // advanceTurn still runs, and a genuine failure here (e.g. a real
-            // permanent error, or connectivity dropping between logSet and
-            // advanceTurn) still falls into the catch below and shows the
-            // existing retry banner exactly as before.
+            // Phase O Task 3 fix wave 1 (reviewer Finding 1) — skip the
+            // follow-ups entirely when this attempt queued offline; see the
+            // queuing branch's comment above for the full rationale. The
+            // normal ONLINE path is unaffected: `didQueueSetOffline` stays
+            // false, so the follow-ups below still run.
             guard !didQueueSetOffline else { stamp("TOTAL (offline)", tTotal); return true }
-            let tAdvance = Date()
-            try await SessionRepository.advanceTurn(sessionID: session.id)
-            stamp("advanceTurn", tAdvance)
+            // THE INSERT WAS THE TRANSACTION (ruling R-B22). Everything past
+            // this line is a follow-up on a set that is ALREADY IN THE
+            // DATABASE, so it gets its own `do` and can never reach the outer
+            // `catch` — which returns `false`, which `commitInlineLog` reads
+            // as "nothing was saved, keep the card up for a retry". That read
+            // was true when the only follow-up was `advance_turn` on a turn
+            // this lifter necessarily held; it became a duplicate-set factory
+            // the moment Together and Freestyle started logging (final review,
+            // finding 1), because `advance_turn` raises P0001 for every lifter
+            // who is neither the current turn holder nor the organizer.
+            // WHICH calls run is `LogFollowUp.calls(for:)`'s answer, not a
+            // condition spelled here (RoundPieces.swift, unit-tested).
+            do {
+                for call in LogFollowUp.calls(for: style) {
+                    switch call {
+                    case .advanceTurn:
+                        let tAdvance = Date()
+                        try await SessionRepository.advanceTurn(sessionID: session.id)
+                        stamp("advanceTurn", tAdvance)
+                        // A live advance settles any advance this device still
+                        // owed from an earlier offline set — the queued one
+                        // would no-op anyway (version guard), but dropping it
+                        // keeps the store honest rather than accumulating
+                        // entries that only ever fizzle.
+                        PendingTurnAdvanceStore.shared.clear(sessionID: session.id)
+                    case .advanceRound:
+                        // NEVER FORCED: `p_force` is the crew's skip line's own
+                        // escape (R-B13) and nothing else. Unforced, the server
+                        // returns the round unchanged unless every present
+                        // lifter has logged since the round opened — so this
+                        // call is a cheap OFFER to close, safe to repeat and
+                        // safe to lose, made by whoever happens to log last.
+                        let tRound = Date()
+                        let round = try await SessionRepository.advanceRound(
+                            sessionID: session.id, expectedRound: liveSession.round)
+                        stamp("advanceRound", tRound)
+                        // Lead the realtime echo with the round the server just
+                        // told us (`endSession`'s own idiom — see
+                        // `pushWatchSessionState`'s doc comment). ONLY the
+                        // round: `round_started_at` belongs to the same UPDATE
+                        // and arrives with it, and stamping a client `Date()`
+                        // in its place would hand every round-wait derivation a
+                        // window this device invented — exactly what
+                        // `RoundHold`'s "never from a view timer" law forbids.
+                        if round != liveSession.round { liveSession.round = round }
+                    }
+                }
+            } catch let error as GymSyncError {
+                noteLogFollowUpFailure(error.errorDescription)
+            } catch {
+                noteLogFollowUpFailure(error.localizedDescription)
+            }
             stamp("TOTAL", tTotal)
-            // A live advance settles any advance this device still owed from
-            // an earlier offline set — the queued one would no-op anyway
-            // (version guard), but dropping it keeps the store honest rather
-            // than accumulating entries that only ever fizzle.
-            PendingTurnAdvanceStore.shared.clear(sessionID: session.id)
             return true
         } catch let error as GymSyncError {
             // Upgraded treatment (Canvas Completion Task 4 fix round 1, proof
@@ -5510,6 +4377,28 @@ struct GroupSessionLiveView: View {
         } catch {
             logSetErrorText = error.localizedDescription
             return false
+        }
+    }
+
+    /// Say once, quietly, that a follow-up on an already-saved set did not go
+    /// through (ruling R-B22), then take it back down.
+    ///
+    /// Auto-clearing because there is no action attached: the set is in the
+    /// database, and the turn or the round is moved on by the next lifter's
+    /// own call — a note that outlived its moment would just be a stuck
+    /// warning about something already fixed. The `==` re-check before
+    /// clearing is `selfRotationRestUntil`'s own idiom in this file: only the
+    /// note still on screen clears itself, so a newer one is never wiped by an
+    /// older one's timer.
+    @MainActor
+    private func noteLogFollowUpFailure(_ text: String?) {
+        guard let text else { return }
+        AppLogger.workout.warning(
+            "logSet follow-up failed on a persisted set (style \(style.rawValue, privacy: .public)): \(text, privacy: .public)")
+        logFollowUpNote = text
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(6))
+            if logFollowUpNote == text { logFollowUpNote = nil }
         }
     }
 
@@ -5664,9 +4553,10 @@ struct GroupSessionLiveView: View {
         prOverlayPriorBest = priorBest
         prOverlayMonthlyCount = nil
         withAnimation(.easeOut(duration: 0.25)) { isPROverlay = true }
-        // Ronnie for the PR moment (user 2026-08-01) — catalog slug
-        // lightweight-baby, imported through the 5s-cap pipeline.
-        Task { await SoundboardPlayer.shared.play(slug: "lightweight-baby") }
+        // Ronnie for the PR moment (user 2026-08-01) left with the
+        // soundboard (ruling R-B8, plan task S11) — the celebration keeps
+        // its haptic (`logHapticTick`, fired on every logged set) but no
+        // longer plays a sound.
     }
 
     @MainActor
@@ -5703,17 +4593,6 @@ struct GroupSessionLiveView: View {
             if feedSets.count > 30 { feedSets = Array(feedSets.prefix(30)) }
             allSessionSets.append(log)
             if isPenalty && !isFailed { penaltyLogged += reps ?? 0 }
-        } catch {
-            errorText = error.localizedDescription
-        }
-    }
-
-    @MainActor
-    private func skipTurn() async {
-        do {
-            try await SessionRepository.advanceTurn(sessionID: session.id)
-        } catch let error as GymSyncError {
-            errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription
         }

@@ -3,12 +3,12 @@ import SwiftUI
 // MARK: - GroupRecapView
 //
 // Canvas frame 8 (proof-frame-08.png) — full-screen group celebration recap.
-// Presented from `GroupSessionLiveView.endSession()` the moment a GROUP
+// Presented from `SessionLiveView.endSession()` the moment a GROUP
 // session (liveSession.groupID != nil) completes, replacing the plain
 // `SessionRecapView` sheet that view used to show for every completion
 // regardless of solo/group. Solo/ad-hoc sessions routed through the same
 // live view are UNCHANGED — still `SessionRecapView` (see
-// `GroupSessionLiveView.buildGroupRecapPayload`'s doc comment for the
+// `SessionLiveView.buildGroupRecapPayload`'s doc comment for the
 // before/after). `SessionRecapView`/`CompletedSessionView` remain the
 // from-history views (spec §2: "Session Detail (frame 34) remains the
 // from-history view") — this screen is the live, one-time completion
@@ -19,7 +19,7 @@ import SwiftUI
 // extraction rationale (SoloRecapView.swift's type doc comment: "a
 // hand-built catalog reproduction drifts from the real view over time, so
 // the real view is parameterized on plain display-ready values instead"):
-// `GroupSessionLiveView` computes the hero/leaderboard/PR-card values from
+// `SessionLiveView` computes the hero/leaderboard/PR-card values from
 // data it already has at completion time (`participants`, the freshly
 // fetched session sets, `ledgerGroup`, `routineName`, a
 // `PersonalRecordRepository.bySession` fetch for the caller's OWN heaviestPR
@@ -116,7 +116,7 @@ struct GroupRecapView: View {
     #if DEBUG
     /// Catalog-fixture seam — see type doc comment. Non-nil only from the
     /// debug-only fixture initializer below; always nil on the real
-    /// (GroupSessionLiveView) call path.
+    /// (SessionLiveView) call path.
     private let catalogFixtureKudosCounts: [UUID: Int]?
     #endif
 
@@ -421,7 +421,7 @@ struct GroupRecapView: View {
     }
 
     // MARK: - Send Kudos to the Crew — 5-emoji row, 1/sec client discipline
-    // (same rate-limit idiom as GroupSessionLiveView.tapSound)
+    // (same rate-limit idiom as SessionLiveView.tapSound)
 
     private var kudosSendSection: some View {
         VStack(alignment: .leading, spacing: 8) {

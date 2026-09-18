@@ -72,23 +72,20 @@ final class WatchEnvelopeTests: XCTestCase {
         XCTAssertLessThan(abs(decodedPayload.updatedAt.timeIntervalSince(original.updatedAt)), 1.0)
     }
 
-    /// Task 3 round-trip: the 4 new `WatchSessionStatePayload` fields
-    /// (`currentExerciseID`, `burpeesPaid`, `soundboardFavorites`,
-    /// `isActive`) survive the SAME full wire path as the Task 2 test
-    /// above, non-default values throughout so a bug that silently drops
-    /// back to a default couldn't hide behind "happens to match anyway."
-    /// Fix wave 1 extended this to also cover `soundboardFavoriteLabels`
-    /// (the 5th field, reviewer finding IMPORTANT 2) with its own distinct
-    /// (non-slug-matching) values, for the identical reason.
+    /// Task 3 round-trip: the 3 new `WatchSessionStatePayload` fields
+    /// (`currentExerciseID`, `burpeesPaid`, `isActive`) survive the SAME
+    /// full wire path as the Task 2 test above, non-default values
+    /// throughout so a bug that silently drops back to a default couldn't
+    /// hide behind "happens to match anyway." (Task 3 also added
+    /// `soundboardFavorites`/`soundboardFavoriteLabels`, covered by this
+    /// same test until they left with the soundboard, plan task S11.)
     func testSessionStatePayloadRoundTripsTask3Fields() throws {
         let exerciseID = UUID()
         let original = WatchSessionStatePayload(
             sessionID: UUID(), groupID: UUID(), sessionName: "Push Day",
             currentExerciseName: "Bench Press", currentExerciseID: exerciseID,
             currentLifterName: "tommy", isMyTurn: true, burpeesOwed: 3,
-            burpeesPaid: 7, soundboardFavorites: ["airhorn", "crowd-cheer"],
-            soundboardFavoriteLabels: ["Air Horn", "Crowd Cheer"],
-            isActive: false
+            burpeesPaid: 7, isActive: false
         )
         let envelope = try WatchEnvelope.encode(kind: .sessionState, payload: original)
         let message = try envelope.asMessage()
@@ -97,8 +94,6 @@ final class WatchEnvelopeTests: XCTestCase {
 
         XCTAssertEqual(decodedPayload.currentExerciseID, exerciseID)
         XCTAssertEqual(decodedPayload.burpeesPaid, 7)
-        XCTAssertEqual(decodedPayload.soundboardFavorites, ["airhorn", "crowd-cheer"])
-        XCTAssertEqual(decodedPayload.soundboardFavoriteLabels, ["Air Horn", "Crowd Cheer"])
         XCTAssertFalse(decodedPayload.isActive)
     }
 
@@ -113,13 +108,6 @@ final class WatchEnvelopeTests: XCTestCase {
     /// constructing via `WatchSessionStatePayload.init(...)` would always
     /// include the new fields (they have parameter defaults), so it could
     /// never actually exercise the missing-key decode path this test needs.
-    /// Fix wave 1 extended this test's own assertions to cover
-    /// `soundboardFavoriteLabels`'s fallback too (falls back to `[]`, the
-    /// same default `soundboardFavorites` itself lands on here, since both
-    /// keys are equally absent from this JSON) — see the SEPARATE test
-    /// immediately below for the fix-wave-1-specific "slugs present, labels
-    /// absent" schema-lag scenario this field's fallback rule was actually
-    /// designed for.
     func testSessionStatePayloadDecodesOldShapeMissingTask3Fields() throws {
         let sessionID = UUID()
         let json = """
@@ -143,43 +131,10 @@ final class WatchEnvelopeTests: XCTestCase {
         // to their documented defaults, not throw.
         XCTAssertNil(decoded.currentExerciseID)
         XCTAssertEqual(decoded.burpeesPaid, 0)
-        XCTAssertEqual(decoded.soundboardFavorites, [])
-        XCTAssertEqual(decoded.soundboardFavoriteLabels, [])
         XCTAssertTrue(decoded.isActive)
         // Task 4 field — also absent from this fully-old JSON — must fall
         // back to `false` (the column's own safe default), not throw.
         XCTAssertFalse(decoded.shareHeartRate)
-    }
-
-    /// Fix wave 1's OWN backward-compat proof (IMPORTANT 2) — the schema-lag
-    /// scenario `soundboardFavoriteLabels`'s fallback rule was actually
-    /// written for: a build that already sends `soundboardFavorites` (any
-    /// Task-3-wave-0 build, already shipped before this fix) but predates
-    /// `soundboardFavoriteLabels` itself. Falling back to `[]` here (like
-    /// the fully-old-shape test above) would silently blank out every
-    /// soundboard tile's label on a Watch that's otherwise perfectly capable
-    /// of showing slugs — the fallback instead reuses `soundboardFavorites`
-    /// itself, so the watch keeps rendering exactly what it rendered before
-    /// this field existed (the slug), never a blank string.
-    func testSessionStatePayloadFallsBackToSlugsWhenLabelsKeyAbsent() throws {
-        let sessionID = UUID()
-        let json = """
-        {
-            "sessionID": "\(sessionID.uuidString)",
-            "groupID": null,
-            "sessionName": "Push Day",
-            "currentExerciseName": "Bench Press",
-            "currentLifterName": "tommy",
-            "isMyTurn": true,
-            "burpeesOwed": 3,
-            "soundboardFavorites": ["airhorn", "crowd-cheer"],
-            "updatedAt": "2026-07-19T12:00:00Z"
-        }
-        """
-        let decoded = try WatchWire.decoder.decode(WatchSessionStatePayload.self, from: Data(json.utf8))
-
-        XCTAssertEqual(decoded.soundboardFavorites, ["airhorn", "crowd-cheer"])
-        XCTAssertEqual(decoded.soundboardFavoriteLabels, ["airhorn", "crowd-cheer"])
     }
 
     /// Task 4 (watch-hr design §4) round trip: `shareHeartRate` survives the
@@ -200,14 +155,12 @@ final class WatchEnvelopeTests: XCTestCase {
         XCTAssertTrue(decodedPayload.shareHeartRate)
     }
 
-    /// Task 4's OWN backward-compat proof — the T3 fix wave's established
-    /// pattern, followed exactly (see `testSessionStatePayloadFallsBackToSlugsWhenLabelsKeyAbsent`
-    /// above for the analogous Task-3-wave-1 case): a payload JSON that
-    /// already carries every Task-3 field but predates `shareHeartRate`
-    /// itself (a build one version behind THIS fix) must still decode,
-    /// falling back to `false` — the Watch's default posture is "don't
-    /// start the HR query" unless explicitly told otherwise, matching the
-    /// column's own `DEFAULT false`
+    /// Task 4's OWN backward-compat proof: a payload JSON that already
+    /// carries every Task-3 field but predates `shareHeartRate` itself (a
+    /// build one version behind THIS fix) must still decode, falling back
+    /// to `false` — the Watch's default posture is "don't start the HR
+    /// query" unless explicitly told otherwise, matching the column's own
+    /// `DEFAULT false`
     /// (`supabase/migrations/20260727000001_user_settings_share_heart_rate.sql`).
     func testSessionStatePayloadFallsBackToShareHeartRateFalseWhenKeyAbsent() throws {
         let sessionID = UUID()
@@ -221,8 +174,6 @@ final class WatchEnvelopeTests: XCTestCase {
             "isMyTurn": true,
             "burpeesOwed": 3,
             "burpeesPaid": 7,
-            "soundboardFavorites": ["airhorn"],
-            "soundboardFavoriteLabels": ["Air Horn"],
             "isActive": true,
             "updatedAt": "2026-07-19T12:00:00Z"
         }
@@ -234,7 +185,6 @@ final class WatchEnvelopeTests: XCTestCase {
         // still decodes normally — this test isolates `shareHeartRate`'s
         // own fallback, not a general decode failure.
         XCTAssertEqual(decoded.burpeesPaid, 7)
-        XCTAssertEqual(decoded.soundboardFavorites, ["airhorn"])
     }
 
     /// `WatchIdleStatePayload` round trip — Task 3's other new payload type,
@@ -325,7 +275,7 @@ final class WatchEnvelopeTests: XCTestCase {
     func testAllDeclaredKindsAreRecognized() {
         // Task 3 extended this list with `.idleState` — every kind
         // `WatchMessageKind` currently declares.
-        for kind: WatchMessageKind in [.sessionState, .logSet, .soundboardTap, .hrSample, .idleState] {
+        for kind: WatchMessageKind in [.sessionState, .logSet, .hrSample, .idleState] {
             let envelope = WatchEnvelope(kind: kind, payload: Data())
             XCTAssertEqual(envelope.decodedKind(), kind)
         }

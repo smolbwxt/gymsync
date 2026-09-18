@@ -13,7 +13,10 @@ enum AppLogger {
     static let chat = Logger(subsystem: subsystem, category: "chat")
     static let lobby = Logger(subsystem: subsystem, category: "lobby")
     static let sessions = Logger(subsystem: subsystem, category: "sessions")
-    static let soundboard = Logger(subsystem: subsystem, category: "soundboard")
+    // Renamed from `.soundboard` (plan task S11): SessionBroadcastService's
+    // own errors — reaction and swap broadcasts — are what this category
+    // now covers; the soundboard broadcast it used to also log left the app.
+    static let sessionBroadcast = Logger(subsystem: subsystem, category: "session-broadcast")
     static let audio = Logger(subsystem: subsystem, category: "audio")
     static let push = Logger(subsystem: subsystem, category: "push")
     static let voice = Logger(subsystem: subsystem, category: "voice")
