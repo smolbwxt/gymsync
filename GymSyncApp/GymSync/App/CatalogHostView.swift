@@ -187,6 +187,25 @@ enum CatalogScreen: String, CaseIterable {
     case sessionScaleDown = "session-scale-down"
     case sessionWarmupSuggestion = "session-warmup-suggestion"
     case sessionYourTurn = "session-your-turn"
+    // Owner-decisions round (plan task S9, 2026-09-18): S6 gave the rack
+    // count two surfaces (LobbyView.styleCard's ask, StationCard's header
+    // chip) and neither got a catalog frame, because LobbyWorld sets no
+    // venue and the chip is gated on `onSetRackCount != nil` (so frames
+    // 129/136 and 137/139/143 stay byte-identical). `session-round-rack-chip`
+    // photographs the chip alone, over the SAME LiveFixtures.roundWait world
+    // frame 137 captures, with a rack count and a no-op correction closure —
+    // see content_sessionRoundRackChip below.
+    //
+    // `session-lobby-rack-ask` (the ask's own frame) does NOT exist here.
+    // `LobbyView.rackAskClass` (LobbyView.swift:1248) needs `routineInfo` and
+    // `allExercises`, and both are populated only by `reload()`
+    // (LobbyView.swift:1897, 1920) — which returns immediately in catalog
+    // mode, before either repository call (LobbyView.swift:1880-1883). There
+    // is no fixture path to that gate without a live `RoutineRepository`/
+    // `ExerciseRepository` read, which global constraint 11 forbids a
+    // catalog builder from making. Stopped and reported rather than adding a
+    // production seam; frame 153 is unclaimed.
+    case sessionRoundRackChip = "session-round-rack-chip"
 }
 
 struct CatalogHostView: View {
@@ -307,6 +326,7 @@ struct CatalogHostView: View {
             case .sessionScaleDown:           content_sessionScaleDown
             case .sessionWarmupSuggestion:    content_sessionWarmupSuggestion
             case .sessionYourTurn:            content_sessionYourTurn
+            case .sessionRoundRackChip:       content_sessionRoundRackChip
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2704,6 +2724,26 @@ struct CatalogHostView: View {
                              plan: world.plan, coach: world.coach,
                              waitingOn: world.waitingOn, dockNames: world.dockNames,
                              reactionEmojis: world.reactionEmojis, skip: world.skip)
+    }
+
+    /// `session-round-rack-chip` (frame 154, plan task S9): the same
+    /// production `RoundWaitView` over the SAME `LiveFixtures.roundWait`
+    /// world `session-round-wait` (frame 137) captures, with a rack count
+    /// and a no-op correction closure — `RoundWaitView` carries both to the
+    /// FIRST station card only (`RoundWaitView.swift:100-103`), and
+    /// `StationCard`'s own gate is `onSetRackCount != nil`
+    /// (`RoundPieces.swift:772`), so frame 137 (and every other fixture)
+    /// keeps drawing the card with no chip at all. The `count: 2` fixture
+    /// mirrors decision 1's own example (a venue with a counted class).
+    private var content_sessionRoundRackChip: some View {
+        let world = LiveFixtures.roundWait
+        return RoundWaitView(kicker: world.kicker, title: world.title,
+                             stations: world.stations, rest: world.rest,
+                             planKicker: world.planKicker, rungLine: world.rungLine,
+                             plan: world.plan, coach: world.coach,
+                             waitingOn: world.waitingOn, dockNames: world.dockNames,
+                             reactionEmojis: world.reactionEmojis, skip: world.skip,
+                             rackCount: 2, onSetRackCount: { _ in })
     }
 
     /// `session-round-skip` (frame 138): the same screen with the quiet

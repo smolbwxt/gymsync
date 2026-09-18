@@ -382,5 +382,10 @@
     "frame": 152,
     "title": "PR celebration, B - the lift's place on your ladder leads",
     "note": "Owner-decisions round 2026-09-18 (plan task S3). A DESIGN ROUND on the PR celebration, not a production screen: the record read as progress rather than as a number - one raised island (radiusMd, 6 pt lip) carrying the lift, the old number and the new one as a before/after pair, and, where frame 29 draws two accent rings, the rung the athlete now stands on, worded only from the six values the caller already holds. 'nth PR this month' is the island's kicker and Share a flat glyph chip in its header, so the page's foot is one button. Accent is spent once, on the new number, which leaves KEEP LIFTING on the raised face. Same fixture as frames 29 and 151. RETIRES at the owner's pick, together with pr-celebration-a and PRCelebrationVariations.swift; 152 is then a retired number and is never reused."
+  },
+  "session-round-rack-chip": {
+    "frame": 154,
+    "title": "Rounds - the station card's rack correction chip",
+    "note": "Owner-decisions round 2026-09-18 (plan task S9). The production RoundWaitView over the SAME LiveFixtures.roundWait world frame 137 captures, with a rack count of 2 and a no-op onSetRackCount closure passed through to the first station card only (RoundWaitView.swift:100-103) - StationCard's own gate is onSetRackCount != nil (RoundPieces.swift:772), so every other catalog world and fixture (frames 137/139/143) keeps drawing the card exactly as before. session-lobby-rack-ask (frame 153) is not built: LobbyView.rackAskClass needs routineInfo/allExercises, both populated only by reload(), which returns before any repository call in catalog mode (LobbyView.swift:1880-1883) - there is no fixture path to that gate without a live repository read, so frame 153 is unclaimed rather than a production seam being added."
   }
 }

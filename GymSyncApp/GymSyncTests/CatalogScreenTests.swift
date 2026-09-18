@@ -152,6 +152,11 @@ final class CatalogScreenTests: XCTestCase {
             "session-scale-down",
             "session-warmup-suggestion",
             "session-your-turn",
+            // Owner-decisions round (plan task S9), frame 154: the station
+            // card's rack chip alone, over the same round fixture frame 137
+            // captures. `session-lobby-rack-ask` (frame 153) is not built —
+            // see CatalogHostView's CatalogScreen enum for why.
+            "session-round-rack-chip",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")
