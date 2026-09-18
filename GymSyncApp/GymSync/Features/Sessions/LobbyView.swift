@@ -1241,13 +1241,17 @@ struct LobbyView: View {
     ///
     /// Plus the lifter's own SKIP, which silences it for this lobby.
     ///
-    /// GLOBAL CONSTRAINT 11: a catalog world never reaches a repository, and
-    /// `LobbyWorld` sets no venue — so frame 129 and frame 136 render exactly
-    /// what they render today (constraint 14). The guard below is belt to
-    /// that braces, the same shape `applyStyleDefaultIfNeeded()` carries.
+    /// GLOBAL CONSTRAINT 11: a catalog world never reaches a repository. A
+    /// catalog world may name the class directly (`LobbyWorld.rackAskClass`)
+    /// instead of deriving it from `routineInfo`/`allExercises`, which only a
+    /// live `RoutineRepository`/`ExerciseRepository` read can populate — the
+    /// fixture states the answer rather than earning it. Defaulted to `nil`
+    /// on `LobbyWorld`, so frame 129 and frame 136 render exactly what they
+    /// render today (constraint 14); `session-lobby-rack-ask` (frame 153) is
+    /// the one world that sets it.
     private var rackAskClass: String? {
         #if DEBUG
-        if catalog != nil { return nil }
+        if let catalog { return catalog.rackAskClass }
         #endif
         guard !rackAskSkipped,
               effectiveSession.style == .rounds,

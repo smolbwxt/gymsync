@@ -195,17 +195,18 @@ enum CatalogScreen: String, CaseIterable {
     // photographs the chip alone, over the SAME LiveFixtures.roundWait world
     // frame 137 captures, with a rack count and a no-op correction closure —
     // see content_sessionRoundRackChip below.
-    //
-    // `session-lobby-rack-ask` (the ask's own frame) does NOT exist here.
-    // `LobbyView.rackAskClass` (LobbyView.swift:1248) needs `routineInfo` and
-    // `allExercises`, and both are populated only by `reload()`
-    // (LobbyView.swift:1897, 1920) — which returns immediately in catalog
-    // mode, before either repository call (LobbyView.swift:1880-1883). There
-    // is no fixture path to that gate without a live `RoutineRepository`/
-    // `ExerciseRepository` read, which global constraint 11 forbids a
-    // catalog builder from making. Stopped and reported rather than adding a
-    // production seam; frame 153 is unclaimed.
     case sessionRoundRackChip = "session-round-rack-chip"
+    // Coordinator ruling, same task: the ask's own frame IS buildable without
+    // a repository — `LobbyWorld` now carries `rackAskClass` directly
+    // (`LobbyFixtures.swift`), and `LobbyView.rackAskClass`
+    // (`LobbyView.swift:1248`) reads it straight from the catalog world
+    // instead of deriving it from `routineInfo`/`allExercises` (which still
+    // only a live repository read can populate — that derivation path is
+    // untouched and still unreachable from a catalog builder).
+    // `session-lobby-rack-ask` is `LobbyFixtures.waiting` (frame 129) copied
+    // with `rackAskClass: "barbell"` named on the fixture — see
+    // `LobbyFixtures.rackAsk` and `content_sessionLobbyRackAsk` below.
+    case sessionLobbyRackAsk = "session-lobby-rack-ask"
 }
 
 struct CatalogHostView: View {
@@ -327,6 +328,7 @@ struct CatalogHostView: View {
             case .sessionWarmupSuggestion:    content_sessionWarmupSuggestion
             case .sessionYourTurn:            content_sessionYourTurn
             case .sessionRoundRackChip:       content_sessionRoundRackChip
+            case .sessionLobbyRackAsk:        content_sessionLobbyRackAsk
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2588,6 +2590,16 @@ struct CatalogHostView: View {
     /// retires.
     private var content_sessionLobbyWaiting: some View {
         NavigationStack { LobbyView(catalog: LobbyFixtures.waiting) }
+    }
+
+    /// `session-lobby-rack-ask` (frame 153, owner-decisions round, plan task
+    /// S9): `LobbyFixtures.waiting`'s crew, Rounds style, over
+    /// `LobbyFixtures.rackAsk` — the same world with `rackAskClass: "barbell"`
+    /// named on the fixture, so `LobbyView.styleCard` draws the stepper
+    /// (`RackCountAsk`) under the style rows. Nothing else on the screen
+    /// differs from frame 129.
+    private var content_sessionLobbyRackAsk: some View {
+        NavigationStack { LobbyView(catalog: LobbyFixtures.rackAsk) }
     }
 
     /// `session-lobby-ready`: everyone's here — the accent arrival widget

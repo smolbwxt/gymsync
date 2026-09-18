@@ -386,6 +386,11 @@
   "session-round-rack-chip": {
     "frame": 154,
     "title": "Rounds - the station card's rack correction chip",
-    "note": "Owner-decisions round 2026-09-18 (plan task S9). The production RoundWaitView over the SAME LiveFixtures.roundWait world frame 137 captures, with a rack count of 2 and a no-op onSetRackCount closure passed through to the first station card only (RoundWaitView.swift:100-103) - StationCard's own gate is onSetRackCount != nil (RoundPieces.swift:772), so every other catalog world and fixture (frames 137/139/143) keeps drawing the card exactly as before. session-lobby-rack-ask (frame 153) is not built: LobbyView.rackAskClass needs routineInfo/allExercises, both populated only by reload(), which returns before any repository call in catalog mode (LobbyView.swift:1880-1883) - there is no fixture path to that gate without a live repository read, so frame 153 is unclaimed rather than a production seam being added."
+    "note": "Owner-decisions round 2026-09-18 (plan task S9). The production RoundWaitView over the SAME LiveFixtures.roundWait world frame 137 captures, with a rack count of 2 and a no-op onSetRackCount closure passed through to the first station card only (RoundWaitView.swift:100-103) - StationCard's own gate is onSetRackCount != nil (RoundPieces.swift:772), so every other catalog world and fixture (frames 137/139/143) keeps drawing the card exactly as before."
+  },
+  "session-lobby-rack-ask": {
+    "frame": 153,
+    "title": "Crew lobby - the style card's rack question",
+    "note": "Owner-decisions round 2026-09-18 (plan task S9, coordinator ruling). LobbyFixtures.waiting (frame 129) copied as LobbyFixtures.rackAsk with rackAskClass: \"barbell\" named on the fixture - LobbyView.rackAskClass (LobbyView.swift:1248) reads a catalog world's rackAskClass directly rather than deriving it from a live routineInfo/allExercises lookup, so no repository is reached. rack_counts stays empty, so the ask shows as unanswered and skippable, under the style rows, on the same crew and routine frame 129 renders. LobbyWorld.rackAskClass defaults to nil, so frames 129/130/131/135/136 are unchanged."
   }
 }

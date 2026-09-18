@@ -882,9 +882,12 @@ final class ScreenshotTests: XCTestCase {
     // Owner-decisions round (plan task S9), frame 154: the rack count's
     // station-card chip, alone — the production RoundWaitView over the same
     // LiveFixtures.roundWait world frame 137 captures, with a rack count and
-    // a no-op correction closure. session-lobby-rack-ask (frame 153) has no
-    // capture here; see CatalogHostView's CatalogScreen enum for why.
+    // a no-op correction closure.
     func testCatalogSessionRoundRackChip()   { captureCatalog("session-round-rack-chip") }
+    // Coordinator ruling, same task, frame 153: the lobby's style card with
+    // the rack question showing, over LobbyFixtures.rackAsk (waiting's crew,
+    // rackAskClass: "barbell" named on the fixture).
+    func testCatalogSessionLobbyRackAsk()    { captureCatalog("session-lobby-rack-ask") }
 
     // MARK: - Seeded deep-screen captures
     //
