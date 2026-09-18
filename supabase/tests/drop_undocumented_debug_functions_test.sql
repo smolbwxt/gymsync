@@ -5,12 +5,14 @@
 -- pg_depend, pg_policies, information_schema.views/triggers, and repo
 -- grep — see the migration header and task-3-report.md) — there is no
 -- "positive" behavior to preserve, so this test is entirely a
--- public-gone proof, plus two regression guards confirming the real
+-- public-gone proof, plus a regression guard confirming the real
 -- resolve_proposal() trigger (which these were instrumented forks of)
--- and its wiring on routine_proposal_votes are untouched.
+-- is untouched. (Phase B2 D3: the second regression guard, which checked
+-- this trigger's wiring on its (now-retired) host table, retired along
+-- with that table's other pgTAP references — see D4 for the drop itself.)
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(8);
+SELECT plan(7);
 
 -- ============================================================
 -- 1-2. resolve_proposal_debug: gone from pg_proc, calling by name fails.
@@ -64,9 +66,9 @@ SELECT throws_ok(
 );
 
 -- ============================================================
--- 7-8. Regression guard: the REAL resolve_proposal() trigger (which
--- the 3 dropped functions were instrumented forks of) and its wiring
--- on routine_proposal_votes are untouched by this migration.
+-- 7. Regression guard: the REAL resolve_proposal() trigger function
+-- (which the 3 dropped functions were instrumented forks of) is
+-- untouched by this migration.
 -- ============================================================
 SELECT results_eq(
   $$SELECT count(*)::int FROM pg_proc p
@@ -74,16 +76,6 @@ SELECT results_eq(
     WHERE n.nspname = 'public' AND p.proname = 'resolve_proposal'$$,
   ARRAY[1],
   'public.resolve_proposal (the real trigger function) still exists, untouched'
-);
-
-SELECT results_eq(
-  $$SELECT count(*)::int FROM pg_trigger t
-    JOIN pg_class c ON t.tgrelid = c.oid
-    JOIN pg_proc p ON t.tgfoid = p.oid
-    WHERE c.relname = 'routine_proposal_votes' AND t.tgname = 'proposal_vote_cast'
-      AND p.proname = 'resolve_proposal' AND NOT t.tgisinternal$$,
-  ARRAY[1],
-  'proposal_vote_cast trigger on routine_proposal_votes is still wired to resolve_proposal'
 );
 
 SELECT * FROM finish();

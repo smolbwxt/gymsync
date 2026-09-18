@@ -36,7 +36,6 @@
 //   ON DELETE CASCADE (deleted outright — this user's own data):
 //     friendships.user_id/friend_id, gyms.user_id, set_logs.user_id,
 //     routines.owner_id (+ routine_exercises via routine_id CASCADE),
-//     routine_proposals.proposer_id, routine_proposal_votes.user_id,
 //     chat_message_reactions.user_id, chat_read_state.user_id,
 //     group_members.user_id, session_participants.user_id,
 //     personal_records.user_id, session_duration_edits.edited_by,
@@ -86,7 +85,7 @@
 //    chat_messages.author_id above, which does). Left alone, deleting a
 //    group's creator or a session's organizer would CASCADE-delete the
 //    ENTIRE group/session — its chat_messages (group_id NOT NULL + CASCADE,
-//    create_chat.sql:3), its session_kudos, its routine_proposals — even
+//    create_chat.sql:3), its session_kudos — even
 //    though other members/participants are still actively using it. That
 //    directly violates the product law this function exists to satisfy
 //    (master spec §6.2: "Sessions/groups the user was a member of get
