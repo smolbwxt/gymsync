@@ -450,7 +450,12 @@ struct PumpPostCard: View {
             }
         }
         .frame(width: 88, height: 88)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        // Docket leftover (plan task S8b): this was a third, one-off radius
+        // (14) — design rule 1 allows only `GSMetrics.radiusMd` (24, cards)
+        // and `GSMetrics.radiusSm` (16, tiles), and an 88 pt square thumb is
+        // a tile. Two-pixel corner change to `app-pump-feed-post`, declared
+        // as an accepted deviation at I1.
+        .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusSm))
     }
 
     /// One line per exercise, every number kept — the full per-set rows live

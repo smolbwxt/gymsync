@@ -477,8 +477,10 @@ final class ScreenshotTests: XCTestCase {
     // fixed contract; a typo'd id here silently renders nothing (the launch
     // hook only routes on `CatalogScreen(rawValue:)` success).
 
-    /// Launches directly into a debug catalog screen and captures it.
-    private func captureCatalog(_ id: String) {
+    /// One `UITEST_CATALOG` launch — factored out of `captureCatalog(_:)`
+    /// (plan task S8c) so the retry there can call it twice without
+    /// duplicating the launch-argument/environment setup.
+    private func launchCatalogApp(_ id: String) -> XCUIApplication {
         let app = XCUIApplication()
         // Kill tips and tours for catalog captures too. `launchApp()` has
         // always passed this; `captureCatalog()` passed no launch arguments
@@ -502,6 +504,41 @@ final class ScreenshotTests: XCTestCase {
         env["UITEST_CATALOG"] = id
         app.launchEnvironment = env
         app.launch()
+        return app
+    }
+
+    /// Launches directly into a debug catalog screen and captures it.
+    ///
+    /// A SINGLE RETRY on the launch itself (docket leftover, plan task S8c).
+    /// The class-level warm-up in `setUp()` above only exercises the
+    /// signed-in autologin path (it polls for the "Home" button); it pays
+    /// nothing for THIS launch route, which bypasses `RootView` entirely via
+    /// `UITEST_CATALOG` and has no fixed element to warm up on across 100+
+    /// different ids. So whichever catalog test happens to run first can
+    /// still pay a cold-simulator install/boot cost this file has already
+    /// seen once on the signed-in path (`fix4-ci-warmup.md`) — this is that
+    /// same residual flake, one launch route over. Local to this function
+    /// only: the 19 `launchApp()` call sites and every other test are
+    /// untouched, and the retry is capped at one.
+    private func captureCatalog(_ id: String) {
+        var app = launchCatalogApp(id)
+        // A generic readiness probe, not a specific identifier: the 100+
+        // catalog ids render 100+ different screens with no element in
+        // common, so "did anything render at all" (any AX element, of any
+        // type) is the only signal available without hard-coding a
+        // per-id expectation into this shared function.
+        var rendered = app.descendants(matching: .any).firstMatch
+            .waitForExistence(timeout: catalogRenderBudget)
+        if !rendered {
+            NSLog("[ScreenshotTests] catalog launch for \"\(id)\" produced no view within \(catalogRenderBudget)s — retrying once")
+            app.terminate()
+            app = launchCatalogApp(id)
+            rendered = app.descendants(matching: .any).firstMatch
+                .waitForExistence(timeout: catalogRenderBudget)
+            if !rendered {
+                NSLog("[ScreenshotTests] catalog launch for \"\(id)\" produced no view on the retry either — capturing whatever is on screen")
+            }
+        }
         // NOT `settle()`: a catalog launch bypasses `RootView` entirely, so
         // there is no launch overlay to wait OUT and nothing here is a
         // synchronization point — this sleep is the screen's whole render
