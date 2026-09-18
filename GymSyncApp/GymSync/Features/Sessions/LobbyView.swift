@@ -57,6 +57,12 @@ struct LobbyView: View {
     /// old `presenceSet.contains(id)` asked.
     @State private var presenceStages: [UUID: String] = [:]
     @State private var realtime = LobbyRealtimeService()
+    /// The viewer's own ladder page, for the plan card's rung line (plan task
+    /// S6). Nil is the normal case — no active block, or a fetch that did not
+    /// land — and prints the routine's name, which is what this card printed
+    /// before the rung reached it.
+    @State private var rungPage: LadderPageModel?
+    private let blockGoalRepository: any BlockGoalRepository = LiveBlockGoalRepository()
 
     @State private var errorText: String?
     @State private var isCheckingIn = false
@@ -202,13 +208,26 @@ struct LobbyView: View {
         }
     }
 
-    /// Today's rung, above the plan's rows. The routine's own name until the
-    /// block's rung reaches this screen — Phase B's, not this plan's.
+    /// Today's rung, above the plan's rows (spec §3.1, plan task S6).
+    ///
+    /// THE VIEWER'S OWN rung, worded by `SessionRungLine` from the ladder page
+    /// `loadRung()` fetched — the same resolver the warm-up's plan card uses,
+    /// so one rung cannot be spelled two ways on two screens. A crewmate's
+    /// block goal is not readable and this is not a per-lifter column.
+    ///
+    /// The routine's own name is still what prints when there is no block:
+    /// that is the fallback, not a stand-in.
+    ///
+    /// `SessionPlanCard` takes ONE string, so the implication ("≈ 214 e1RM")
+    /// is dropped here and printed only on the warm-up, whose card has a
+    /// second line for it. The lobby card gaining one is a composition change
+    /// frame 129 has not been asked for (constraint 14).
     private var planRungLine: String {
         #if DEBUG
         if let catalog { return catalog.rungLine }
         #endif
-        return routineInfo?.name ?? ""
+        return SessionRungLine.resolve(page: rungPage,
+                                       routineName: routineInfo?.name ?? "").line
     }
 
     private var effectiveSession: WorkoutSession { currentSession ?? session }
@@ -541,6 +560,10 @@ struct LobbyView: View {
     private var lobbyWithLifecycle: some View {
         lobbyScroll
         .task { await openAndLoad() }
+        // The viewer's own ladder page, once. A block enrollment does not
+        // change while a lobby is open, so this is a `.task`, not a poll —
+        // the same reasoning `SessionRunnerView.loadBlock()` carries.
+        .task { await loadRung() }
         .onChange(of: isVoiceConnected) { wasConnected, nowConnected in
             guard nowConnected, !wasConnected else { return }
             // Phase O Task 5 item 5: fires on every genuine `.idle`/
@@ -1656,6 +1679,26 @@ struct LobbyView: View {
         await realtime.publishStage(
             CheckInService.distanceCheck(gym: gym, location: location)
                 ? .atTheGym : .onTheWay)
+    }
+
+    /// The viewer's own block ladder, for the plan card's rung line (plan task
+    /// S6). Two calls, the same pair `SessionRunnerView.loadBlock()` makes.
+    ///
+    /// Best-effort, like every other read this screen does: no active block, or
+    /// a fetch that did not land, leaves `rungPage` nil and the card prints the
+    /// routine's name — never an error, and never an empty line where a rung
+    /// would be. Behind the `catalog != nil` guard every read in this file
+    /// carries (global constraint 11).
+    @MainActor
+    private func loadRung() async {
+        #if DEBUG
+        if catalog != nil { return }
+        #endif
+        guard rungPage == nil,
+              let goal = await blockGoalRepository.activeGoal(),
+              let page = await blockGoalRepository.page(goalID: goal.id)
+        else { return }
+        rungPage = page
     }
 
     @MainActor

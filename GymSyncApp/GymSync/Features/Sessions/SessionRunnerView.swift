@@ -44,14 +44,20 @@ struct SessionRunnerView: View {
     /// in the ordinary case; this exists so the shared repository carries
     /// none of that risk for a perf nit that is this one view's to own.
     @State private var exerciseCatalog: [Exercise]?
-    // The athlete's own block, solo only — `BlockLadderStrip` never renders
-    // in the crew frame. Review push-5 R-17: HONEST FRAMES applies to
+    // The athlete's own block. Review push-5 R-17: HONEST FRAMES applies to
     // production too, not just fixtures — the strip is absent (blockWeeks
     // stays 0) rather than wrong when there is no active block or the fetch
     // fails, matching `loadPlan()`'s own best-effort contract.
+    //
+    // `BlockLadderStrip` still renders in the SOLO frame only — `crewBody`
+    // draws no strip — but the page itself is now read on both, because the
+    // RUNG is a personal fact each lifter has their own of (plan task S6).
     @State private var blockWeek = 0
     @State private var blockWeeks = 0
     @State private var blockMilestone = ""
+    /// The ladder page `loadBlock()` already fetched, kept so the rung line can
+    /// be worded from it. No second round trip.
+    @State private var rungPage: LadderPageModel?
     private let blockGoalRepository: any BlockGoalRepository = LiveBlockGoalRepository()
     // Check-in — solo only (spec §2's path is check-in → warm-up; a
     // scheduled solo session never passes through a lobby to find the
@@ -125,11 +131,12 @@ struct SessionRunnerView: View {
                     isSolo: isSolo,
                     isOrganizer: effective.organizerID == selfID,
                     planRows: planRows,
-                    // The routine's own name until the BLOCK's rung reaches
-                    // this screen — Phase B's, exactly as the lobby's
-                    // `planRungLine` says of itself.
-                    rungHeadline: routineName,
-                    rungDetail: "",
+                    // THE BLOCK'S RUNG, arrived (plan task S6). The viewer's
+                    // own, on the solo frame and the crew one alike; the
+                    // routine's name is still what prints when there is no
+                    // block behind the session.
+                    rungHeadline: rungLine.line,
+                    rungDetail: rungLine.detail,
                     // Coach's per-lifter warm-up line is Phase B too; the
                     // card renders without a suggestion and no rule appears.
                     coachLine: nil,
@@ -200,18 +207,34 @@ struct SessionRunnerView: View {
         }
     }
 
-    /// The athlete's own block ladder, solo only — `BlockLadderStrip` never
-    /// renders in the crew frame, so a crew warm-up does not pay this round
-    /// trip. Best-effort: no active block, or a failed fetch, leaves
-    /// `blockWeeks == 0`, which is what makes `WarmUpScreen` show no strip
-    /// at all rather than a wrong or an empty one (review push-5 R-17 —
-    /// HONEST FRAMES for code, not just for the catalog's fixtures).
+    /// Today's rung, worded from the page this screen already fetched.
+    ///
+    /// `SessionRungLine.resolve` is the same resolver the lobby's plan card
+    /// uses, so one rung cannot be spelled two ways on two screens.
+    private var rungLine: SessionRungLine.Resolved {
+        SessionRungLine.resolve(page: rungPage, routineName: routineName)
+    }
+
+    /// The athlete's own block ladder. Best-effort: no active block, or a
+    /// failed fetch, leaves `blockWeeks == 0` and `rungPage` nil, which is what
+    /// makes `WarmUpScreen` show no strip at all and the plan card fall back to
+    /// the routine's name — rather than a wrong or an empty one (review push-5
+    /// R-17 — HONEST FRAMES for code, not just for the catalog's fixtures).
+    ///
+    /// THE `isSolo` RESTRICTION IS GONE (plan task S6). It was here because
+    /// `BlockLadderStrip` renders in the solo frame only, and it still does —
+    /// `crewBody` draws no strip. But the RUNG is a personal fact, one each
+    /// lifter has their own of, and the crew warm-up's plan card prints it too,
+    /// so the crew frame now pays the same one round trip the solo frame does.
+    /// Nothing about the crew frame's composition changed; a line that said the
+    /// routine's name says the week's rung.
     @MainActor
     private func loadBlock() async {
-        guard warmingUp, isSolo, blockWeeks == 0,
+        guard warmingUp, rungPage == nil,
               let goal = await blockGoalRepository.activeGoal(),
               let page = await blockGoalRepository.page(goalID: goal.id)
         else { return }
+        rungPage = page
         blockWeek = page.weekNumber
         blockWeeks = page.weekCount
         blockMilestone = page.headline
