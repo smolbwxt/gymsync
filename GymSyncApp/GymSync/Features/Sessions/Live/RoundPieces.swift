@@ -491,12 +491,6 @@ struct SkipOffer: Equatable {
     /// The threshold they are past, in seconds — `RoundHold`'s own answer for
     /// this crew, never a literal.
     let threshold: TimeInterval
-    /// True when the tap can actually move the crew on. See
-    /// `SkipOfferLine`'s doc comment: `public.advance_round` has no skip
-    /// path, and `advance_turn` authorises only the current lifter and the
-    /// ORGANIZER, so for everybody else the same three lines render as a
-    /// NOTE rather than as a button that would do nothing.
-    var isActionable: Bool = false
 }
 
 /// ONE QUIET LINE, NEVER A DIALOG (spec §9a). Nothing happens on its own.
@@ -507,18 +501,13 @@ struct SkipOffer: Equatable {
 /// only one on screen when it shows, because at the threshold the ring on the
 /// held lifter and this line are the same fact.
 ///
-/// **WHY IT IS NOT ALWAYS TAPPABLE.** Spec §9a says any crewmate may tap it,
-/// and the plan says the tap calls `advanceRound`. The shipped
-/// `public.advance_round` (plan task D3) cannot do it: its close predicate
-/// requires a non-penalty set from EVERY present lifter since the round
-/// opened, so with one lifter unlogged it returns the current round unchanged
-/// — that migration's own header says "there is no skip". The only shipped
-/// call that moves a rotation off a lifter is `advance_turn`, which
-/// authorises the current lifter and the organizer and nobody else
-/// (`20260801000001_advance_turn_version_guard.sql:84-86`). So the offer is a
-/// BUTTON for whoever the server will actually obey and a NOTE for everyone
-/// else — a line that looked tappable and did nothing would be the worse of
-/// the two lies. The gap is recorded for Stream D.
+/// ALWAYS TAPPABLE, BY ANY CREWMATE (ruling R-B13, fix-forward
+/// `20260913000107`, applied live). Spec §9a's own rule, finally true:
+/// `SessionRepository.advanceRound`'s `force` parameter bypasses
+/// `public.advance_round`'s close predicate once the round is genuinely
+/// old enough (the server's own floor, not a client-side gate), so the tap
+/// closes the round for whoever presses it — no organizer-only button, no
+/// note-for-everyone-else fallback.
 struct SkipOfferLine: View {
     @Environment(\.gsTheme) private var theme
 
@@ -534,10 +523,7 @@ struct SkipOfferLine: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(!offer.isActionable)
-        .accessibilityHint(offer.isActionable
-                           ? "Moves the crew on without them"
-                           : "Waiting on them — only the session's organizer can move the crew on")
+        .accessibilityHint("Moves the crew on without them")
     }
 
     private var lines: some View {

@@ -889,26 +889,39 @@ enum SessionRepository {
     /// `advance_turn` is NOT replaced by this (plan constraint 20): the
     /// client that logs calls `advanceTurn` as it always has, then this. The
     /// second call is cheap, safe to repeat and safe to lose.
+    ///
+    /// `force` (ruling R-B13, fix-forward `20260913000107`): the crew's
+    /// skip line's own escape. `public.advance_round`'s close predicate
+    /// otherwise requires a non-penalty set from EVERY present lifter since
+    /// the round opened — with one lifter out it just returns the current
+    /// round unchanged, which is what left the crew's skip with nothing
+    /// that could actually move them on. `p_force` bypasses that predicate
+    /// once the open round is >= 90 s old (the server's own floor, not a
+    /// client-chosen number); ANY participant may pass it, and nothing is
+    /// recorded against the skipped lifter — their set stays in their plan
+    /// and they rejoin at the top of the next round. `advance_round` is now
+    /// a single 3-arg function (`DROP FUNCTION ... (uuid, integer)` ran
+    /// first, so no 2-arg overload survives to be ambiguous with this one);
+    /// `p_force` always rides the call, defaulting `false` for every
+    /// existing caller's behaviour.
     @discardableResult
-    static func advanceRound(sessionID: UUID, expectedRound: Int? = nil) async throws -> Int {
+    static func advanceRound(sessionID: UUID, expectedRound: Int? = nil,
+                             force: Bool = false) async throws -> Int {
         guard await SupabaseService.shared.currentUserID() != nil else {
             throw GymSyncError.unauthorized
         }
         do {
+            var params: [String: AnyJSON] = [
+                "p_session_id": .string(sessionID.uuidString),
+                "p_force": .bool(force),
+            ]
             if let expectedRound {
-                let round: Int = try await client
-                    .rpc("advance_round", params: [
-                        "p_session_id": AnyJSON.string(sessionID.uuidString),
-                        "p_expected_round": AnyJSON.integer(expectedRound),
-                    ])
-                    .execute().value
-                return round
-            } else {
-                let round: Int = try await client
-                    .rpc("advance_round", params: ["p_session_id": sessionID.uuidString])
-                    .execute().value
-                return round
+                params["p_expected_round"] = .integer(expectedRound)
             }
+            let round: Int = try await client
+                .rpc("advance_round", params: params)
+                .execute().value
+            return round
         } catch { throw ErrorMapping.map(error) }
     }
 

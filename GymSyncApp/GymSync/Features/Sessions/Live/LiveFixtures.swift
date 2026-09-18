@@ -234,13 +234,13 @@ enum LiveFixtures {
     /// multiplier doing the work rather than a clamp. `2:31` past `2:24`,
     /// which is the reference frame's own pair.
     ///
-    /// `isActionable: true` — the frame is the organizer's, the one lifter
-    /// the server lets move the crew on. See `SkipOfferLine`.
+    /// Tappable by any crewmate now (ruling R-B13, fix-forward
+    /// `20260913000107`) — `SkipOffer` no longer carries an
+    /// organizer-only flag.
     static let skipOffer = SkipOffer(
         name: "Sam",
         waited: 151,
-        threshold: RoundHold.threshold(medianRestSeconds: 96),
-        isActionable: true)
+        threshold: RoundHold.threshold(medianRestSeconds: 96))
 
     // MARK: - Spotter mode (frame 139)
 

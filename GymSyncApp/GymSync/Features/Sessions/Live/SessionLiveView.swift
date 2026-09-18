@@ -4501,6 +4501,14 @@ struct SessionLiveView: View {
 
     /// The three lines, once the crew is past the threshold. Nil the rest of
     /// the time, which is nearly always.
+    ///
+    /// ANY CREWMATE MAY TAP IT (ruling R-B13, fix-forward `20260913000107`,
+    /// applied live). The organizer-only button and the note-for-others it
+    /// used to fall back to are gone: `SessionRepository.advanceRound`'s
+    /// `force` parameter bypasses the server's close predicate once the
+    /// round is genuinely old enough (the server's own 90 s floor, checked
+    /// server-side — never a client-side gate), so the tap now does what
+    /// spec §9a always asked for regardless of who is present.
     private func skipOffer(now: Date) -> SkipOffer? {
         guard let held = heldLifter, let since = holdStartedAt else { return nil }
         let median = heldMedianRest
@@ -4511,8 +4519,7 @@ struct SessionLiveView: View {
             name: SessionCopy.firstName(held.profile.username),
             waited: now.timeIntervalSince(since),
             threshold: RoundHold.threshold(medianRestSeconds: median,
-                                           extensionsTaken: minuteExtensionsThisRound),
-            isActionable: isOrganizer)
+                                           extensionsTaken: minuteExtensionsThisRound))
     }
 
     /// The crew's tap. NOTHING HAPPENS ON ITS OWN (spec §9a) and nothing is
@@ -4521,20 +4528,17 @@ struct SessionLiveView: View {
     /// rejoin at the top of the next round. The task's job here is to not add
     /// anything that would make that untrue, and it adds nothing.
     ///
-    /// TWO CALLS, AND ONLY ONE OF THEM CAN MOVE THE CREW.
-    /// `public.advance_round` (plan task D3) closes a round only when every
-    /// present lifter has logged, so with one lifter out it returns the
-    /// current round unchanged -- a success, and a no-op. `advance_turn` is
-    /// the shipped call that moves a rotation off a lifter, and it authorises
-    /// the current lifter and the ORGANIZER only
-    /// (`20260801000001_advance_turn_version_guard.sql:84-86`), which is why
-    /// `SkipOffer.isActionable` is the organizer's alone. Both are safe to
-    /// repeat and safe to lose.
-    ///
-    /// THE ROUND COUNTER STILL CANNOT PASS A LIFTER WHO NEVER LOGS. That is a
-    /// server-side gap -- D3's own header says "there is no skip" -- and
-    /// closing it needs a Stream D change this task may not write
-    /// (constraint 2). Recorded in the report.
+    /// `advanceRound(force: true)` is what actually moves the crew on now
+    /// (ruling R-B13) -- the server's close predicate is bypassed once the
+    /// round has genuinely run long enough, checked server-side against
+    /// `holdStartedAt`'s own clock, not this client's. `advanceTurn` still
+    /// runs first when the tapper is the organizer -- it authorises only the
+    /// current lifter and the organizer
+    /// (`20260801000001_advance_turn_version_guard.sql:84-86`) -- as a
+    /// bonus nudge to the rotation's own turn pointer; it is no longer what
+    /// makes the round close, so a non-organizer's tap skips it and goes
+    /// straight to the call that does. Both calls are safe to repeat and
+    /// safe to lose.
     @MainActor
     private func skipHeldLifter() async {
         do {
@@ -4542,7 +4546,8 @@ struct SessionLiveView: View {
                 try await SessionRepository.advanceTurn(sessionID: liveSession.id)
             }
             _ = try await SessionRepository.advanceRound(sessionID: liveSession.id,
-                                                         expectedRound: liveSession.round)
+                                                         expectedRound: liveSession.round,
+                                                         force: true)
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {
