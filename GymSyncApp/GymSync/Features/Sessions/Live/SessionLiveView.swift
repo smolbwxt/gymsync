@@ -401,6 +401,15 @@ struct SessionLiveView: View {
     /// record of anything this dictionary loses.
     @State private var pendingPRs: [UUID: PRFiring.Pending] = [:]
 
+    /// THE VENUE'S RACK COUNTS, class → count (plan task S6, decision 1).
+    /// Empty is the ordinary answer — no venue, or a building nobody has
+    /// counted — and an ABSENT class is unknown, never zero.
+    @State private var venueRackCounts: [String: Int] = [:]
+    /// What `set_venue_rack_count` said, shown inside the station card's own
+    /// popover. Never `errorText`: a refused rack count is not a session
+    /// error and must not sit where a failed End would.
+    @State private var rackErrorText: String?
+
     /// Reaction emojis per canvas reaction strip.
     private let reactionEmojis = ["🔥", "💪", "😂", "👏"]
 
@@ -646,6 +655,23 @@ struct SessionLiveView: View {
     private var currentRoutineExercise: RoutineExercise? {
         guard let ex = currentExerciseForSheet else { return nil }
         return effectiveRoutineExercises.first(where: { $0.exerciseID == ex.id })
+    }
+
+    /// The CURRENT exercise's venue equipment class, or `nil` when there is no
+    /// venue to count racks at or the catalog's equipment word has no venue
+    /// class (plan task S6, decision 1). `nil` is also the gate on the
+    /// station card's correction affordance: no class, no question.
+    private var currentEquipmentClass: String? {
+        guard liveSession.venueID != nil else { return nil }
+        return Venue.equipmentClass(for: currentExerciseForSheet?.equipment)
+    }
+
+    /// The rack count that caps the split — the venue's number for the class
+    /// above. `nil` means UNKNOWN, which means no cap at all, which is
+    /// `ceil(crew / 3)`: the shipped behaviour, never a guess and never zero.
+    private var currentEquipmentCap: Int? {
+        guard let equipmentClass = currentEquipmentClass else { return nil }
+        return venueRackCounts[equipmentClass]
     }
 
     // Units sweep: stored weights render in the user's unit. Exact
@@ -2494,6 +2520,11 @@ struct SessionLiveView: View {
                 // (ruling R-OD-4). Idempotent — the second call onwards is a
                 // no-op — and silent when the resource is missing.
                 await MainActor.run { CelebrationSound.prepare() }
+                // THE VENUE'S RACK COUNTS, before the split that spends them
+                // (plan task S6). Its own `isEmpty` guard makes every repeat
+                // free; a failure leaves the cap unknown, which is today's
+                // `ceil(crew / 3)`.
+                await loadVenueRackCounts()
                 guard let position = currentRoutineExercise?.position else { return }
                 await remixStations(exercisePosition: position)
             }
@@ -3731,6 +3762,11 @@ struct SessionLiveView: View {
                 reactionEmojis: reactionEmojis,
                 voice: voiceFoot,
                 skip: skipOffer(now: context.date),
+                rackCount: currentEquipmentCap,
+                rackErrorText: rackErrorText,
+                onSetRackCount: currentEquipmentClass == nil ? nil : { count in
+                    Task { await saveRackCount(count) }
+                },
                 onCoachTap: { Task { await openCoachThread() } },
                 onReaction: { emoji in Task { await tapReaction(emoji: emoji) } },
                 onSkip: { Task { await skipHeldLifter() } })
@@ -4441,6 +4477,51 @@ struct SessionLiveView: View {
     /// FAILURE IS NOT FATAL. A re-mix that cannot be written leaves the
     /// previous assignment standing and logs: a station split must never block
     /// a round.
+    /// The venue's rack counts, read once per live session (plan task S6,
+    /// decision 1).
+    ///
+    /// Best-effort, like `remixStations` below: a failure leaves the counts
+    /// empty, which leaves the cap `nil`, which is the shipped split. Never
+    /// surfaced — a station split must never block a round, and neither must
+    /// the number that caps it.
+    @MainActor
+    private func loadVenueRackCounts() async {
+        guard venueRackCounts.isEmpty, let venueID = liveSession.venueID else { return }
+        do {
+            venueRackCounts = try await VenueRackRepository.counts(venueID: venueID)
+        } catch {
+            AppLogger.sessions.error(
+                "rack counts failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// THE CORRECTION, from the station card's header: whoever is standing in
+    /// the room can see that there are three racks and not two (decision 1).
+    ///
+    /// ON A REFUSAL — `P0001`, the RPC saying this caller holds no
+    /// `venue_checkins` row at this venue inside 12 hours — the message lands
+    /// inside the popover it was asked in, the count stays as it was, the cap
+    /// stays whatever it already was, and the round is not touched. The split
+    /// itself is NOT re-mixed here: a re-mix moves people between racks
+    /// mid-round, and it is the next exercise's `.task(id:)` that spends the
+    /// corrected number.
+    @MainActor
+    private func saveRackCount(_ count: Int) async {
+        guard let venueID = liveSession.venueID,
+              let equipmentClass = currentEquipmentClass else { return }
+        rackErrorText = nil
+        do {
+            try await VenueRackRepository.set(venueID: venueID,
+                                              equipmentClass: equipmentClass,
+                                              count: count)
+            venueRackCounts[equipmentClass] = count
+        } catch let error as GymSyncError {
+            rackErrorText = error.errorDescription
+        } catch {
+            rackErrorText = error.localizedDescription
+        }
+    }
+
     @MainActor
     private func remixStations(exercisePosition: Int) async {
         let lifters = presentRotation.map(\.participant.userID)
@@ -4451,9 +4532,16 @@ struct SessionLiveView: View {
             since: liveSession.startedAt ?? .distantPast)
         let split = StationSplit.assign(
             lifters: lifters,
-            // `nil`: no session -> venue link and no rack COUNT exist, so the
-            // cap is a parameter B1 never fills (the plan's data decision 3).
-            count: StationSplit.count(crew: lifters.count, equipmentCap: nil),
+            // THE OWNER'S `min(ceil(n/3), racks at the venue)`, finally whole
+            // (plan task S6, decision 1). B1 passed `nil` because neither
+            // half of the second term existed; S5 gave the session its venue
+            // and D1 gave the venue its counts, so the cap is the count for
+            // THIS exercise's equipment class — and still `nil` when the
+            // venue, the class or the count is unknown, which is today's
+            // `ceil(crew / 3)`. Re-read on every exercise change, so a
+            // barbell block and a dumbbell block may split differently.
+            count: StationSplit.count(crew: lifters.count,
+                                      equipmentCap: currentEquipmentCap),
             restMedians: medians,
             previous: liveSession.stations)
 

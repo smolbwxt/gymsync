@@ -34,6 +34,28 @@ struct Venue: Decodable, Identifiable, Sendable, Equatable {
     /// `GeneratorScience.mainEquipmentLadder`'s keys.
     static let equipmentClasses = ["barbell", "dumbbell", "machine", "cable", "bodyweight"]
 
+    /// An exercise's `equipment` string as a VENUE equipment class, or `nil`
+    /// when the venue vocabulary has no word for it (decision 1).
+    ///
+    /// The catalog's vocabulary is wider than the venue's: `ez-bar` and
+    /// `smith` are barbells as far as a RACK is concerned, and that is the
+    /// same collapse `Units.weightKicker` (:169) and `ProgramGenerator`
+    /// already make. Everything else — `kettlebell`, a blank, a class a
+    /// future catalog invents — answers `nil`, WHICH MEANS UNKNOWN, WHICH
+    /// MEANS NO CAP: a station split guesses nothing, it just stays
+    /// `ceil(crew / 3)`.
+    ///
+    /// `nil` is never "zero racks". A venue with no barbells says so by not
+    /// listing `barbell` in `equipment` at all; an unknown count is the
+    /// `rack_counts` key being ABSENT, which is why `set_venue_rack_count`
+    /// refuses a count of 0.
+    static func equipmentClass(for exerciseEquipment: String?) -> String? {
+        guard let raw = exerciseEquipment?.lowercased(), !raw.isEmpty else { return nil }
+        if equipmentClasses.contains(raw) { return raw }
+        if raw == "ez-bar" || raw == "smith" { return "barbell" }
+        return nil
+    }
+
     enum CodingKeys: String, CodingKey {
         case id
         case name
