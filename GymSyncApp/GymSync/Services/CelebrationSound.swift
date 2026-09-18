@@ -52,11 +52,27 @@ enum CelebrationSound {
     /// bodies call this when the exercise changes — long before any set of it
     /// can be a record.
     ///
+    /// Runs `playPR()`'s own two guards first, in the same order, because
+    /// `AVAudioPlayer.prepareToPlay()` below is documented to "preload its
+    /// buffers and acquire the audio hardware" — the same implicit session
+    /// activation field report #39 ("the PR sound pauses Spotify") named as
+    /// the danger, except this call can fire on a session with no PR at all:
+    /// (1) a crewmate mid-sentence is not interrupted (decision 4) — voice
+    /// mode returns early WITHOUT setting `didPrepare`, so a later exercise
+    /// change, once the room lets go, still prepares it; (2) the mixable
+    /// baseline must be restored BEFORE `prepareToPlay()` runs, not after,
+    /// or the lifter's music can be paused by a warm-up that never plays
+    /// anything.
+    ///
     /// Idempotent, silent, and non-throwing: a missing resource leaves
     /// `player` nil and the celebration still appears, soundlessly. It writes
     /// NO audio-session category (the AUDIO SACRED RULE) and does not play.
     static func prepare() {
         guard !didPrepare else { return }
+        // Same guard as `playPR()` (decision 4) — deliberately NOT setting
+        // `didPrepare` here, so a later call still builds the player once
+        // voice mode ends.
+        guard !AudioSessionManager.shared.isInVoiceMode else { return }
         didPrepare = true
         guard let url = Bundle.main.url(forResource: "lightweight-baby", withExtension: "mp3") else {
             // THE CELEBRATION MUST NEVER FAIL TO APPEAR BECAUSE A SOUND DID
@@ -65,11 +81,14 @@ enum CelebrationSound {
             AppLogger.audio.error("CelebrationSound: lightweight-baby.mp3 missing from the bundle")
             return
         }
+        // Field report #39 ("the PR sound pauses Spotify"): must run BEFORE
+        // prepareToPlay() below, not after — see the doc comment above.
+        AudioSessionManager.shared.ensureMixablePlayback()
         do {
             let p = try AVAudioPlayer(contentsOf: url)
             // Buffers the clip so `play()` starts on the next frame rather
             // than after a decode. AUDIO SACRED RULE: no category is set
-            // here, and preparing a player activates nothing.
+            // here.
             _ = p.prepareToPlay()
             player = p
         } catch {
