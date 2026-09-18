@@ -397,6 +397,15 @@ struct TogetherClockView: View {
     /// `HeartRateZone`'s own header). A reading with no zone (an older
     /// sender, or a malformed payload) draws `neutral700` — present, but
     /// deliberately not colour-coded to a zone nobody sent.
+    ///
+    /// THE BARS CARRY NO WORD OF THEIR OWN (review-app-push2.md finding 3,
+    /// ruling R-B20). §4a is satisfied ONCE PER SCREEN, not once per mark:
+    /// the lifter's ROW already prints its current zone word beside the
+    /// bpm (`reading(_:)` above), and this history of bars is that row's
+    /// own visualisation of it. A past bar's colour can outrun the row's
+    /// current word — the crew moved zones since that interval — and that
+    /// is the ruling, not an oversight: the row names the CURRENT zone,
+    /// which is the fact a reader is actually asking this screen for.
     private func bar(_ sample: TogetherTrace.Sample) -> some View {
         let height: CGFloat = sample.bpm <= 0 ? 4 : max(6, CGFloat(sample.bpm - 90) * 0.24)
         let ink: Color
