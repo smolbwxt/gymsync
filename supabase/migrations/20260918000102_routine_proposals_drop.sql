@@ -1,5 +1,8 @@
 -- 20260918000102_routine_proposals_drop.sql
 --
+-- APPLIED LIVE 2026-09-18 19:05:29 UTC (schema_migrations version
+-- 20260918190529).
+--
 -- IRREVERSIBLE. Phase B2 plan, task D4, "the six data decisions," the
 -- irreversible gate (constraint 9). The routine-proposal flow's app code
 -- was removed in Phase A; D3 (chore(proposals): retire the pgTAP suites,
