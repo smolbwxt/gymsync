@@ -22,8 +22,9 @@ import SwiftUI
 // (every PRESENT lifter said yes) and the proposal-expiry arming are
 // untouched, and `onAgree`/`onKeep` are `castVote(true)` / `castVote(false)`.
 //
-// ACCENT: NONE (decision 3, rule 2). `SwapConsensusCardV2View` paints Agree
-// with `GSPrimaryButtonStyle`, which is correct for a frame rendered alone on
+// ACCENT: NONE (decision 3, rule 2). The design round's own tappable-swap
+// card (retired, `Features/Sessions/Variations/`) painted Agree with
+// `GSPrimaryButtonStyle`, which was correct for a frame rendered alone on
 // its own page. In production this card is an OVERLAY on a live session page
 // that has already spent its accent — the LOG card is the act of every
 // style's page. So the answers are `GSConsentCard`'s pair: two raised faces,
@@ -238,8 +239,9 @@ struct SwapConsentCard: View {
 
 /// One exercise as a door: a kicker, the name, one detail line, a chevron.
 ///
-/// `SVTappableExerciseRow` in production form. A raised tappable face rather
-/// than a strip, because a sinking face is how this app says "press me"
+/// The design round's tappable exercise row (retired, `Features/Sessions/
+/// Variations/`), in production form. A raised tappable face rather than a
+/// strip, because a sinking face is how this app says "press me"
 /// (rule 1) — and with `onTap` nil it is a flat strip with no chevron, which
 /// is what an exercise this client cannot open honestly looks like.
 struct ExerciseDoorRow: View {

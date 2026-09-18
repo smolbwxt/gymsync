@@ -14,9 +14,10 @@ import SwiftUI
 // string (`WarmUpScreen.elapsed`'s precedent) rather than as a `Date` the
 // card would have to tick.
 //
-// ALIGNMENT IS A RULE (the second pass's own, `SessionVariationsV2Kit.swift`):
-// every side-by-side arrangement reserves FIXED SLOTS, so two cards cannot
-// disagree about a baseline because one of them carries an extra line.
+// ALIGNMENT IS A RULE (the second pass's own, from the design round's now-
+// retired `Variations/` kit): every side-by-side arrangement reserves FIXED
+// SLOTS, so two cards cannot disagree about a baseline because one of them
+// carries an extra line.
 
 // MARK: - The zone, as a word and as ink
 
@@ -309,10 +310,11 @@ enum RoundCopy {
 /// The scaffold the three round screens share: a kicker and a title, a
 /// scrolling body, and a PINNED foot.
 ///
-/// The design round's `SVScrollScreen`, brought across — same geometry, same
-/// reasoning: these screens carry more than a fixed page can hold, and a
-/// fixed page that overflows CLIPS its foot, which would hide the one control
-/// the screen exists to offer.
+/// The design round's own scroll-screen scaffold (retired, `Features/
+/// Sessions/Variations/`), brought across — same geometry, same reasoning:
+/// these screens carry more than a fixed page can hold, and a fixed page
+/// that overflows CLIPS its foot, which would hide the one control the
+/// screen exists to offer.
 struct RoundPage<Content: View, Foot: View>: View {
     @Environment(\.gsTheme) private var theme
 
@@ -593,7 +595,7 @@ extension View {
 
 /// One station — RACK A, RACK B — built from FIXED SLOTS so that two of them
 /// side by side agree on every edge the eye checks (plan task S6, reference
-/// `round-wait-v2`'s `SVStationCardV2`).
+/// `round-wait-v2`'s own station card, design round, now retired).
 ///
 /// **The alignment argument, kept.** A card that sizes itself to its content
 /// is a card whose height depends on whether one of its lifters happens to

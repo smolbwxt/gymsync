@@ -296,8 +296,8 @@ enum LiveFixtures {
     /// crew's live readings across all four zones — a frame that showed one
     /// zone would prove nothing about the ramp.
     ///
-    /// The bpm values are the design round's own (`SVFixturesV2
-    /// .spotterHeartRates`); the ZONES come from `HeartRateZone.zone(bpm:)`
+    /// The bpm values are the design round's own readings (`Variations/`,
+    /// retired by plan task S10); the ZONES come from `HeartRateZone.zone(bpm:)`
     /// rather than being written down, so the frame cannot disagree with the
     /// app about what 158 is.
     static let spotter = SpotterWorld(

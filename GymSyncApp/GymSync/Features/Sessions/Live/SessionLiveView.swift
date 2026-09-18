@@ -2036,6 +2036,14 @@ struct SessionLiveView: View {
         // Voice mixer sheet (Phase O Task 5 item 5)
         .sheet(isPresented: $showVoiceMixerSheet) { voiceMixerSheet }
         .onChange(of: isVoiceConnected) { wasConnected, nowConnected in
+            // Review finding carried from S1-S4 (R-B2-11's leg), closed by
+            // plan task S10: this was the one load-path hook left unguarded
+            // when frame 145 (`session-your-turn`) landed — a catalog capture
+            // never joins voice (constraint 10), so `isVoiceConnected` cannot
+            // flip true under one, but the guard is added here for the same
+            // reason every other hook in this file carries it: a property of
+            // the code, not of a list somebody keeps up to date.
+            guard !catalogSkipLoad else { return }
             guard nowConnected, !wasConnected else { return }
             // Mirrors LobbyView's identical trigger — see that view's
             // `.onChange(of: isVoiceConnected)` doc comment for the full

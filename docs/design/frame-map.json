@@ -101,12 +101,14 @@
     "title": "Stat Tiles states"
   },
   "stattile-error": {
-    "frame": 41,
-    "title": "Stat Tiles states"
+    "frame": 147,
+    "title": "Stat Tiles states",
+    "note": "Group-session Phase B2 (plan task S10) renumbering: was a duplicate of frame 41 (stattile-loading, which keeps it - the first id at that number). The capture, the case and the id are unchanged; only the frame integer moves, because a retired number is never reused and a duplicate number is one of this plan's own fixes."
   },
   "stattile-empty": {
-    "frame": 41,
-    "title": "Stat Tiles states"
+    "frame": 148,
+    "title": "Stat Tiles states",
+    "note": "Group-session Phase B2 (plan task S10) renumbering: was a second duplicate of frame 41 (stattile-loading keeps it - the first id at that number). The capture, the case and the id are unchanged; only the frame integer moves."
   },
   "activity-feed": {
     "frame": 45,
@@ -129,16 +131,18 @@
     "title": "Home v2 - A tiles (v7 proof)"
   },
   "home-v2-tiles-solo-day": {
-    "frame": 69,
-    "title": "Home v2 - A tiles (v7 proof)"
+    "frame": 149,
+    "title": "Home v2 - A tiles (v7 proof)",
+    "note": "Group-session Phase B2 (plan task S10) renumbering: was a duplicate of frame 69 (home-v2-tiles, which keeps it - the first id at that number). The capture, the case and the id are unchanged; only the frame integer moves."
   },
   "home-v2-strips": {
     "frame": 70,
     "title": "Home v2 - B strips (v7 proof)"
   },
   "home-v2-strips-crew-night": {
-    "frame": 70,
-    "title": "Home v2 - B strips (v7 proof)"
+    "frame": 150,
+    "title": "Home v2 - B strips (v7 proof)",
+    "note": "Group-session Phase B2 (plan task S10) renumbering: was a duplicate of frame 70 (home-v2-strips, which keeps it - the first id at that number). The capture, the case and the id are unchanged; only the frame integer moves."
   },
   "home-v3-01-tiles": {
     "frame": 71,
@@ -285,19 +289,6 @@
     "title": "Crew sessions list - state glyphs",
     "note": "congruence B9 T9.1: GroupView's sessions list, stopped on the LIST so the SF Symbol state glyphs are in frame (testLobby and testSessionRecap both tap straight through it). The seed has no abandoned session, so only the completed tick is exercised. No proof frame in docs/design/mockups/ yet."
   },
-  "swap-consensus-card": {
-    "frame": 118,
-    "title": "The crew's routine change as a consent card"
-  },
-  "pump-check-card-v2": {
-    "frame": 119,
-    "title": "Pump-check post, re-composed - the same seven lines, tightened",
-    "note": "The last of frames 106-119 (the focused session design round). Renders the SAME values as the pump-feed-post capture (CatalogHostView's pumpFixtureSummary / pumpFixtureTrajectory / pumpFixtureHighlight, re-spelled as literals in SVFixtures) so the two captures are a before/after of the composition and of nothing else. Catalog-only: PumpPostCard itself is untouched. SECOND PASS: approved as rendered, with one addition the owner asked for - a caption under the photo reading 'Tap for the full workout', because the thumbnail opens the whole workout's metrics and nothing said so. No new id and no new frame."
-  },
-  "swap-consensus-card-v2": {
-    "frame": 125,
-    "title": "The consensus swap - both exercises tappable"
-  },
   "session-lobby-waiting": {
     "frame": 129,
     "title": "Crew lobby, waiting - the arrival track, the plan, the crew's energy",
@@ -356,5 +347,30 @@
     "frame": 141,
     "title": "Freestyle - the shared rail, one lifter ahead",
     "note": "Production twin of freestyle-rail (116), retired by this pass (plan task S13): the production FreestyleRailView over LiveFixtures.freestyle."
+  },
+  "session-swap-consent": {
+    "frame": 142,
+    "title": "The crew's routine change - both exercises are doors",
+    "note": "Group-session Phase B2 (plan task S10). Production twin of swap-consensus-card (118) and swap-consensus-card-v2 (125), both retired by this pass: the production SwapConsentCard over LiveFixtures.swapConsent - Dana's proposal, NOW / PROPOSED rows with chevrons and their load lines, four pips with two filled in gsSuccess, the consequence line, Agree / Keep, no accent on the page."
+  },
+  "session-scale-down": {
+    "frame": 143,
+    "title": "A crewmate's quiet scale-down, where the crew already looks",
+    "note": "Group-session Phase B2 (plan task S10). R-B2-11: renders the production SpotterView over LiveFixtures.scaleDown (a SpotterWorld), not RoundWaitView as the plan's own frame table first named - RoundWaitView mounts no TurnStrip, and SpotterView is the strip's only mount in the app. The rotation strip with Sam's doing line under his name, and the same scale-down on his station-card row (frame 137) - one lifter on a different exercise, nothing announced."
+  },
+  "session-warmup-suggestion": {
+    "frame": 144,
+    "title": "Solo warm-up - Coach's readiness suggestion, with its signal",
+    "note": "Group-session Phase B2 (plan task S10). The production WarmUpScreen over WarmUpFixtures.suggestion - a CREW world, not the solo one, because the crew frame is where isPrivate means something (spec §3.2). The plan card with the rung headline, the rule, Coach's one sentence naming what it read, Accept / Not today as two raised faces."
+  },
+  "session-your-turn": {
+    "frame": 145,
+    "title": "Rounds, your turn - the live body's own page",
+    "note": "Group-session Phase B2 (plan task S10). SessionLiveView(catalog: LiveFixtures.yourTurn) - the header rail, the vitals row, the exercise card and the entry card with the LOG control enabled. Built on plan task S4's fixture init; spec §7's last missing session frame."
+  },
+  "pump-feed-post": {
+    "frame": 146,
+    "title": "The production pump-check post, re-composed",
+    "note": "Group-session Phase B2 (plan task S10). Frame-map entry only - the id and its capture already existed (ScreenshotTests.testCatalogPumpFeedPost, CatalogHostView's content_pumpFeedPost) and had never carried a frame number. pump-check-card-v2 (119) retires without a numbered production twin of its own; PumpPostCard re-composed by plan task S5 IS that twin, so this row is what keeps the owner's deck from losing the pump card. No new capture - the FLOOR does not move for this row."
   }
 }

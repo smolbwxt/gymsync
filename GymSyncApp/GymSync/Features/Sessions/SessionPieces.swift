@@ -7,11 +7,12 @@ import SwiftUI
 // `lobby-crew-waiting-v2` (120), `lobby-crew-ready-v3` (127),
 // `warmup-solo-v2` (122) and `warmup-crew` (111).
 //
-// They are those compositions with production types in place of `SVLifter` /
-// `SVPlanRow`, and no `#if DEBUG`. **NOTHING HERE IMPORTS OR REFERENCES
-// `Features/Sessions/Variations/`** — that folder is the design round's proof
-// deck and S11 deletes most of it; a production screen that depended on it
-// would be a production screen that stopped compiling.
+// They are those compositions with production types in place of the design
+// round's own lifter/plan-row types, and no `#if DEBUG`. **NOTHING HERE EVER
+// IMPORTED OR REFERENCED `Features/Sessions/Variations/`** — that folder was
+// the design round's proof deck; S11 retired most of it and plan task S10
+// retired what was left, so a production screen that had depended on it
+// would have been a production screen that stopped compiling.
 //
 // ONE PRIMARY PER SCREEN (rule 4) is enforced by composition, not by hope:
 // none of these renders `GSPrimaryButtonStyle`. The lobby and the warm-up
@@ -96,7 +97,8 @@ enum SessionCopy {
 
 /// One exercise on the session's plan card.
 ///
-/// The production analogue of `SVPlanRow`. A `RoutineExercise` carries an
+/// The production analogue of the design round's own plan row (retired,
+/// `Features/Sessions/Variations/`). A `RoutineExercise` carries an
 /// exercise id and not a name — the name needs the catalog, which the lobby
 /// already resolves through `exerciseName(for:)` — so the card takes rows that
 /// are already worded and does no lookups of its own.
