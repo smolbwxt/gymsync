@@ -487,12 +487,15 @@ func incrementDecimal(_ s: inout String, step: Double = 2.5) {
 // plates — converting a kg entry into an lbs plate breakdown would describe a
 // rack the lifter isn't standing at. (`BarLoaderWidget` is the inventory-aware
 // tool; this stays the quick standard-set hint.)
-// Callers own the empty/invalid/non-positive-weight gate — both LogSetSheet
-// (LogSetSheet.swift:~130) and SessionLiveView's `logThisSetCard` only
-// construct this behind `if let targetWeight = Decimal.parseUserInput(...),
-// targetWeight > 0` (Phase O Task 2 — was the bare `Decimal(string:...)`
-// initializer), so this view assumes `target` is already a valid, positive
-// weight.
+// The caller owns the empty/invalid/non-positive-weight gate — LogSetSheet
+// (LogSetSheet.swift:~130) only constructs this behind
+// `if let targetWeight = Decimal.parseUserInput(...), targetWeight > 0`
+// (Phase O Task 2 — was the bare `Decimal(string:...)` initializer), so
+// this view assumes `target` is already a valid, positive weight.
+// SessionLiveView's `logThisSetCard` used to be a second caller with the
+// identical gate; plan task S4 left it callerless and plan task S13's
+// dead-member sweep retired it, so this view is the only construction
+// site now.
 
 struct PlateStackDisclosure: View {
     let target: Decimal

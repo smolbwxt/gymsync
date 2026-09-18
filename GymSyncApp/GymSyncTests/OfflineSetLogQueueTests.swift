@@ -552,10 +552,12 @@ final class OfflineSetLogQueueTests: XCTestCase {
     }
 
     /// `refreshPendingIDs()` — the UI-badge cache backing the "syncing"
-    /// chips (`WorkoutSessionView.loggedSetsTable`, `SessionLiveView.
-    /// feedRow`) — must exclude a foreign user's rows: a second user on a
-    /// shared device must never see a syncing indicator for content that
-    /// isn't theirs. Exercised both via `configure()`'s internal call and a
+    /// chip (`WorkoutSessionView.loggedSetsTable`; `SessionLiveView.
+    /// feedRow` read the same cache until plan task S13's dead-member
+    /// sweep retired the callerless view it belonged to) — must exclude a
+    /// foreign user's rows: a second user on a shared device must never
+    /// see a syncing indicator for content that isn't theirs. Exercised
+    /// both via `configure()`'s internal call and a
     /// direct re-call (mirrors RootView's `.onChange(of: auth.state)` hook).
     func testRefreshPendingIDsExcludesForeignUserRows() throws {
         let context = try makeInMemoryContext()

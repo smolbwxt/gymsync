@@ -14,23 +14,41 @@ import UIKit
 // whoever holds the turn (`logControlIsMine` below); Freestyle and Together
 // have no turn at all, so it is everyone's at once (spec §3.3).
 //
-// Proof-matched design (p06 Live Spotlight / p29 PR Celebration):
-//   • Top bar: LIVE pulse + session name + elapsed timer + X (→ End Session confirmation)
-//   • My-turn state ("Spotlight"): exercise-headline turn card (accent fill) + SET TIMER /
-//     REST AFTER stat tiles + inline "LOG THIS SET" card (reps/weight steppers + RPE bar,
-//     no sheet) + ROTATION strip (NOW/NEXT/3RD/4TH) — primary "Log Set & Pass" pinned to
-//     the bottom action bar, NOT inside the card.
+// Proof-matched design (p06 Live Spotlight / p29 PR Celebration), AS IT
+// STANDS AFTER PLAN TASK S13's DEAD-MEMBER SWEEP (this list drifted twice
+// before — F4 fixed the Roster bullet, this pass fixes the other four
+// review finding 5 named):
+//   • Top bar: `turnHeaderRail` — session-elapsed timer (one-clock rule with the
+//     vitals card below it) + routine name + voice/chat entry points + X
+//     (→ End Session confirmation) + participant count.
+//   • My-turn page (`myTurnFixedPage`): `turnVitalsRow` (HR pill or session-elapsed,
+//     one-clock rule) + `turnExerciseCard` + `turnEntryCard` (reps/weight readout +
+//     RPE swipe track, no sheet) — or `turnLoaderExpanded` while the bar
+//     loader is open. `turnChrome`, pinned below via `bottomChrome`, carries
+//     the actual CTA: `LogControlButton` ("Log Set & Pass" — Freestyle and
+//     Together mount the SAME button in their own feet, ruling R-B17), the
+//     voice notices, the mic rail (`PTTDockRow`, compact) and, when burpees
+//     are owed, `burpeeDebtStrip` above it. The ROTATION strip
+//     (NOW/NEXT/3RD/4TH) moved to `RoundPieces.TurnStrip` (plan task S8);
+//     `SpotterView` mounts it now, not this page.
 //   • Chess clock: Text(_, style: .timer), state-driven from currentTurnStartedAt — never
 //     a Swift Timer. Advance-turn flow (priorMax-before-logSet ordering, fire-and-forget
 //     PR record, advanceTurn call) is UNCHANGED — only the caller moved from a sheet's
 //     onLog closure to the inline card's commit action.
-//   • Penalty banner (accent fill, unchanged): "YOU OWE N burpees" + Log burpees button
-//     (still opens LogSetSheet — burpee logging is out of the proof's scope for this view).
-//   • Set feed: reverse-chron rows, cap 30, penalty rows tagged (unchanged).
-//   • Reaction pills (🔥💪😂👏): tap to broadcast; incoming reactions float up
-//     as emoji pills (2s, opacity + offset).
+//   • Burpee debt: `burpeeDebtStrip`, a compact accent-fill strip above
+//     `turnChrome`'s CTA — "YOU OWE N BURPEES" + LOG THEM, opens
+//     `LogSetSheet` for penalty-only logging. The full-page penalty banner
+//     this bullet used to describe was retired with the spectate page (plan
+//     task S4) and swept as dead code (plan task S13).
+//   • Set feed: retired with the spectate page (plan task S4) and swept as
+//     dead code (plan task S13) — no reverse-chron feed exists on this page
+//     anymore.
+//   • Reaction pills (🔥💪😂👏): moved to `RoundPieces.ReactionStrip` (plan task S6) —
+//     the round wait and spotter mode mount it now; tap to broadcast, incoming
+//     reactions float up as emoji pills (2s, opacity + offset) via `reactionOverlayLayer`.
 //   • PR Celebration: full-screen, USER-DISMISSED moment (p29) — replaces the old
-//     auto-dismissing toast. Share (ShareLink) + "Keep Lifting" dismiss.
+//     auto-dismissing toast. Share (ShareLink) + "Keep Lifting" dismiss. Its
+//     sound left with the soundboard (ruling R-B8, plan task S11); the haptic stays.
 //   • End Session: confirmation (via header X) → complete → HealthKit → SessionRecapView sheet
 
 struct SessionLiveView: View {
@@ -87,9 +105,10 @@ struct SessionLiveView: View {
     /// (self) user, since `heartRateService.subscribe`'s self-echo delivers
     /// this phone's own published samples back through the same callback
     /// (see that method's own doc comment). Consumed by `heartRateFor(_:)`
-    /// below, which `spotlightHeaderCard` (frame 2A, self only) reads from.
-    /// `rosterCard` was the other reader until plan task S4 retired the
-    /// spectate page; spotter mode's crew rows (plan task S8) are next.
+    /// below — `rosterCard` and `spotlightHeaderCard` (frame 2A, self only)
+    /// were both readers until plan tasks S4 and S13's dead-member sweep
+    /// retired them in turn; spotter mode's crew rows (plan task S8) are
+    /// the live reader now.
     @State private var heartRates: [UUID: (bpm: Int, zone: HeartRateZone?, receivedAt: Date)] = [:]
     /// One self-clearing `Task` per userID (task-5-brief.md item 4:
     /// "pills fade/remove when no sample for >15s (sender may stop
@@ -141,17 +160,18 @@ struct SessionLiveView: View {
     @State private var showEndConfirmation  = false
     /// Task 3, Phase F — no canvas frame depicts a chat affordance on either
     /// live-session layout (proof-frame-06/07's headers show only LIVE +
-    /// routine name + timer + X). System-designed: a bordered icon-button in
-    /// `headerBar`, styled after the same header's own X button, opening a
-    /// sheet — see docs/design/accepted-deviations.json's "session-chat"
-    /// entry.
+    /// routine name + timer + X). System-designed: a bordered icon-button
+    /// in `turnHeaderRail` (`headerBar`'s replacement, since plan task S13's
+    /// dead-member sweep retired `headerBar` itself), styled after the same
+    /// header's own X button, opening a sheet — see
+    /// docs/design/accepted-deviations.json's "session-chat" entry.
     @State private var showChatSheet        = false
     /// "Load the bar" expand/collapse for the my-turn page's `turnBarCard` /
     /// `turnLoaderExpanded` pair (user direction 2026-07-28: a widget like the
     /// solo session's, not a header button). It used to drive `barLoaderCard`
     /// on the spectate page too — "plan your bar while someone else lifts" —
-    /// but that page left in plan task S4 and `barLoaderCard` went callerless
-    /// with it (see its own MARK).
+    /// but that page left in plan task S4, `barLoaderCard` went callerless
+    /// with it, and plan task S13's dead-member sweep retired it in turn.
     @State private var showBarLoader        = false
     /// Success-haptic trigger for `.sensoryFeedback` — a count (not a Bool)
     /// so every logged set fires, including two in a row.
@@ -393,8 +413,6 @@ struct SessionLiveView: View {
     // roster grid, so the displayed exercise always matches what "Log Set & Pass" will
     // actually log. Multi-exercise progression during a live session remains out of scope.
 
-    private enum RosterStatus { case lifting, upNext, done, waiting }
-
     /// Participants ordered by `turn_order` (nil last), stable by username.
     private var rotationOrder: [(participant: SessionParticipant, profile: Profile)] {
         participants.sorted { lhs, rhs in
@@ -478,16 +496,6 @@ struct SessionLiveView: View {
         }
     }
 
-    /// The CURRENT lifter's quiet scale for the shared current exercise, if
-    /// any (spec §3.4 mode 2 — never announced anywhere else). The spectate
-    /// card that read it left in plan task S4; the round wait's station column
-    /// is where a crewmate's scale-down is shown now (plan task S6).
-    private var currentLifterScale: SwapTarget? {
-        guard let turnID = liveSession.currentTurnUserID, turnID != selfID,
-              let ex = currentExerciseForSheet else { return nil }
-        return selfScales[turnID]?[ex.id]
-    }
-
     private var currentRoutineExercise: RoutineExercise? {
         guard let ex = currentExerciseForSheet else { return nil }
         return effectiveRoutineExercises.first(where: { $0.exerciseID == ex.id })
@@ -500,15 +508,6 @@ struct SessionLiveView: View {
     private var currentTurnSetNumber: Int {
         guard let turnID = liveSession.currentTurnUserID, let ex = currentExerciseForSheet else { return 1 }
         return setCount(userID: turnID, exerciseID: ex.id) + 1
-    }
-
-    private var totalLoggedForCurrentExercise: Int {
-        guard let ex = currentExerciseForSheet else { return 0 }
-        return allSessionSets.filter { $0.exerciseID == ex.id && !$0.isPenalty }.count
-    }
-
-    private var totalExpectedForCurrentExercise: Int {
-        max(1, targetSetsPerLifter * max(participants.count, 1))
     }
 
     // Units sweep: stored weights (and the routine's free-text target, which
@@ -532,13 +531,6 @@ struct SessionLiveView: View {
         return "target \(targetWeightText(re.targetWeight)) × \(re.targetReps ?? "—")"
     }
 
-    private func rosterStatus(for userID: UUID) -> RosterStatus {
-        if userID == liveSession.currentTurnUserID { return .lifting }
-        if userID == nextTurnUserID { return .upNext }
-        if hasLoggedCurrentExercise(userID) { return .done }
-        return .waiting
-    }
-
     private func hasLoggedCurrentExercise(_ userID: UUID) -> Bool {
         guard let ex = currentExerciseForSheet else { return false }
         return allSessionSets.contains { $0.userID == userID && $0.exerciseID == ex.id && !$0.isPenalty }
@@ -557,23 +549,6 @@ struct SessionLiveView: View {
             .max(by: { $0.loggedAt < $1.loggedAt })
     }
 
-    /// Bottom-bar hint for whoever is not lifting — "you're up next" or how many
-    /// lifters are ahead. CALLERLESS SINCE PLAN TASK S4 with `bottomActionBar`,
-    /// its only reader; the round wait says the same thing as `WAITING ON …`
-    /// (plan task S6). Left for I1's sweep.
-    /// Deliberately does NOT fabricate an ETA (the proof's "~2 min" isn't backed by any
-    /// duration data we track) — see visual-sweep-B p06/p07 findings.
-    private var upcomingTurnHint: String? {
-        guard let selfID, liveSession.currentTurnUserID != nil else { return nil }
-        if nextTurnUserID == selfID { return "You're up next" }
-        guard let idx = currentTurnIndex,
-              let myIdx = presentRotation.firstIndex(where: { $0.participant.userID == selfID }) else { return nil }
-        let n = presentRotation.count
-        guard n > 0 else { return nil }
-        let aheadCount = ((myIdx - idx) + n) % n
-        guard aheadCount > 0 else { return nil }
-        return "Waiting your turn — \(aheadCount) lifter\(aheadCount == 1 ? "" : "s") ahead"
-    }
 
     private func ordinal(_ n: Int) -> String {
         let suffix: String
@@ -646,16 +621,11 @@ struct SessionLiveView: View {
     /// my-turn screen "did nothing". It entered a REST interlude — the
     /// spectate layout with a START SET CTA — until the window ended or you
     /// cut it short. THE INTERLUDE'S LAYOUT LEFT WITH THE SPECTATE PAGE (plan
-    /// task S4): the window, its notifier, its store and its recovery pill all
-    /// still run, and `selfRotationRecoveryPill` still has no page to sit on.
-    /// Nil = not resting. Recorded for I1's callerless sweep rather than
-    /// deleted on a hunch.
+    /// task S4): the window, its notifier and its store still run — the
+    /// recovery pill that used to render on top of it, and the boolean that
+    /// gated it, both went callerless with the page and plan task S13's
+    /// dead-member sweep retired them in turn. Nil = not resting.
     @State private var selfRotationRestUntil: Date?
-
-    private var isInSelfRotationRest: Bool {
-        guard let until = selfRotationRestUntil else { return false }
-        return until > .now
-    }
 
     /// TRANSIT flag for the current self-rotation rest window (2026-08):
     /// true when the set just logged completed its exercise, so the next
@@ -688,57 +658,6 @@ struct SessionLiveView: View {
     private func captureSelfRotationRestDrop() {
         guard selfRotationRestUntil != nil, let drop = recoveryBuffer.drop, drop > 0 else { return }
         selfRotationRestDrops.append(drop)
-    }
-
-    /// GO EARLY / +30s pill for the self-rotation interlude — same
-    /// RestRecoveryMath judgment and house button anatomy as the solo rest
-    /// hero. +30s re-arms its own guarded auto-clear (the original task's
-    /// `until` guard goes stale on extension by design).
-    @ViewBuilder
-    private func selfRotationRecoveryPill(now: Date, start: Date, end: Date) -> some View {
-        let total = end.timeIntervalSince(start)
-        let progress = total > 0 ? min(1, max(0, now.timeIntervalSince(start) / total)) : 0
-        let verdict = RestRecoveryMath.verdict(
-            currentDrop: recoveryBuffer.drop,
-            baseline: RestRecoveryMath.baseline(priorDrops: selfRotationRestDrops),
-            progress: progress)
-        switch verdict {
-        case .ready:
-            Button {
-                captureSelfRotationRestDrop()
-                selfRotationRestUntil = nil
-            } label: {
-                Text("RECOVERED — GO EARLY")
-                    .font(GSFont.bold(11, relativeTo: .caption))
-                    .kerning(0.8)
-                    .foregroundStyle(theme.text)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-            }
-            .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip, cornerRadius: 10, lipHeight: 4))
-        case .lagging:
-            Button {
-                let extended = end.addingTimeInterval(30)
-                selfRotationRestUntil = extended
-                Task {
-                    try? await Task.sleep(for: .seconds(max(0, extended.timeIntervalSinceNow)))
-                    if selfRotationRestUntil == extended {
-                        captureSelfRotationRestDrop()
-                        selfRotationRestUntil = nil
-                    }
-                }
-            } label: {
-                Text("SLOW RECOVERY — +30s")
-                    .font(GSFont.bold(11, relativeTo: .caption))
-                    .kerning(0.8)
-                    .foregroundStyle(theme.text)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 7)
-            }
-            .buttonStyle(.gs3D(face: theme.raised3DFace, lip: theme.raised3DLip, cornerRadius: 10, lipHeight: 4))
-        case nil:
-            EmptyView()
-        }
     }
 
     /// Prior-performance state (2026-07-30). ONE fetch feeds two features:
@@ -822,10 +741,6 @@ struct SessionLiveView: View {
     private var turnVitalsState: TurnVitals {
         if let mine = selfHeartRate { return .live(mine.bpm) }
         return HeartRatePrimeStore.hasBeenAsked ? .elapsed : .undecided
-    }
-
-    private var myTurnActive: Bool {
-        isMyTurn && !(participants.isEmpty && rosterLoadFailed) && !isInSelfRotationRest
     }
 
     /// My non-penalty sets for the current exercise, oldest first.
@@ -1170,8 +1085,9 @@ struct SessionLiveView: View {
     }
 
     /// Bar/plate config shared by `turnBarCard` and `turnLoaderExpanded`. It
-    /// was written as the twin of `barLoaderCard`'s derivation, which is now
-    /// the callerless one (plan task S4 deleted its only mount).
+    /// was written as the twin of `barLoaderCard`'s own derivation — plan
+    /// task S4 deleted `barLoaderCard`'s only mount, and plan task S13's
+    /// dead-member sweep retired the callerless view itself.
     private var turnBarConfig: (unit: WeightUnit, plates: [Decimal], barInUnit: Decimal, prefill: Decimal?, targetInUnit: Decimal) {
         let unit = turnUnit
         let plates: [Decimal] = {
@@ -1695,10 +1611,6 @@ struct SessionLiveView: View {
         .padding(.horizontal, 16)
     }
 
-    private var stepperRule: some View {
-        Rectangle().fill(theme.neutral700.opacity(0.55)).frame(width: 1, height: 30)
-    }
-
     private func turnStepButton(_ glyph: String, detail: String?, action: @escaping () -> Void) -> some View {
         TurnAutoRepeatButton(glyph: glyph, detail: detail, theme: theme, step: action)
     }
@@ -1861,8 +1773,8 @@ struct SessionLiveView: View {
     /// Exercise whose detail page (video demo + history) is open as a sheet —
     /// set by tapping the exercise name on `turnExerciseCard` (user
     /// 2026-08-11; the spotlight/spectate headers that also raised it left in
-    /// plan task S4, `spotlightHeaderCard` with its own mount). A sheet, not a
-    /// push, so dismissing it lands straight back in the session.
+    /// plan task S4 and plan task S13's dead-member sweep in turn). A sheet,
+    /// not a push, so dismissing it lands straight back in the session.
     @State private var exerciseDetailSheet: Exercise?
 
     var body: some View {
@@ -2418,413 +2330,6 @@ struct SessionLiveView: View {
     // the round wait's foot is its caller, and `reactionEmojis` above is
     // still the one list. Nothing about the pills' drawing changed.
 
-    // MARK: - Header bar
-    // Canvas: LIVE pulse + session name (routine) + elapsed since startedAt + X button
-    // (X → end-session confirmation; this is the proof's only end-session affordance
-    // on the live screens, so the old separately-pinned "End Session" bar was removed).
-
-    private var headerBar: some View {
-        HStack(spacing: 10) {
-            // LIVE indicator
-            HStack(spacing: 5) {
-                Circle()
-                    .fill(theme.accent)
-                    .frame(width: 9, height: 9)
-                Text("LIVE")
-                    .font(GSFont.bold(12, relativeTo: .caption2))
-                    .tracking(0.8)
-                    .foregroundStyle(theme.accent)
-            }
-
-            Text(routineName ?? "Session")
-                .font(GSFont.bold(13, relativeTo: .subheadline))
-                .foregroundStyle(theme.text)
-                .lineLimit(1)
-
-            Spacer()
-
-            // "Connecting voice…" pill — Dossier §A.2: "header shows the
-            // same connecting pill as the lobby frame."
-            if case .connecting = VoiceRoomService.shared.state {
-                GSConnectingVoicePill()
-            }
-
-            // Session elapsed — Text timer, never a Swift Timer
-            if let startedAt = liveSession.startedAt {
-                Text(startedAt, style: .timer)
-                    .font(.custom("Archivo-Bold", size: 14).monospacedDigit())
-                    .foregroundStyle(theme.neutral700)
-                    .monospacedDigit()
-            }
-
-            // Voice mixer entry point (Phase O Task 5 item 5) — same
-            // bordered-square idiom as the chat/X buttons beside it; no
-            // canvas frame shows WHERE the mixer opens from (only its own
-            // content), see docs/design/accepted-deviations.json's
-            // "voice-mixer-entry-point" entry.
-            if isVoiceConnected {
-                Button {
-                    showVoiceMixerSheet = true
-                } label: {
-                    Image(systemName: "slider.horizontal.3")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(theme.neutral700)
-                        .frame(width: 30, height: 30)
-                        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-
-            // ("Load the bar" was a bordered-square header button here until
-            // 2026-07-28 — it is now the inline `barLoaderCard` widget in the
-            // content column, matching the solo session. See that property.)
-
-            // Session chat (Task 3) — same bordered-square idiom as the X
-            // button beside it (30×30 glyph in a 44×44 tap target); no
-            // canvas frame shows this affordance, see `showChatSheet`'s doc
-            // comment.
-            Button {
-                showChatSheet = true
-            } label: {
-                Image(systemName: "bubble.left.and.bubble.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(theme.neutral700)
-                    .frame(width: 30, height: 30)
-                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                showEndConfirmation = true
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(theme.neutral700)
-                    .frame(width: 30, height: 30)
-                    .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-    }
-
-    // MARK: - Spotlight header card (my turn) — p06
-    // Exercise-name headline (not the lifter's name — per finding p06 #1), "Set N of M ·
-    // target W × R" subtitle. BPM waveform decoration from the proof is skipped (no
-    // continuous waveform data source exists — the pill's bpm NUMBER is now real,
-    // Phase W Task 5, but the small sparkline under it in frame 2A stays chrome-only:
-    // this app's HR feed is discrete ~5s samples, not a continuous trace to plot).
-
-    private var spotlightHeaderCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 10) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("YOUR TURN")
-                        .font(GSFont.bold(10, relativeTo: .caption2))
-                        .tracking(1.4)
-                        .foregroundStyle(theme.bg.opacity(0.85))
-
-                    Button {
-                        exerciseDetailSheet = currentExerciseForSheet
-                    } label: {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(currentExerciseForSheet?.name ?? "Exercise")
-                                .font(GSFont.heading(26, relativeTo: .title))
-                                .foregroundStyle(theme.bg)
-                                .lineLimit(2)
-                                .multilineTextAlignment(.leading)
-                            Image(systemName: "chevron.right.circle.fill")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(theme.bg.opacity(0.7))
-                        }
-                    }
-                    .buttonStyle(.plain)
-                }
-                Spacer(minLength: 8)
-                // Phase W Task 5 (watch-hr design §4) — canvas frame 2A's
-                // own HR pill: this is the SPOTLIGHT hero, "your turn" —
-                // always the current (self) user, so `selfID` is the only
-                // key this slot ever reads. See `GSHeartRatePill`'s header
-                // comment for the frame citation.
-                //
-                // Fix wave 1 (CI compile error, `selfID` is `UUID?` —
-                // `appState.currentProfile?.id`, line 234 — but
-                // `heartRateFor(_:)` takes a non-optional `UUID`): unwrapped
-                // here rather than force-unwrapped or defaulted. A nil
-                // `selfID` (no signed-in profile resolved yet) means no
-                // pill — the honest choice, matching every OTHER optional
-                // guard on `selfID` elsewhere in this file (e.g. line 407's
-                // `guard let selfID, ... else { return nil }`).
-                if let selfID, let mine = heartRateFor(selfID) {
-                    GSHeartRatePill(
-                        bpm: mine.bpm,
-                        zone: mine.zone,
-                        showsLiveSuffix: true,
-                        captionColor: theme.bg.opacity(0.85)
-                    )
-                }
-            }
-
-            HStack(spacing: 4) {
-                Text("Set \(currentTurnSetNumber) of \(targetSetsPerLifter)")
-                if let targetText = currentExerciseTargetText {
-                    Text("· \(targetText)")
-                }
-            }
-            .font(GSFont.body(13, relativeTo: .subheadline))
-            .foregroundStyle(theme.bg.opacity(0.85))
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.accent)
-        .cornerRadius(GSMetrics.radiusMd)   // redesign: rounded accent surface
-    }
-
-    // MARK: - Stat timer row (SET TIMER / REST AFTER) — p06
-    // SET TIMER is the live chess clock (state-driven from currentTurnStartedAt).
-    // REST AFTER shows the routine's configured rest duration for this exercise — a
-    // static value, not a running countdown (no rest-phase-active state exists in the
-    // data model; adding one is a behavior change out of scope for this layout wave).
-
-    private var statTimerRow: some View {
-        HStack(spacing: 10) {
-            statTile(kicker: "SET TIMER") {
-                if let ts = liveSession.currentTurnStartedAt {
-                    Text(ts, style: .timer)
-                        .font(.custom("Archivo-Bold", size: 26).monospacedDigit())
-                        .foregroundStyle(theme.text)
-                        .monospacedDigit()
-                } else {
-                    Text("—")
-                        .font(.custom("Archivo-Bold", size: 26))
-                        .foregroundStyle(theme.neutral500)
-                }
-            }
-            statTile(kicker: "REST AFTER") {
-                Text(restAfterText)
-                    .font(.custom("Archivo-Bold", size: 26).monospacedDigit())
-                    .foregroundStyle(theme.text)
-            }
-        }
-    }
-
-    private var restAfterText: String {
-        let seconds = currentRoutineExercise?.restSeconds ?? 120
-        return String(format: "%02d:%02d", seconds / 60, seconds % 60)
-    }
-
-    private func statTile<Content: View>(kicker: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(kicker)
-                .font(GSFont.bold(9, relativeTo: .caption2))
-                .tracking(0.8)
-                .foregroundStyle(theme.neutral500)
-            content()
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-    }
-
-    // MARK: - Load the bar (inline widget — parity with the solo session)
-    //
-    // CALLERLESS SINCE PLAN TASK S4. Its only mount was the spectate page's
-    // widget row; the my-turn page draws `turnBarCard` / `turnLoaderExpanded`
-    // instead, off the same `showBarLoader` flag and the same `turnBarConfig`.
-    // Left standing rather than deleted on a hunch — I1 owns the callerless
-    // sweep — and recorded here so the next reader is not misled.
-    //
-    // User direction 2026-07-28: "Group session load the bar should be the
-    // same as the solo workout. Not a small button, but a widget." This is
-    // `WorkoutSessionView.barLoaderCard`'s design verbatim — collapsed card
-    // with a `GSBarLoaderMini` preview, expanding to the full
-    // `BarLoaderWidget`.
-    //
-    // Bar/plate settings come from `ThemeStore`'s already-cached
-    // `user_settings` row rather than a fetch of this view's own, matching
-    // how this file already reads `weightUnit`.
-    @ViewBuilder
-    private var barLoaderCard: some View {
-        if let ex = currentExerciseForSheet, ex.equipment.lowercased() == "barbell" {
-            let unit = ThemeStore.shared.weightUnit
-            let plates: [Decimal] = {
-                if let custom = ThemeStore.shared.plateInventory, !custom.isEmpty {
-                    return custom.sorted(by: >)
-                }
-                return unit.standardPlates
-            }()
-            let barInUnit: Decimal = {
-                var value = Units.fromPounds(ThemeStore.shared.barWeightLbs, to: unit)
-                var rounded = Decimal()
-                NSDecimalRound(&rounded, &value, 2, .plain)
-                return rounded
-            }()
-            // Prefill priority mirrors solo: the programmed target, else the
-            // last set I logged for THIS exercise.
-            let prefill: Decimal? = {
-                if let target = currentRoutineExercise?.targetWeight,
-                   let parsed = Decimal(string: target), parsed > 0 { return parsed }
-                return feedSets.first { $0.userID == selfID && $0.exerciseID == ex.id && !$0.isFailed }?.weight
-            }()
-            let targetInUnit = prefill.map { Units.fromPounds($0, to: unit) } ?? barInUnit
-
-            VStack(alignment: .leading, spacing: 0) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.18)) { showBarLoader.toggle() }
-                } label: {
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "scalemass")
-                                    .font(.system(size: 15, weight: .semibold))
-                                    .foregroundStyle(theme.accent)
-                                Text("Load the bar")
-                                    .font(GSFont.bold(15, relativeTo: .body))
-                                    .foregroundStyle(theme.text)
-                            }
-                            Text(prefill.map { "\(Units.format(pounds: $0, unit: unit, rounded: false)) · plates & warm-up" }
-                                 ?? "Plates & warm-up ramp")
-                                .font(GSFont.body(11.5, relativeTo: .caption))
-                                .foregroundStyle(theme.neutral500)
-                        }
-                        Spacer(minLength: 8)
-                        GSBarLoaderMini(target: targetInUnit, barWeight: barInUnit,
-                                        plates: plates, unit: unit)
-                        Image(systemName: showBarLoader ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 12, weight: .bold))
-                            .foregroundStyle(theme.neutral500)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 14)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-
-                if showBarLoader {
-                    // Whatever gets dialled in lands in the inline LOG THIS
-                    // SET card's weight field, in the display unit.
-                    BarLoaderWidget(initialPounds: prefill,
-                                    onEnteredPoundsChange: { pounds in
-                                        guard let pounds else { return }
-                                        logWeight = Units.format(pounds: pounds, unit: unit,
-                                                                 rounded: false, includeUnit: false)
-                                    })
-                        .padding(.horizontal, 14)
-                        .padding(.bottom, 14)
-                }
-            }
-            .background(theme.surface)
-            .cornerRadius(GSMetrics.radiusMd)
-        }
-    }
-
-    // MARK: - Inline "LOG THIS SET" card — p06
-    // Replaces the modal LogSetSheet for normal (non-penalty) set logging so logging
-    // happens without leaving the screen, per finding p06 #3. The proof only shows
-    // reps/weight steppers + an RPE scale; a compact "Failed set" toggle + optional note
-    // field are kept (smaller, secondary) so the fail/note capability the old sheet
-    // offered isn't silently dropped.
-
-    private var logThisSetCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("LOG THIS SET")
-                .font(GSFont.bold(10, relativeTo: .caption2))
-                .tracking(1.2)
-                .foregroundStyle(theme.neutral500)
-
-            HStack(spacing: 10) {
-                stepperCell(
-                    theme: theme,
-                    label: "Reps",
-                    value: $logReps,
-                    borderColor: theme.divider,
-                    valueColor: theme.text,
-                    keyboard: .numberPad,
-                    onDecrement: { decrementInt(&logReps) },
-                    onIncrement: { incrementInt(&logReps) }
-                )
-                stepperCell(
-                    theme: theme,
-                    // Units sweep: the USER'S unit, not the exercise's
-                    // default — commitInlineLog parses in this.
-                    // Design language §9 (T8.2): the kicker states the
-                    // loading convention, same helper as the turn card.
-                    label: Units.weightKicker(unit: ThemeStore.shared.weightUnit,
-                                              equipment: currentExerciseForSheet?.equipment,
-                                              unilateral: currentExerciseForSheet?.unilateral),
-                    accessibilityLabel: "Weight",
-                    value: $logWeight,
-                    // Accent discipline (design language §2): the weight cell
-                    // matches Reps beside it — flat, neutral furniture.
-                    borderColor: theme.divider,
-                    valueColor: theme.text,
-                    keyboard: .decimalPad,
-                    onDecrement: { decrementDecimal(&logWeight, step: turnTunerStep) },
-                    onIncrement: { incrementDecimal(&logWeight, step: turnTunerStep) }
-                )
-            }
-
-            // Fix wave 1 (inline-card extension) — reuses `PlateStackDisclosure`
-            // (LogSetSheet.swift:397), the same free-standing view LogSetSheet's own
-            // "Plates" row renders (LogSetSheet.swift:124), instead of copy-pasting its
-            // body per the reviewer's explicit ruling against that approach. Same
-            // hidden/inert-for-empty/invalid/non-positive-weight gate as LogSetSheet
-            // and the same `Decimal.parseUserInput(_:)` locale-safe parse idiom
-            // `commitInlineLog()` (below) already uses for this exact field (Phase O
-            // Task 2 — was the bare `Decimal(string:)` initializer) — this card just
-            // holds its weight in `logWeight` rather than LogSetSheet's `weight`
-            // (LogSetSheet.swift:22).
-            if let targetWeight = Decimal.parseUserInput(logWeight), targetWeight > 0 {
-                // Units sweep: `target` is what the user TYPED, i.e. already
-                // in their unit — the disclosure now runs its plate math
-                // natively in that unit (see PlateStackDisclosure).
-                PlateStackDisclosure(target: targetWeight, theme: theme,
-                                     unit: ThemeStore.shared.weightUnit,
-                                     isExpanded: $showPlateStack)
-            }
-
-            // Redesign 2026-07-30: RPESwipeTrack replaces the segment bar AND
-            // the separate "Failed set" Toggle — FAIL is the terminal position
-            // of the same scale, and arming it snaps the value to 10 (a fail
-            // IS an RPE 10; storage writes isFailed = true AND rpe = 10).
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text("RPE · effort")
-                        .font(GSFont.body(11, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                    Spacer()
-                    Text(logIsFailed ? "10 · Miss" : "\(Int(logRPE)) · \(rpeLabel(logRPE))")
-                        .font(GSFont.heading(12, relativeTo: .caption))
-                        .foregroundStyle(theme.accent700)
-                }
-                RPESwipeTrack(value: $logRPE, isFailed: $logIsFailed, theme: theme)
-            }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("NOTE")
-                    .font(GSFont.bodyMedium(9, relativeTo: .caption2))
-                    .tracking(1.0)
-                    .foregroundStyle(theme.neutral500)
-                TextField("Anything to remember?", text: $logNote, axis: .vertical)
-                    .lineLimit(1...2)
-                    .font(GSFont.body(13, relativeTo: .body))
-                    .foregroundStyle(theme.text)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.surface)
-        .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, lineWidth: 1))
-    }
-
     // Reps/weight stepper cell and its arithmetic helpers now live in LogSetSheet.swift
     // (shared, internal — see `stepperCell`, `decrementInt`/`incrementInt`/
     // `decrementDecimal`/`incrementDecimal`) so this view no longer duplicates them.
@@ -2837,63 +2342,6 @@ struct SessionLiveView: View {
     // builds its tiles from `rotationTiles`, which is unchanged. Nothing
     // about the drawing changed — only who owns it and whether the current
     // tile is filled with accent, which is now the caller's to say.
-
-    // MARK: - Bottom action bar
-    // CALLERLESS SINCE PLAN TASK S4, with `upcomingTurnHint` below it: the
-    // pinned chrome is `turnChrome` now, and the spectating arm this bar's
-    // second branch served left with the page it belonged to. Left standing
-    // for I1's sweep, not deleted on a hunch.
-    //
-    // My turn → pinned primary CTA (commits the inline card's state via logSetAndAdvance,
-    // UNCHANGED order of operations). Spectating → dashed rotation hint, no CTA (matches
-    // p07's "You're up next — ~2 min" treatment, minus the fabricated ETA — see
-    // `upcomingTurnHint`).
-
-    @ViewBuilder
-    private var bottomActionBar: some View {
-        if isMyTurn {
-            Button {
-                commitInlineLog()
-            } label: {
-                HStack {
-                    if isLoggingSet {
-                        ProgressView()
-                            .controlSize(.small)
-                            .tint(theme.bg)
-                        Text("Logging…")
-                            .font(GSFont.bold(16, relativeTo: .body))
-                        Spacer()
-                    } else {
-                        Text("Log Set & Pass")
-                            .font(GSFont.bold(16, relativeTo: .body))
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 15, weight: .semibold))
-                    }
-                }
-                .foregroundStyle(theme.bg)
-                .padding(.horizontal, 16)
-                // 12.5pt vertical (was 16): content + 25 + the gs3D style's
-                // 7pt lip keeps the CTA's exact prior footprint.
-                .padding(.vertical, 12.5)
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.gs3D(face: theme.accent, cornerRadius: GSMetrics.radiusSm))
-            // `leadingInt` — a rep range must not dead-end the CTA (see the
-            // helper in LogSetSheet.swift).
-            .disabled(isLoggingSet || (leadingInt(logReps) == nil && !logIsFailed))
-            .background(theme.bg)
-        } else if let hint = upcomingTurnHint {
-            Text(hint)
-                .font(GSFont.bodyMedium(13, relativeTo: .subheadline))
-                .foregroundStyle(theme.neutral700)
-                .frame(maxWidth: .infinity, minHeight: 48)
-                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.divider, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .background(theme.bg)
-        }
-    }
 
     // MARK: - Penalty banner
     // Canvas: accent fill "YOU OWE N BURPEES" kicker, large count, Log burpees button
@@ -2926,167 +2374,6 @@ struct SessionLiveView: View {
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 16)
-    }
-
-    private var penaltyBanner: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("YOU OWE")
-                .font(GSFont.bold(10, relativeTo: .caption2))
-                .tracking(1.4)
-                .foregroundStyle(theme.bg.opacity(0.85))
-
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("\(burpeesRemaining)")
-                    .font(GSFont.bold(48, relativeTo: .largeTitle))
-                    .foregroundStyle(theme.bg)
-                    .lineLimit(1)
-                Text("burpees")
-                    .font(GSFont.bold(18, relativeTo: .title2))
-                    .foregroundStyle(theme.bg)
-            }
-
-            Button {
-                showLogSetSheet = true
-            } label: {
-                HStack {
-                    Text("Log burpees")
-                        .font(GSFont.bold(14, relativeTo: .body))
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 13, weight: .semibold))
-                }
-                // theme.bg, NOT theme.accent (UI audit 2026-07-29 measured
-                // ~1.78:1). `GSTheme.withAccent` collapses accent600/700/800
-                // onto accent.base, so this label and the accent-filled
-                // banner behind it resolved to the SAME colour — accent text
-                // on accent fill. The kicker and count two lines above
-                // already use theme.bg; this now matches them.
-                .foregroundStyle(theme.bg)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 10)
-                .frame(minHeight: 44)
-                .background(theme.bg.opacity(0.15))
-                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusSm).strokeBorder(theme.bg.opacity(0.4), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-
-            // Secondary entry into the group-wide Burpee Ledger (Canvas
-            // Completion Task 3, proof p25) — only for group sessions;
-            // ad-hoc/solo sessions have no group-scoped ledger to show.
-            if let ledgerGroup {
-                NavigationLink {
-                    // Fix wave 1 (reviewer Finding F4): threads this view's
-                    // own session id through so BurpeeLedgerView's "Log
-                    // burpees now" CTA can tell whether ITS target session
-                    // is the SAME one already live further down the nav
-                    // stack — see that property's doc comment for why.
-                    BurpeeLedgerView(group: ledgerGroup, pushedFromLiveSessionID: session.id)
-                } label: {
-                    HStack(spacing: 4) {
-                        Text("Crew ledger")
-                            .font(GSFont.bodyMedium(12, relativeTo: .caption))
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 10, weight: .semibold))
-                    }
-                    .foregroundStyle(theme.bg.opacity(0.85))
-                    .frame(minHeight: 44)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.accent700.opacity(0.85))
-        .padding(.horizontal, 16)
-    }
-
-    // MARK: - Set feed
-    // Reverse-chron, cap 30 rows; penalty rows tagged; username · exercise · reps×weight
-
-    private var feedSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            GSSectionHeader("Live Feed")
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .padding(.bottom, 8)
-
-            // feedSets is already newest-first (prepended on INSERT)
-            ForEach(feedSets.prefix(30)) { log in
-                feedRow(log)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-
-                if log.id != feedSets.prefix(30).last?.id {
-                    Rectangle()
-                        .fill(theme.divider)
-                        .frame(height: 1)
-                        .padding(.horizontal, 16)
-                }
-            }
-        }
-    }
-
-    private func feedRow(_ log: SetLog) -> some View {
-        HStack(spacing: 8) {
-            // Avatar initial for the logger
-            let loggerInitials: String = {
-                let name = participants.first(where: { $0.participant.userID == log.userID })?.profile.username ?? "?"
-                return String(name.prefix(2)).uppercased()
-            }()
-            ZStack {
-                Rectangle()
-                    .fill(log.userID == selfID ? theme.accent : theme.neutral400)
-                    .frame(width: 28, height: 28)
-                Text(loggerInitials)
-                    .font(GSFont.bold(10, relativeTo: .caption2))
-                    .foregroundStyle(theme.bg)
-            }
-
-            VStack(alignment: .leading, spacing: 1) {
-                let username = participants.first(where: { $0.participant.userID == log.userID })?.profile.username ?? "?"
-                let exerciseName = exerciseNames[log.exerciseID] ?? "Exercise"
-
-                HStack(spacing: 4) {
-                    Text(username)
-                        .font(GSFont.bold(12, relativeTo: .caption))
-                        .foregroundStyle(theme.text)
-                    Text("· \(exerciseName)")
-                        .font(GSFont.body(12, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                        .lineLimit(1)
-                }
-
-                let repsText = log.reps.map { "\($0)" } ?? "—"
-                // Units sweep: stored-lbs → display unit (renamed from
-                // `weightText` so it can't shadow the helper it calls).
-                let weightStr = log.weight.map { weightText($0) } ?? "—"
-                HStack(spacing: 4) {
-                    Text("\(repsText) × \(weightStr)")
-                        .font(GSFont.bodyMedium(13, relativeTo: .body))
-                        .foregroundStyle(theme.text)
-                    if log.isPenalty {
-                        GSTag(text: "penalty", style: .accent)
-                    }
-                    if log.isFailed {
-                        GSTag(text: "failed", style: .neutral)
-                    }
-                    // Phase O Task 3 — syncing indicator (system-designed, no canvas
-                    // frame; docs/design/accepted-deviations.json's
-                    // "offline-syncing-indicator" entry). Same GSTag(.outline) chip
-                    // idiom this row's own penalty/failed tags already use.
-                    if OfflineSetLogQueue.shared.pendingSetLogIDs.contains(log.id) {
-                        GSTag(text: "syncing", style: .outline)
-                    }
-                }
-            }
-
-            Spacer()
-
-            // Elapsed time since logged
-            Text(log.loggedAt, style: .relative)
-                .font(GSFont.body(10, relativeTo: .caption2))
-                .foregroundStyle(theme.neutral500)
-        }
     }
 
     // MARK: - LogSetSheet content (penalty / burpee logging only — normal sets log inline)
@@ -3378,9 +2665,8 @@ struct SessionLiveView: View {
     /// fetched models — `liveSession` (`WorkoutSession`), `rotationOrder`
     /// (`[(SessionParticipant, Profile)]`, this file's line 257),
     /// `currentExerciseForSheet` (`Exercise`, this file's own property
-    /// above) — the exact same
-    /// derivations `spotlightHeaderCard` already renders, not a second
-    /// computation. See `WatchConnectivityBridge`'s
+    /// above) — the exact same derivations the my-turn page already
+    /// renders, not a second computation. See `WatchConnectivityBridge`'s
     /// header doc comment for why the bridge itself accepts this
     /// already-built payload instead of re-deriving it. Called from
     /// `.onAppear` (initial snapshot), `.onChange(of: liveSession.currentTurnUserID)`
@@ -3823,8 +3109,9 @@ struct SessionLiveView: View {
     /// HeartRateZone.swift`) is the AUTHORITATIVE staleness check (see that
     /// type's own doc comment); the auto-purge `Task` above is memory
     /// hygiene + a re-render trigger, not the source of truth.
-    /// `spotlightHeaderCard` calls this rather than reading `heartRates`
-    /// directly.
+    /// `selfHeartRate`, `crewHeartRateRows` (plan task S8) and
+    /// `togetherLanes` (plan task S9) all call this rather than reading
+    /// `heartRates` directly.
     private func heartRateFor(_ userID: UUID) -> (bpm: Int, zone: HeartRateZone?)? {
         guard let entry = heartRates[userID],
               HeartRateFreshness.isFresh(receivedAt: entry.receivedAt, now: Date(), staleAfter: Self.heartRateStaleAfter)

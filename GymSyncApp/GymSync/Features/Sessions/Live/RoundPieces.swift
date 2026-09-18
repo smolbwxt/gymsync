@@ -132,10 +132,11 @@ enum RoundCopy {
     ///
     /// THE REFERENCE FRAME SAYS "until round 5" AND PRODUCTION DOES NOT.
     /// Which round a lifter rejoins on depends on how fast four other people
-    /// get through their remaining sets, and this file's own
-    /// `upcomingTurnHint` already refuses to fabricate the same kind of
-    /// number ("the proof's '~2 min' isn't backed by any duration data we
-    /// track"). A wrong round in the copy is worse than no round.
+    /// get through their remaining sets, and `SessionLiveView`'s own
+    /// (now-retired) `upcomingTurnHint` already refused to fabricate the
+    /// same kind of number ("the proof's '~2 min' isn't backed by any
+    /// duration data we track"). A wrong round in the copy is worse than no
+    /// round.
     static let spotterWithTheCrew = "You're with the crew — not in a recap on your own."
 
     /// The crew's live readings. Owner decision 13 shares heart rate by

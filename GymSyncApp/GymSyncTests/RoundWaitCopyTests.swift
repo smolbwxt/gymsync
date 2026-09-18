@@ -279,8 +279,9 @@ final class RoundWaitCopyTests: XCTestCase {
 
     /// THE REFERENCE FRAME SAYS "until round 5" AND PRODUCTION DOES NOT.
     /// Which round a lifter rejoins on depends on four other people's
-    /// remaining sets; `upcomingTurnHint` already refuses to fabricate the
-    /// same kind of number. This assertion is the refusal, written down.
+    /// remaining sets; `SessionLiveView`'s own (now-retired)
+    /// `upcomingTurnHint` already refused to fabricate the same kind of
+    /// number. This assertion is the refusal, written down.
     func testTheWithTheCrewLineNamesNoRound() {
         XCTAssertFalse(RoundCopy.spotterWithTheCrew.lowercased().contains("round"))
     }
