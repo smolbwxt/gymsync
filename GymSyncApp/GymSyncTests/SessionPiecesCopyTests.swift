@@ -76,6 +76,22 @@ final class SessionPiecesCopyTests: XCTestCase {
         XCTAssertEqual(SessionCopy.decline, GSConsentCopy.decline)
     }
 
+    /// Spec §3.2's "the Coach line for each lifter privately", said out loud —
+    /// and only on the crew frame, where there is somebody else to be private
+    /// from (plan task S8).
+    func testTheSuggestionSaysWhoCanSeeIt() {
+        XCTAssertEqual(SessionCopy.onlyYouSeeThis, "Only you see this.")
+    }
+
+    // MARK: - The verb that did not happen (plan task S3)
+
+    /// `errorBannerOverlay`'s two strings. Twelve writers of `errorText` and
+    /// one reader; these are what that reader prints.
+    func testTheLiveBodysErrorLine() {
+        XCTAssertEqual(SessionCopy.verbFailed, "That didn't go through.")
+        XCTAssertEqual(SessionCopy.verbFailedDismiss, "TAP TO DISMISS")
+    }
+
     func testCoachsDoor() {
         XCTAssertEqual(SessionCopy.talkToCoach, "Talk to Coach")
         XCTAssertEqual(SessionCopy.talkToCoachDetail,

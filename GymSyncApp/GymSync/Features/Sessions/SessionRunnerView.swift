@@ -29,10 +29,15 @@ struct SessionRunnerView: View {
     @State private var isStarting = false
     @State private var errorText: String?
     @State private var now = Date()
-    /// The session's routine, already worded. Built the way the lobby builds
-    /// it (`LobbyView.planRows`) — through `SessionPlanRow(exercise:name:)`,
-    /// so the plan card reads the same on both screens.
-    @State private var planRows: [SessionPlanRow] = []
+    /// The session's routine rows, and the names `loadPlan()` resolved for
+    /// them. The WORDED rows are derived (`planRows` below) rather than stored,
+    /// so Accept's set reduction re-renders the card the moment it is tapped
+    /// (plan decision 5) without a second pass over the routine.
+    @State private var planExercises: [RoutineExercise] = []
+    @State private var planNames: [UUID: String] = [:]
+    /// `Exercise.primaryMuscle` per plan row — the readiness signal's one
+    /// question of the catalog `loadPlan()` already fetched.
+    @State private var planMuscles: [UUID: String] = [:]
     @State private var routineName = ""
     /// This runner's own copy of the catalog `loadPlan()` resolves names
     /// against — a per-instance cache (review push-5 N3), not the
@@ -40,7 +45,7 @@ struct SessionRunnerView: View {
     /// this fix round removed: that static was an unsynchronised global
     /// written from `nonisolated async` contexts with other concurrent
     /// first callers, and never invalidated. `loadPlan()`'s own
-    /// `planRows.isEmpty` guard already keeps this view from fetching twice
+    /// `planExercises.isEmpty` guard already keeps this view from fetching twice
     /// in the ordinary case; this exists so the shared repository carries
     /// none of that risk for a perf nit that is this one view's to own.
     @State private var exerciseCatalog: [Exercise]?
@@ -59,6 +64,19 @@ struct SessionRunnerView: View {
     /// be worded from it. No second round trip.
     @State private var rungPage: LadderPageModel?
     private let blockGoalRepository: any BlockGoalRepository = LiveBlockGoalRepository()
+    // COACH'S READINESS SIGNAL (plan task S8, decision 4). Three reads that
+    // already exist, each best-effort and each independently optional: a term
+    // that did not land is nil, never an error, and a signal with every term
+    // nil produces no suggestion. NO HEALTHKIT AND NO LOCATION (constraint 10)
+    // — there is no sleep source in this app and this task does not invent one.
+    @State private var lastSessionMeanRPE: Double?
+    @State private var daysSinceLastSession: Int?
+    @State private var openProbeMuscles: Set<String> = []
+    /// Decline clears the suggestion for the session and records nothing.
+    @State private var suggestionDeclined = false
+    /// Accept's whole effect (decision 5): session-local, in memory, and passed
+    /// down to the live body so one array of rows carries it.
+    @State private var todaysScale: TodaysScale?
     // Check-in — solo only (spec §2's path is check-in → warm-up; a
     // scheduled solo session never passes through a lobby to find the
     // button there). Same shape as `LobbyView`'s: `isCheckingIn` and
@@ -137,9 +155,10 @@ struct SessionRunnerView: View {
                     // block behind the session.
                     rungHeadline: rungLine.line,
                     rungDetail: rungLine.detail,
-                    // Coach's per-lifter warm-up line is Phase B too; the
-                    // card renders without a suggestion and no rule appears.
-                    coachLine: nil,
+                    // COACH'S READINESS SUGGESTION (plan task S8). Nil is the
+                    // normal case: no suggestion, no rule, and the card is the
+                    // one B1 shipped.
+                    coachSuggestion: coachSuggestion,
                     blockWeek: blockWeek,
                     blockWeeks: blockWeeks,
                     blockMilestone: blockMilestone,
@@ -151,9 +170,12 @@ struct SessionRunnerView: View {
                     checkInOpensAtText: checkInOpensAtText,
                     onCheckIn: { Task { await initiateCheckIn() } },
                     onStartLifting: { Task { await startLifting() } },
+                    onAcceptSuggestion: { acceptSuggestion() },
+                    onDeclineSuggestion: { suggestionDeclined = true },
                     isStarting: isStarting)
             } else {
-                SessionInProgressView(session: effective, participants: roster)
+                SessionInProgressView(session: effective, participants: roster,
+                                      todaysScale: todaysScale)
             }
         }
         // The one place a failed `START LIFTING` can say so. An overlay
@@ -173,9 +195,14 @@ struct SessionRunnerView: View {
         // The plan, once. It cannot change during a warm-up — the leader
         // picks the routine before Start — so this is a `.task`, not a poll.
         .task { await loadPlan() }
-        // The block ladder, once, solo only. Same reasoning as the plan
-        // above: a block enrollment does not change mid-warm-up.
+        // The block ladder, once. Same reasoning as the plan above: a block
+        // enrollment does not change mid-warm-up.
         .task { await loadBlock() }
+        // Coach's two remaining reads, once (plan task S8). Their own task, so
+        // the plan card is not held behind them and an order between the three
+        // is never assumed — `coachSuggestion` is derived and simply answers
+        // differently as each lands.
+        .task { await loadReadiness() }
         // THE POLL, five seconds, only while warming up. `.task(id:)` cancels
         // itself the moment the gate flips, so the live view never runs two
         // pollers.
@@ -215,6 +242,51 @@ struct SessionRunnerView: View {
         SessionRungLine.resolve(page: rungPage, routineName: routineName)
     }
 
+    /// The plan, worded — with today's accepted reduction layered on, so the
+    /// card re-renders the moment Accept is tapped and both screens print the
+    /// number through the one `SessionPlanRow.prescription(for:)`.
+    private var planRows: [SessionPlanRow] {
+        planExercises.map { exercise in
+            var row = exercise
+            if let scale = todaysScale, scale.exerciseID == exercise.exerciseID {
+                row.targetSets = scale.setsInstead
+            }
+            return SessionPlanRow(exercise: row,
+                                  name: planNames[exercise.exerciseID] ?? "Exercise")
+        }
+    }
+
+    /// The current rung's own standing, for the signal.
+    private var rungStatus: RungStatus? {
+        guard let page = rungPage else { return nil }
+        return page.rows.first(where: { $0.weekNumber == page.weekNumber })?.status
+    }
+
+    /// Coach's suggestion, DERIVED — never stored.
+    ///
+    /// The three reads land in any order on three independent tasks, and a
+    /// stored suggestion would have to be recomputed by whichever finished
+    /// last. This asks the pure rule every time the body evaluates, which is
+    /// also what makes Accept and Decline take effect with no second call:
+    /// both set state this reads.
+    private var coachSuggestion: WarmUpReadiness.Suggestion? {
+        guard !suggestionDeclined, todaysScale == nil else { return nil }
+        return WarmUpReadiness.suggestion(signal: WarmUpReadiness.Signal(
+            rungStatus: rungStatus,
+            reachesMilestone: rungPage?.reachesMilestone ?? true,
+            lastSessionMeanRPE: lastSessionMeanRPE,
+            daysSinceLastSession: daysSinceLastSession,
+            openProbeMuscles: openProbeMuscles,
+            planRows: planExercises.map { exercise in
+                WarmUpReadiness.PlanRow(
+                    exerciseID: exercise.exerciseID,
+                    name: planNames[exercise.exerciseID] ?? "Exercise",
+                    muscle: planMuscles[exercise.exerciseID],
+                    targetSets: exercise.targetSets,
+                    targetReps: exercise.targetReps)
+            }))
+    }
+
     /// The athlete's own block ladder. Best-effort: no active block, or a
     /// failed fetch, leaves `blockWeeks == 0` and `rungPage` nil, which is what
     /// makes `WarmUpScreen` show no strip at all and the plan card fall back to
@@ -245,7 +317,7 @@ struct SessionRunnerView: View {
     /// plan card, never an error dialog over a session that is running.
     @MainActor
     private func loadPlan() async {
-        guard warmingUp, planRows.isEmpty,
+        guard warmingUp, planExercises.isEmpty,
               let routineID = effective.routineID,
               let (routine, exercises) = try? await RoutineRepository.fetch(id: routineID)
         else { return }
@@ -253,13 +325,64 @@ struct SessionRunnerView: View {
             exerciseCatalog = (try? await ExerciseRepository.fetchAll()) ?? []
         }
         let catalog = exerciseCatalog ?? []
-        let byID = Dictionary(catalog.map { ($0.id, $0.name) },
-                              uniquingKeysWith: { first, _ in first })
         routineName = routine.name
-        planRows = exercises.map { exercise in
-            SessionPlanRow(exercise: exercise,
-                           name: byID[exercise.exerciseID] ?? "Exercise")
+        planNames = Dictionary(catalog.map { ($0.id, $0.name) },
+                               uniquingKeysWith: { first, _ in first })
+        // The same catalog, asked its other question (plan task S8): which
+        // muscle each row trains, so an open recovery probe can be matched
+        // against today's plan without a second fetch.
+        planMuscles = Dictionary(catalog.map { ($0.id, $0.primaryMuscle) },
+                                 uniquingKeysWith: { first, _ in first })
+        planExercises = exercises
+    }
+
+    /// LAST SESSION'S EFFORT AND OPEN SORENESS (plan task S8, decision 4).
+    ///
+    /// Two reads that already exist, both best-effort: a failure yields nil for
+    /// its own term and never an error on a screen that is about to start a
+    /// workout. `recentSetLogs` already filters failed and penalty sets, so the
+    /// mean is over the sets that were actually worked.
+    ///
+    /// THE MEAN IS OF THE MOST RECENT LOGGED DAY, not of the fortnight: "how
+    /// hard was last session" is a question about one session, and averaging
+    /// fourteen days of them answers a different one.
+    @MainActor
+    private func loadReadiness() async {
+        guard warmingUp, let userID = selfID else { return }
+        let calendar = Calendar.current
+        let since = calendar.date(byAdding: .day, value: -14, to: Date()) ?? Date()
+        if let logs = try? await SessionRepository.recentSetLogs(userID: userID, since: since),
+           let last = logs.last?.loggedAt {
+            let lastDay = logs.filter { calendar.isDate($0.loggedAt, inSameDayAs: last) }
+            let rpes = lastDay.compactMap { log in
+                log.rpe.map { NSDecimalNumber(decimal: $0).doubleValue }
+            }
+            if !rpes.isEmpty {
+                lastSessionMeanRPE = rpes.reduce(0, +) / Double(rpes.count)
+            }
+            daysSinceLastSession = calendar.dateComponents(
+                [.day],
+                from: calendar.startOfDay(for: last),
+                to: calendar.startOfDay(for: Date())).day
         }
+        if let probes = try? await RecoveryProbeRepository.open() {
+            openProbeMuscles = Set(probes.map { $0.muscle.lowercased() })
+        }
+    }
+
+    /// Accept (plan decision 5). The ONE thing it does: today's set count for
+    /// that exercise drops by one, in memory, for this session. Nothing is
+    /// written to the database, and the plan card and the live body's THE
+    /// SESSION · WHERE WE ARE both re-render from the same array.
+    ///
+    /// SYNCHRONOUS and un-isolated, because it awaits nothing and writes
+    /// nothing: it is the `onChangeRoutine: { showRoutinePicker = true }` shape
+    /// the lobby's own card control uses, not the `Task { await … }` shape the
+    /// two round trips beside it need.
+    private func acceptSuggestion() {
+        guard let suggestion = coachSuggestion else { return }
+        todaysScale = TodaysScale(exerciseID: suggestion.exerciseID,
+                                  setsInstead: suggestion.setsInstead)
     }
 
     /// Same flow as `LobbyView.initiateCheckIn()`: try the geofence, fall

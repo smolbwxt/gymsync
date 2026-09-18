@@ -86,6 +86,12 @@ struct SessionLiveView: View {
     /// below for what this actually guards.
     let voicePersistsOnPop: Bool
 
+    /// TODAY'S ACCEPTED SET REDUCTION (plan task S8, decision 5). A value the
+    /// warm-up hands down through `SessionInProgressView`, session-local and in
+    /// memory — nil for every other route in, and nil until the athlete taps
+    /// Accept. `effectiveRoutineExercises` is the one place it is applied.
+    let todaysScale: TodaysScale?
+
     #if DEBUG
     /// THE CATALOG'S WORLD (plan task S4, global constraint 11).
     ///
@@ -576,23 +582,56 @@ struct SessionLiveView: View {
         allSessionSets.filter { $0.userID == userID && $0.exerciseID == exerciseID && !$0.isPenalty }.count
     }
 
+    /// THE ONE REBUILD A SWAP PERFORMS on a routine row — the replacement's
+    /// exercise id, the same prescription, and no weight (a bar number for one
+    /// lift is not a bar number for another).
+    ///
+    /// A named function because TWO places need it: `effectiveRoutineExercises`
+    /// applies it for real, and `swapDoorDetails` applies it to word the
+    /// consent card's PROPOSED door. A door that computed the proposed
+    /// prescription its own way could promise something the swap does not
+    /// produce — which is exactly what it did for a to-failure row (R-B2-15).
+    ///
+    /// `targetFailure` IS CARRIED (R-B2-13). The old spelling listed fields by
+    /// hand and left it behind, so a swapped `AMRAP` row silently became
+    /// `3 × —`: a prescribed failure is the assignment fulfilled (the failure
+    /// doctrine), and swapping the lift does not cancel it. STILL DROPPED, and
+    /// named here rather than left to be discovered: `setType`, `dropSteps` and
+    /// `dropPercent` — set STRUCTURES, which the live body does not render and
+    /// which no surface in this file reads.
+    private static func swapped(_ re: RoutineExercise, to targetID: UUID) -> RoutineExercise {
+        RoutineExercise(
+            id: re.id, routineID: re.routineID, exerciseID: targetID,
+            position: re.position, targetSets: re.targetSets,
+            targetReps: re.targetReps, targetWeight: nil,
+            restSeconds: re.restSeconds, notes: re.notes,
+            supersetGroup: re.supersetGroup,
+            targetFailure: re.targetFailure,
+            targetRepsLow: re.targetRepsLow, targetRepsHigh: re.targetRepsHigh,
+            cardioZone: re.cardioZone, cardioMinutes: re.cardioMinutes)
+    }
+
     /// The shared routine with hot-swaps applied: squad swaps first
     /// (everyone), then MY quiet self-scales on top (my own choice for my
-    /// body beats the squad's). Progression, logging, and display all
-    /// read THIS, so a swapped lift is what actually gets logged.
+    /// body beats the squad's), then TODAY'S ACCEPTED SET REDUCTION last
+    /// (plan task S8, decision 5 — the warm-up's own Accept, which is mine
+    /// alone and about the dose rather than the lift). Progression, logging,
+    /// and display all read THIS, so a swapped lift is what actually gets
+    /// logged and a scaled row is what actually gets counted.
     private var effectiveRoutineExercises: [RoutineExercise] {
         routineExercises.map { re in
             var target: SwapTarget? = squadSwaps[re.exerciseID]
             if let selfID, let mine = selfScales[selfID]?[re.exerciseID] { target = mine }
-            guard let target else { return re }
-            return RoutineExercise(
-                id: re.id, routineID: re.routineID, exerciseID: target.id,
-                position: re.position, targetSets: re.targetSets,
-                targetReps: re.targetReps, targetWeight: nil,
-                restSeconds: re.restSeconds, notes: re.notes,
-                supersetGroup: re.supersetGroup,
-                targetRepsLow: re.targetRepsLow, targetRepsHigh: re.targetRepsHigh,
-                cardioZone: re.cardioZone, cardioMinutes: re.cardioMinutes)
+            var row = target.map { Self.swapped(re, to: $0.id) } ?? re
+            // KEYED ON THE ROUTINE'S OWN EXERCISE, which is what the warm-up's
+            // plan rows carried when the athlete accepted. A squad swap that
+            // lands afterwards replaces the lift in that slot and the reduced
+            // set count rides with the slot, which is what "one set fewer
+            // today" meant.
+            if let scale = todaysScale, scale.exerciseID == re.exerciseID {
+                row.targetSets = scale.setsInstead
+            }
+            return row
         }
     }
 
@@ -663,10 +702,12 @@ struct SessionLiveView: View {
 
     // MARK: - Init
 
-    init(session: WorkoutSession, style: SessionStyle, voicePersistsOnPop: Bool = false) {
+    init(session: WorkoutSession, style: SessionStyle, voicePersistsOnPop: Bool = false,
+         todaysScale: TodaysScale? = nil) {
         self.session = session
         self.style = style
         self.voicePersistsOnPop = voicePersistsOnPop
+        self.todaysScale = todaysScale
         #if DEBUG
         self.catalog = nil
         #endif
@@ -688,6 +729,10 @@ struct SessionLiveView: View {
         // A capture is never the Lobby→Live push/pop pair, and the flag's
         // only reader is the `.onDisappear` teardown this init guards off.
         self.voicePersistsOnPop = false
+        // A frame is a value: the world's routine rows are already what they
+        // are, and a scale the capture never tapped for would be a second
+        // source for the same numbers.
+        self.todaysScale = nil
         self.catalog = catalog
         _liveSession = State(initialValue: catalog.session)
         _routineName = State(initialValue: catalog.routineName)
@@ -2486,7 +2531,8 @@ struct SessionLiveView: View {
         // case where a vote can outrun the roster this client has fetched —
         // a meter showing 3 of 2 would be worse than a wide one.
         let crewSize = max(presentRotation.count, agreedIDs.count)
-        let details = swapDoorDetails(for: proposal.exerciseID)
+        let details = swapDoorDetails(for: proposal.exerciseID,
+                                      target: proposal.target.id)
         return SwapConsentCard.Model(
             proposerName: SessionCopy.firstName(proposer),
             from: SwapConsentCard.Door(
@@ -2510,19 +2556,23 @@ struct SessionLiveView: View {
     }
 
     /// Both doors' load lines, from the ONE routine row the swap would
-    /// replace. The proposed door drops the weight because
-    /// `effectiveRoutineExercises` drops it (`targetWeight: nil`) — a door
-    /// that repeated `@ 225` would promise a prescription the swap does not
-    /// produce. A row the routine does not carry prints the honest dash
+    /// replace. A row the routine does not carry prints the honest dash
     /// `SessionPlanRow.prescription(for:)` already returns.
-    private func swapDoorDetails(for exerciseID: UUID) -> (now: String, proposed: String) {
+    ///
+    /// THE PROPOSED DOOR IS THE SWAP'S OWN ROW (R-B2-15). It used to be a hand
+    /// copy — `var swapped = re; swapped.targetWeight = nil` — which agreed
+    /// with the real rebuild on most rows and disagreed on a to-failure one:
+    /// the door printed `3 × AMRAP` while `effectiveRoutineExercises` produced
+    /// `3 × —`, because the rebuild dropped `targetFailure` and the copy kept
+    /// it. Both now go through `Self.swapped(_:to:)`, so a door cannot promise
+    /// a prescription the swap does not produce, whatever field is added next.
+    private func swapDoorDetails(for exerciseID: UUID,
+                                 target: UUID) -> (now: String, proposed: String) {
         guard let re = routineExercises.first(where: { $0.exerciseID == exerciseID }) else {
             return ("—", "—")
         }
-        var swapped = re
-        swapped.targetWeight = nil
         return (SessionPlanRow.prescription(for: re),
-                SessionPlanRow.prescription(for: swapped))
+                SessionPlanRow.prescription(for: Self.swapped(re, to: target)))
     }
 
     /// THE BODY'S ONE TOP SLOT (plan tasks S1 and S3).
