@@ -360,7 +360,7 @@
   },
   "session-warmup-suggestion": {
     "frame": 144,
-    "title": "Solo warm-up - Coach's readiness suggestion, with its signal",
+    "title": "Crew warm-up - Coach's readiness suggestion, with its signal",
     "note": "Group-session Phase B2 (plan task S10). The production WarmUpScreen over WarmUpFixtures.suggestion - a CREW world, not the solo one, because the crew frame is where isPrivate means something (spec §3.2). The plan card with the rung headline, the rule, Coach's one sentence naming what it read, Accept / Not today as two raised faces."
   },
   "session-your-turn": {
