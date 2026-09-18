@@ -3,8 +3,6 @@
 //   node scripts/qa_p3a.js sessions                      # list my sessions + states
 //   node scripts/qa_p3a.js join <ROOMCODE>               # join session by code
 //   node scripts/qa_p3a.js checkin <SESSION_ID>          # check in (traveling_override)
-//   node scripts/qa_p3a.js proposals <SESSION_ID>        # list proposals
-//   node scripts/qa_p3a.js vote <PROPOSAL_ID> <approve|veto>
 const fs = require('fs');
 
 const env = {};
@@ -65,20 +63,6 @@ async function main() {
       }).then((r) => r.json());
     console.log('checked in:', JSON.stringify(res));
 
-  } else if (action === 'proposals') {
-    const rows = await get(`routine_proposals?session_id=eq.${arg1}&order=created_at.asc&select=id,proposal_type,status,payload,proposer_id`);
-    for (const p of rows) {
-      console.log(`${p.id} [${p.status}] ${p.proposal_type} by ${p.proposer_id === uid ? 'me' : 'them'} payload=${JSON.stringify(p.payload)}`);
-    }
-
-  } else if (action === 'vote') {
-    const res = await fetch(`${BASE}/rest/v1/routine_proposal_votes`, {
-      method: 'POST',
-      headers: { ...H, Prefer: 'return=representation' },
-      body: JSON.stringify({ proposal_id: arg1, user_id: uid, vote: arg2 }),
-    }).then((r) => r.json());
-    console.log('voted:', JSON.stringify(res));
-
   } else if (action === 'advance') {
     // advance the turn (as current lifter or organizer): node qa_p3a.js advance SESSION_ID
     const res = await fetch(`${BASE}/rest/v1/rpc/advance_turn`, {
@@ -116,7 +100,7 @@ async function main() {
                        : '✅ cheat blocked: ' + body);
 
   } else {
-    throw new Error('usage: sessions | join CODE | advance SID | logset SID REPS WT [penalty] | cheat SID | checkin SESSION_ID | proposals SESSION_ID | vote PROPOSAL_ID approve|veto');
+    throw new Error('usage: sessions | join CODE | advance SID | logset SID REPS WT [penalty] | cheat SID | checkin SESSION_ID');
   }
 }
 

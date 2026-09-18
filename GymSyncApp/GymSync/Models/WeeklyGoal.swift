@@ -175,6 +175,24 @@ enum WeekMath {
                       parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }
 
+    /// The device-local week start as an ISO-8601 INSTANT, with its offset —
+    /// what `crew_week(p_session_id, p_week_start timestamptz)` (ruling
+    /// R-B2-16, plan task S7) needs, and NOT `weekStartString(_:)`'s
+    /// `yyyy-MM-dd`. A lifter west of Greenwich has a week-start instant
+    /// that is still the PREVIOUS calendar day in UTC — a bare DATE string
+    /// (or an instant re-spelled with a UTC `Z` instead of its own offset)
+    /// would silently move the boundary the server sees, which is exactly
+    /// why the RPC's parameter is timestamptz rather than date. Formatted
+    /// with `.withInternetDateTime` (fractional seconds off, offset on) and
+    /// `calendar.timeZone`, not the formatter's own UTC default, so the
+    /// printed offset is the device's own rather than a shift to `Z`.
+    static func weekStartISO8601(_ date: Date = .now, calendar: Calendar = .current) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.timeZone = calendar.timeZone
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.string(from: startOfWeek(date, calendar: calendar))
+    }
+
     /// The inverse of `weekStartString(_:)`: midnight, in `calendar`'s
     /// timezone, of the day that string names.
     ///

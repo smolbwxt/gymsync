@@ -339,6 +339,21 @@ async function main() {
   await rest(`sessions?group_id=eq.${group.id}`, { method: 'DELETE' });
   const states = ['scheduled', 'lobby_open', 'abandoned', 'completed', 'in_progress', 'completed'];
   const now = new Date().toISOString();
+  // Decision 6 (Phase B2 brief, D6): `lobby_open` is the only pre-live state
+  // with participant rows, so it is the only row `SessionRepository.upcoming()`'s
+  // inner join can return — and Home's one button reads it relative to
+  // `scheduled_for`, not the wall clock at seed time. Pinning it ahead of `now`
+  // makes that button deterministic for any walk that starts inside the window
+  // below, instead of flipping 30 minutes after seed time depending on how long
+  // CI took to get there:
+  //   checkInOpensAt (HomeView)             = scheduled_for - 20 min -> opens 5 min before seed time (now)
+  //   nextActionableSession cutoff (HomeView) = scheduled_for + 30 min -> stays actionable until 45 min after seed time (now)
+  // Net: a 50-minute deterministic window (-5 min to +45 min from seed time)
+  // in which the button reads CHECK IN. `scheduled`, `abandoned`, `in_progress`
+  // and both `completed` rows keep `now` — `liveForCurrentUser`'s floor is six
+  // hours and the honor's window is thirty days, so neither needs the offset.
+  const LOBBY_OPEN_SCHEDULED_FOR_OFFSET_MS = 15 * 60_000;
+  const lobbyOpenScheduledFor = new Date(Date.now() + LOBBY_OPEN_SCHEDULED_FOR_OFFSET_MS).toISOString();
   // Review push-5 (R-16): the lobby_open session's other member, looked up
   // here rather than reusing the `acceptedFriend` fetch below (that happens
   // later in the script, after this loop runs) — same account, same natural
@@ -350,7 +365,8 @@ async function main() {
     process.exit(1);
   }
   for (const state of states) {
-    const row = { group_id: group.id, organizer_id: me.id, state, scheduled_for: now };
+    const scheduledFor = state === 'lobby_open' ? lobbyOpenScheduledFor : now;
+    const row = { group_id: group.id, organizer_id: me.id, state, scheduled_for: scheduledFor };
     if (state === 'in_progress') row.started_at = now;
     if (state === 'completed') { row.started_at = now; row.completed_at = now; }
     const [created] = await rest('sessions', { method: 'POST', headers: rep,

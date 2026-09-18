@@ -174,7 +174,8 @@ final class WarmUpScreenGateTests: XCTestCase {
     /// these. Both must be IN the warm-up state, or the frames capture the
     /// live view instead.
     func testBothWarmUpFixturesAreInTheWarmUpState() {
-        for world in [WarmUpFixtures.solo, WarmUpFixtures.crew] {
+        for world in [WarmUpFixtures.solo, WarmUpFixtures.crew,
+                      WarmUpFixtures.suggestion] {
             XCTAssertTrue(
                 WarmUpGate.isWarmingUp(state: world.session.state,
                                        liftingStartedAt: world.session.liftingStartedAt))
@@ -182,5 +183,17 @@ final class WarmUpScreenGateTests: XCTestCase {
         XCTAssertTrue(WarmUpFixtures.solo.warmthRows.isEmpty,
                       "a party of one has no readiness row")
         XCTAssertEqual(WarmUpFixtures.crew.warmthRows.filter(\.isWarm).count, 2)
+    }
+
+    /// Constraint 14: the two shipped warm-up frames carry NO suggestion, so
+    /// `crewBody` draws the plain `SessionPlanCard` and `soloBody` draws its
+    /// card with no rule — both byte-identical to what B1 shipped. Only the
+    /// third world, which S10 gives its own id, has one (plan task S8).
+    func testOnlyTheThirdWorldCarriesASuggestion() {
+        XCTAssertNil(WarmUpFixtures.solo.coachSuggestion)
+        XCTAssertNil(WarmUpFixtures.crew.coachSuggestion)
+        XCTAssertEqual(WarmUpFixtures.suggestion.coachSuggestion?.setsInstead, 3)
+        XCTAssertFalse(WarmUpFixtures.suggestion.isSolo,
+                       "the private line is what the crew frame is for")
     }
 }

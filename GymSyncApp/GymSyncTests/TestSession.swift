@@ -18,7 +18,9 @@ import XCTest
 /// then the session row (SessionRepository.swift:126-133). Every FK pointing at
 /// `sessions` is either ON DELETE CASCADE (`session_participants`,
 /// 20260709000006_create_sessions.sql:19; also `session_kudos`,
-/// `routine_proposals`, `session_duration_edits`) or ON DELETE SET NULL
+/// `session_duration_edits` — `routine_proposals` carried the same clause
+/// and is on its own way out, plan task D4's drop migration once it is
+/// written and applied) or ON DELETE SET NULL
 /// (`chat_messages`, `personal_records`) — nothing blocks the delete and no
 /// participant row survives it.
 ///

@@ -65,8 +65,15 @@ final class ScreenshotTests: XCTestCase {
     /// the class — a missing "Home" button here should cost nothing, because
     /// every test still runs its own `launchApp()` + `waitForTabBar()` gate
     /// regardless — so it does not share `launchApp()`'s hard `XCTFail` on
-    /// missing credentials. Same launch arguments and environment as
-    /// `launchApp()`, duplicated rather than factored out, so `launchApp()`'s
+    /// missing credentials. Same launch ARGUMENTS as `launchApp()` — both now
+    /// built by the shared `applyLaunchDefaults(to:)` below (plan task S9,
+    /// docket item N5) — but the credential ENVIRONMENT forwarding stays
+    /// written out here rather than shared: this warm-up forwards
+    /// `UITEST_EMAIL`/`UITEST_PASSWORD` unconditionally, empty string
+    /// included, and never fails on them (a credential-less run just never
+    /// sees "Home" and the timeout log below says so); `launchApp()`'s guard
+    /// below is the opposite on purpose. This override adds nothing of its
+    /// own beyond the shared call plus that forwarding, so `launchApp()`'s
     /// existing 19 call sites stay untouched.
     ///
     /// `launchTimeout` (60s, above) is UNCHANGED for the tests themselves —
@@ -75,9 +82,7 @@ final class ScreenshotTests: XCTestCase {
     override class func setUp() {
         super.setUp()
         let app = XCUIApplication()
-        app.launchArguments += ["-hasSeenWalkthroughV1", "YES"]
-        app.launchArguments += ["-guidanceTipsEnabled", "NO"]
-        app.launchArguments += ["-gsPalette", "onyx", "-gsAccent", "sky"]
+        applyLaunchDefaults(to: app)
         var env = app.launchEnvironment
         env["UITEST_EMAIL"] = ProcessInfo.processInfo.environment["UITEST_EMAIL"] ?? ""
         env["UITEST_PASSWORD"] = ProcessInfo.processInfo.environment["UITEST_PASSWORD"] ?? ""
@@ -111,8 +116,17 @@ final class ScreenshotTests: XCTestCase {
 
     // MARK: - Launch
 
-    private func launchApp() -> XCUIApplication {
-        let app = XCUIApplication()
+    /// The launch-argument pins (walkthrough seen, guidance tips off, the
+    /// onyx/sky palette) every launch in this file needs — factored out of
+    /// `launchApp()` (plan task S9, docket item N5) so its 19 call sites and
+    /// the class-level warm-up above share one spelling. The
+    /// `UITEST_EMAIL`/`UITEST_PASSWORD` environment forwarding is NOT shared
+    /// here on purpose: `launchApp()` must fail fast and withhold both keys
+    /// on an empty credential, while the class-level warm-up above must
+    /// forward them unconditionally and never fail — two incompatible
+    /// policies for the one thing they'd otherwise share, so each call site
+    /// keeps its own copy of that part.
+    private static func applyLaunchDefaults(to app: XCUIApplication) {
         // Suppress the first-run walkthrough cover: RootView presents it when
         // OneShotFlags.walkthroughSeen(userID:) is false, and a fresh CI
         // simulator account has never seen it. The covered tab buttons still
@@ -148,6 +162,11 @@ final class ScreenshotTests: XCTestCase {
         // (which DOES `@testable import GymSync`) asserts these key strings so
         // a rename can't silently orphan them.
         app.launchArguments += ["-gsPalette", "onyx", "-gsAccent", "sky"]
+    }
+
+    private func launchApp() -> XCUIApplication {
+        let app = XCUIApplication()
+        Self.applyLaunchDefaults(to: app)
         var env = app.launchEnvironment
         // Sourced from the UI test *process's* environment — CI's
         // `xcodebuild test` step sets these via `env:`, which XCTest inherits
@@ -757,21 +776,10 @@ final class ScreenshotTests: XCTestCase {
     // `testCatalogSessionRoundWait` and its neighbours below for what
     // replaced them.
     //
-    // THE TWO CARDS (frames 118-119, unchanged). Not screens — objects that
-    // sit on them, rendered alone on the ground the way
-    // pump-composer-highlight is, because what is being judged is the card.
-    // `pump-check-card-v2` is the owner's "along with the pump check cards":
-    // the same seven lines the shipped card renders, on the same fixture
-    // values, re-composed.
-    func testCatalogSwapConsensusCard()      { captureCatalog("swap-consensus-card") }
-    func testCatalogPumpCheckCardV2()        { captureCatalog("pump-check-card-v2") }
-
-    // THE SECOND PASS'S ONE REMAINING SURVIVOR (frame 125). Its round-wait,
-    // spotter and Together siblings (123, 124, 126) retired alongside their
-    // v1 counterparts in task S13; the consensus swap card's production
-    // twin has no catalog id of its own, so the pair is still worth
-    // comparing.
-    func testCatalogSwapConsensusCardV2()    { captureCatalog("swap-consensus-card-v2") }
+    // THE TWO CARDS (frames 118-119) AND THE SECOND PASS'S ONE SURVIVOR
+    // (frame 125) — retired in group-session Phase B2 (plan task S10); see
+    // `testCatalogSessionSwapConsent` and its neighbours below for their
+    // production twins.
 
     // THE PRODUCTION SESSION SCREENS (frames 129-134, group-session Phase A,
     // task S11) — what the round's lobby and warm-up ids became once the
@@ -800,6 +808,16 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogSessionRoundSpotter()    { captureCatalog("session-round-spotter") }
     func testCatalogSessionTogetherClock()   { captureCatalog("session-together-clock") }
     func testCatalogSessionFreestyleRail()   { captureCatalog("session-freestyle-rail") }
+
+    // THE SESSION ROUND, CLOSED OUT (frames 142-145, group-session Phase B2,
+    // task S10) — the design round's last three survivors (frames 118, 119,
+    // 125) retire into these four production screens; `session-your-turn`
+    // is spec §7's own last missing session frame, built on plan task S4's
+    // `SessionLiveView(catalog:)` fixture init.
+    func testCatalogSessionSwapConsent()     { captureCatalog("session-swap-consent") }
+    func testCatalogSessionScaleDown()       { captureCatalog("session-scale-down") }
+    func testCatalogSessionWarmupSuggestion() { captureCatalog("session-warmup-suggestion") }
+    func testCatalogSessionYourTurn()        { captureCatalog("session-your-turn") }
 
     // MARK: - Seeded deep-screen captures
     //
