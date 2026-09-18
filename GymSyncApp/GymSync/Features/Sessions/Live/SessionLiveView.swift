@@ -1608,29 +1608,35 @@ struct SessionLiveView: View {
                 .frame(height: 20)
 
             Color.clear.frame(height: 6)
-            RPESwipeTrack(value: $logRPE, isFailed: $logIsFailed, theme: theme)
+            // The track and the log path's line share one child: this VStack
+            // already sits at ViewBuilder's ten-child ceiling.
+            VStack(alignment: .leading, spacing: 0) {
+                RPESwipeTrack(value: $logRPE, isFailed: $logIsFailed, theme: theme)
 
-            // THE LOG PATH'S ONE LINE (ruling R-B22). Two states, one line,
-            // because they are mutually exclusive by construction: a failed
-            // INSERT sets `logSetErrorText` and holds this card up for the
-            // retry; a failed FOLLOW-UP on an already-saved set sets
-            // `logFollowUpNote`, which clears itself and blocks nothing. Both
-            // were write-only until now — plan task S4 deleted
-            // `legacyBottomChrome`, which was where the banner used to render,
-            // so a lifter whose set genuinely failed to save was told nothing
-            // at all. This card is the one surface every style's log path
-            // mounts (`myTurnFixedPage`, and Together/Freestyle through
-            // `entryCard:`), so it is where the line belongs.
-            if let line = logSetErrorText ?? logFollowUpNote {
-                Color.clear.frame(height: 6)
-                Text(line.uppercased())
-                    .font(GSFont.bold(11, relativeTo: .caption2))
-                    .tracking(0.6)
-                    .foregroundStyle(logSetErrorText == nil ? theme.neutral700 : theme.text.opacity(0.82))
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
+                // THE LOG PATH'S ONE LINE (ruling R-B22). Two states, one
+                // line, because they are mutually exclusive by construction: a
+                // failed INSERT sets `logSetErrorText` and holds this card up
+                // for the retry; a failed FOLLOW-UP on an already-saved set
+                // sets `logFollowUpNote`, which clears itself and blocks
+                // nothing. Both were write-only until now — plan task S4
+                // deleted `legacyBottomChrome`, which was where the banner
+                // used to render, so a lifter whose set genuinely failed to
+                // save was told nothing at all. This card is the one surface
+                // every style's log path mounts (`myTurnFixedPage`, and
+                // Together/Freestyle through `entryCard:`), so it is where
+                // the line belongs.
+                if let line = logSetErrorText ?? logFollowUpNote {
+                    Color.clear.frame(height: 6)
+                    Text(line.uppercased())
+                        .font(GSFont.bold(11, relativeTo: .caption2))
+                        .tracking(0.6)
+                        .foregroundStyle(logSetErrorText == nil
+                                         ? theme.neutral700 : theme.text.opacity(0.82))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .padding(.horizontal, 14)
