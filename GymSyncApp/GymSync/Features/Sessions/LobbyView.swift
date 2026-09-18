@@ -15,9 +15,17 @@ struct LobbyView: View {
     /// precedent.
     var catalog: LobbyWorld?
 
-    init(session: WorkoutSession) {
+    /// `initialParticipants` (plan task S9): `SessionEntryView` already fetched
+    /// these rows to route here — passing them on seeds `participants` before
+    /// first paint, so the arrival track does not have to wait on `reload()`'s
+    /// own round trip to stop being blank. `reload()` still runs and still
+    /// refetches; this only removes the first blank frame. Defaulted to `[]`
+    /// so the fallback call site (no rows to hand over) is unchanged.
+    init(session: WorkoutSession,
+         initialParticipants: [(participant: SessionParticipant, profile: Profile)] = []) {
         self.session = session
         self.catalog = nil
+        _participants = State(initialValue: initialParticipants)
     }
 
     /// The catalog's entry point. It takes NO `session:` — the world carries
@@ -28,6 +36,13 @@ struct LobbyView: View {
         self.catalog = catalog
         _currentSession = State(initialValue: catalog.session)
         _groupName = State(initialValue: catalog.groupName)
+    }
+    #else
+    /// See the DEBUG init's doc comment above — same contract, no `catalog`.
+    init(session: WorkoutSession,
+         initialParticipants: [(participant: SessionParticipant, profile: Profile)] = []) {
+        self.session = session
+        _participants = State(initialValue: initialParticipants)
     }
     #endif
 
