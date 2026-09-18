@@ -4185,9 +4185,11 @@ struct WorkoutSessionView: View {
         prOverlayPriorBest = priorBest
         prOverlayMonthlyCount = nil
         withAnimation(.easeOut(duration: 0.25)) { isPROverlay = true }
-        // Ronnie for the PR moment (user 2026-08-01) left with the
-        // soundboard (ruling R-B8, plan task S11) — same change as
-        // SessionLiveView.showPROverlay.
+        // The sound is back (owner 2026-09-18: "keep the sound effect") as
+        // the bundled `lightweight-baby.mp3` — same change as
+        // SessionLiveView.showPROverlay, and the soundboard stays gone
+        // (ruling R-B8, B1 plan task S11).
+        CelebrationSound.playPR()
     }
 
     /// The PR basis for `exerciseID`, served from the prefetch when it landed.

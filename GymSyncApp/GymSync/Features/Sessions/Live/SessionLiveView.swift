@@ -4965,10 +4965,13 @@ struct SessionLiveView: View {
         prOverlayPriorBest = priorBest
         prOverlayMonthlyCount = nil
         withAnimation(.easeOut(duration: 0.25)) { isPROverlay = true }
-        // Ronnie for the PR moment (user 2026-08-01) left with the
-        // soundboard (ruling R-B8, plan task S11) — the celebration keeps
-        // its haptic (`logHapticTick`, fired on every logged set) but no
-        // longer plays a sound.
+        // The sound is back (owner 2026-09-18: "keep the sound effect") as
+        // the bundled `lightweight-baby.mp3` — not the soundboard, which
+        // stays gone (ruling R-B8, B1 plan task S11). Beside the flag, never
+        // before it: `CelebrationSound.playPR()` cannot throw and returns on
+        // every failure, so the celebration appears whether or not a sound
+        // does. The haptic (`logHapticTick`) is unchanged.
+        CelebrationSound.playPR()
     }
 
     @MainActor
