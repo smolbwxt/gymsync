@@ -16,7 +16,7 @@ INSERT INTO routines (id, owner_id, name) VALUES
 INSERT INTO sessions (id, organizer_id, routine_id, state, scheduled_for) VALUES
   ('f0000000-0000-0000-0000-000000000001',
    '00000000-0000-0000-0000-0000000000a8',
-   'e0000000-0000-0000-0000-000000000001', 'editing', now());
+   'e0000000-0000-0000-0000-000000000001', 'lobby_open', now());
 INSERT INTO session_participants (session_id, user_id, check_in_state) VALUES
   ('f0000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000a8', 'ready'),
   ('f0000000-0000-0000-0000-000000000001', '00000000-0000-0000-0000-0000000000b8', 'online');

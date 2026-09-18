@@ -79,13 +79,19 @@ export interface HandleRequestDeps {
 }
 
 /**
- * The 5 voice-eligible session states (Dossier §A.1, verified against the
- * `sessions.state` check constraint, 20260709000006_create_sessions.sql:
- * 'scheduled'|'lobby_open'|'editing'|'voting'|'locked'|'in_progress'|
- * 'completed'|'abandoned' — voice is scoped to the 5 listed here; the other
- * 3 are pre-session/terminal states where no room should exist).
+ * The 2 voice-eligible session states (Dossier §A.1, verified against the
+ * `sessions.state` check constraint, narrowed by
+ * 20260913000103_session_states_narrow.sql to 'scheduled'|'lobby_open'|
+ * 'in_progress'|'completed'|'abandoned'. The three states this CHECK used
+ * to admit between 'lobby_open' and 'in_progress' — 'editing'|'voting'|
+ * 'locked' — had no code path that ever wrote them ("the five data
+ * decisions," decision 6), so dropping them from voice eligibility here
+ * changes nothing reachable; dropping them from the CHECK is what makes
+ * it safe to drop them here too. Voice is scoped to the 2 listed;
+ * 'scheduled' is pre-session and 'completed'/'abandoned' are terminal —
+ * no room should exist for any of the other 3).
  */
-export const VOICE_ELIGIBLE_STATES = ["lobby_open", "editing", "voting", "locked", "in_progress"] as const;
+export const VOICE_ELIGIBLE_STATES = ["lobby_open", "in_progress"] as const;
 type VoiceEligibleState = (typeof VOICE_ELIGIBLE_STATES)[number];
 
 function isVoiceEligibleState(state: string): state is VoiceEligibleState {
