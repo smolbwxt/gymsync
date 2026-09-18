@@ -86,6 +86,40 @@ struct SessionLiveView: View {
     /// below for what this actually guards.
     let voicePersistsOnPop: Bool
 
+    #if DEBUG
+    /// THE CATALOG'S WORLD (plan task S4, global constraint 11).
+    ///
+    /// Spec §7 asks for a "your turn" production frame, and nothing could
+    /// photograph the live body: every page it draws sits behind a realtime
+    /// subscription, a voice room, a Watch bridge and a 10 s poll. This is
+    /// `LobbyView`'s shape (`LobbyView.swift:26-31`), which is constraint
+    /// 11's sanctioned form — with one set, every load path below returns
+    /// immediately and every presentation value that cannot be derived from
+    /// a fixture reads the world instead.
+    ///
+    /// THE LOG PATH IS NOT TOUCHED (R-B2-7, rulings R-B21/R-B22).
+    /// `commitInlineLog`, `logSetAndAdvance`, `LogFollowUp.calls(for:)` and
+    /// `turnEntryCard`'s own composition are byte-unchanged: the frame is
+    /// reached by seeding state, never by rerouting the act.
+    private let catalog: LiveWorld?
+    #endif
+
+    /// True only for a catalog capture. EVERY load path in this file guards
+    /// on it — the nine `.task`/`.onAppear`/`.onChange` entry points, the
+    /// `.onDisappear` teardown, and the two helpers (`pushWatchSessionState`,
+    /// `restoreTimersFromStore`) that several of them share, so a guard
+    /// cannot be missed by adding a call site. Constraint 10 is what it is
+    /// for: no catalog path may reach `WatchConnectivityBridge`,
+    /// `HeartRateBroadcastService`, `HealthKitBridge`, `CheckInService` or
+    /// the voice room.
+    private var catalogSkipLoad: Bool {
+        #if DEBUG
+        return catalog != nil
+        #else
+        return false
+        #endif
+    }
+
     @Environment(AppState.self)       private var appState
     @Environment(\.dismiss)          private var dismiss
     @Environment(\.scenePhase)       private var scenePhase
@@ -363,8 +397,35 @@ struct SessionLiveView: View {
 
     // MARK: - Helpers
 
-    private var selfID: UUID? { appState.currentProfile?.id }
+    /// A capture has no signed-in profile, so `appState.currentProfile` is
+    /// nil and every "is this me" derivation below — `isMyTurn`,
+    /// `logControlIsMine`, `myTurnSets` — would answer for nobody. The world
+    /// names its own self (`LobbyView.isOrganizer`'s identical `#if DEBUG`
+    /// argument), and the catalog branch returns BEFORE `appState` is read.
+    private var selfID: UUID? {
+        #if DEBUG
+        if let catalog { return catalog.selfID }
+        #endif
+        return appState.currentProfile?.id
+    }
     private var isMyTurn: Bool { liveSession.currentTurnUserID == selfID }
+
+    /// The header rail's participant count. `participants` is
+    /// `[(SessionParticipant, Profile)]` and BOTH of those replace their
+    /// synthesized memberwise init with `init(from:)` — they are decode-only
+    /// types, so no fixture can build one (`LobbyFixtures`' own header
+    /// records the same fact, which is why `LobbyWorld` carries `ArrivalRow`s
+    /// instead). A catalog world therefore leaves the roster EMPTY and names
+    /// the count it stands for; every other roster derivation the my-turn
+    /// page reaches answers correctly on an empty roster (no burpee debt, no
+    /// held lifter, no crew page), which is why this is the only one that
+    /// needs saying.
+    private var rosterCount: Int {
+        #if DEBUG
+        if let catalog { return catalog.participantCount }
+        #endif
+        return participants.count
+    }
     private var isOrganizer: Bool { liveSession.organizerID == selfID }
 
     /// WHOSE ACT THE LOG CONTROL IS — plan task S5's one behavioural change.
@@ -606,8 +667,42 @@ struct SessionLiveView: View {
         self.session = session
         self.style = style
         self.voicePersistsOnPop = voicePersistsOnPop
+        #if DEBUG
+        self.catalog = nil
+        #endif
         _liveSession = State(initialValue: session)
     }
+
+    #if DEBUG
+    /// The catalog's entry point (plan task S4). It takes NO `session:` and
+    /// NO `style:` — the world carries both, so a frame cannot be built half
+    /// from a fixture and half from a row somebody fetched (`LobbyView`'s
+    /// `init(catalog:)` makes the same argument).
+    ///
+    /// Everything seeded here is state the page READS. Nothing seeded here
+    /// starts anything: the subscriptions, the poll, the Watch push and the
+    /// timer store all sit behind `catalogSkipLoad`.
+    init(catalog: LiveWorld) {
+        self.session = catalog.session
+        self.style = catalog.session.style
+        // A capture is never the Lobby→Live push/pop pair, and the flag's
+        // only reader is the `.onDisappear` teardown this init guards off.
+        self.voicePersistsOnPop = false
+        self.catalog = catalog
+        _liveSession = State(initialValue: catalog.session)
+        _routineName = State(initialValue: catalog.routineName)
+        _routineExercises = State(initialValue: catalog.routineExercises)
+        _allExercises = State(initialValue: catalog.allExercises)
+        _allSessionSets = State(initialValue: catalog.sets)
+        // The feed is newest-first and capped at 30, exactly as `reload()`
+        // builds it — the one derivation a seeded world must not get wrong,
+        // because `prefillLogInputs` reads it.
+        _feedSets = State(initialValue: Array(catalog.sets.reversed().prefix(30)))
+        _logReps = State(initialValue: catalog.logReps)
+        _logWeight = State(initialValue: catalog.logWeight)
+        _logRPE = State(initialValue: catalog.logRPE)
+    }
+    #endif
 
     // MARK: - Redesigned my-turn fixed page (2026-07-30, final-proof.html)
     //
@@ -744,6 +839,14 @@ struct SessionLiveView: View {
     }
 
     private var selfHeartRate: (bpm: Int, zone: HeartRateZone?)? {
+        #if DEBUG
+        // `heartRateFor(_:)` is a FRESHNESS gate measured against `Date()`
+        // (15 s), so a seeded reading with a fixture timestamp would always
+        // read stale and the vitals card would print an em dash. The world
+        // states the reading it stands for, and no clock is read.
+        if let reading = catalog?.heartRate { return (bpm: reading.bpm, zone: reading.zone) }
+        if catalog != nil { return nil }
+        #endif
         guard let selfID else { return nil }
         return heartRateFor(selfID)
     }
@@ -870,7 +973,7 @@ struct SessionLiveView: View {
             .buttonStyle(.plain)
 
             HStack(spacing: 4) {
-                Text("\(participants.count)")
+                Text("\(rosterCount)")
                     .font(GSFont.bold(11, relativeTo: .caption2).monospacedDigit())
                 Image(systemName: "person.2.fill")
                     .font(.system(size: 14, weight: .semibold))
@@ -966,6 +1069,9 @@ struct SessionLiveView: View {
         // exercise changes; both consumers (LAST TIME card, prefill ladder)
         // read the same state so they can never disagree.
         .task(id: currentExerciseForSheet?.id) {
+            // LOAD PATH 1 of 9 (plan task S4): `SessionRepository
+            // .exerciseHistory` + `ProgramRepository.active()`.
+            guard !catalogSkipLoad else { return }
             guard let selfID, let ex = currentExerciseForSheet else { return }
             // exerciseHistory already excludes failed/penalty and orders
             // newest-first — the same qualifying filter the rep-goal
@@ -982,6 +1088,13 @@ struct SessionLiveView: View {
             // dialog exactly once ever; asking before the user has seen a
             // live session is how that single chance gets spent on a "no"
             // they can only reverse in Settings.
+            //
+            // LOAD PATH 2 of 9 (plan task S4). CONSTRAINT 10 IS THIS ONE'S
+            // POINT: the sheet it raises is the pre-permission prime whose
+            // "Show my heart rate" goes on to raise the real HealthKit /
+            // Bluetooth dialogs, and a raised sheet hung `build-test` for 45
+            // minutes once. A capture must never reach it.
+            guard !catalogSkipLoad else { return }
             guard !HeartRatePrimeStore.hasBeenAsked,
                   selfHeartRate == nil,
                   !ThemeStore.shared.shareHeartRate else { return }
@@ -1941,7 +2054,16 @@ struct SessionLiveView: View {
                  : "Leaving removes you from the rotation; the crew keeps lifting.")
         }
         // Realtime lifecycle — SessionLiveService + SessionBroadcastService
-        .task { await openAndSubscribe() }
+        //
+        // LOAD PATH 3 of 9 (plan task S4), and the widest: `reload()`'s three
+        // repository fetches, `ExerciseNameCache.preload()`, the realtime
+        // channel, `subscribeBroadcast()`'s reaction + `HeartRateBroadcastService`
+        // subscriptions, `BLEHeartRateService`, `joinVoiceIfEligible()` and
+        // `touchActivity`. Constraint 10's other half lives behind this guard.
+        .task {
+            guard !catalogSkipLoad else { return }
+            await openAndSubscribe()
+        }
         .onChange(of: liveSession.currentTurnUserID) { _, _ in
             // `logControlIsMine`, not `newValue == selfID` (fix round 4 /
             // finding 1, ruling R-B21): Together and Freestyle never carry
@@ -1960,6 +2082,10 @@ struct SessionLiveView: View {
         // sat in exercise-less sessions; the root fix is the routines RLS
         // policy in 20260803000003, this covers the mid-session swap).
         .onChange(of: liveSession.routineID) { _, _ in
+            // `routineID` is a `let` on a seeded `liveSession` that nothing
+            // in a capture reassigns, so this cannot fire — guarded because
+            // `reload()` is three repository fetches (plan task S4).
+            guard !catalogSkipLoad else { return }
             Task { await reload() }
         }
         // A new round is a new wait (plan task S7). The minute a lifter took
@@ -1980,6 +2106,11 @@ struct SessionLiveView: View {
         // The same point PERSISTS the window to LiveSessionTimerStore so a
         // sheet swipe-down/rejoin can't erase a running rest.
         .onChange(of: selfRotationRestUntil) { _, _ in
+            // A capture never enters the rest interlude (nothing logs), so
+            // this cannot fire — the guard is here so that stays true if
+            // something later seeds the window (`RestNotifier` schedules a
+            // local notification, and `LiveSessionTimerStore` writes to disk).
+            guard !catalogSkipLoad else { return }
             if let end = selfRotationRestUntil {
                 RestNotifier.schedule(at: end)
             } else {
@@ -1992,10 +2123,17 @@ struct SessionLiveView: View {
                 isTransit: selfRotationRestIsTransit)
         }
         .onChange(of: selfRotationRestDrops) { _, _ in
+            guard !catalogSkipLoad else { return }
             LiveSessionTimerStore.shared.updateDrops(
                 sessionID: session.id, drops: selfRotationRestDrops)
         }
-        .onAppear { restoreTimersFromStore() }
+        // LOAD PATH 4 of 9 (plan task S4): `LiveSessionTimerStore.shared
+        // .snapshot(for:)` — guarded here AND inside `restoreTimersFromStore`
+        // itself, so a future second call site cannot miss it.
+        .onAppear {
+            guard !catalogSkipLoad else { return }
+            restoreTimersFromStore()
+        }
         .onChange(of: liveSession.state) { _, _ in
             // Phase W Task 3 fix wave 1 (reviewer finding, CRITICAL) —
             // mirrors the `.onChange(of: liveSession.currentTurnUserID)`
@@ -2026,6 +2164,9 @@ struct SessionLiveView: View {
             }
         }
         .onChange(of: scenePhase) {
+            // LOAD PATH 5 of 9 (plan task S4): `reload()`, `subscribeBroadcast()`
+            // and `touchActivity` all over again on every foreground.
+            guard !catalogSkipLoad else { return }
             guard scenePhase == .active else { return }
             Task {
                 await reload()
@@ -2042,6 +2183,14 @@ struct SessionLiveView: View {
             }
         }
         .onAppear {
+            // LOAD PATH 6 of 9 (plan task S4), and CONSTRAINT 10's other
+            // named site: `WatchConnectivityBridge.activateIfNeeded()`. A
+            // capture must also not claim `appState.activeSessionID` /
+            // `liveGroupSession` — that would suppress push banners and raise
+            // the SESSION LIVE pill for a session that does not exist — and
+            // must not register `ThemeStore.shared.onShareHeartRateChange`,
+            // a global hook this view's `.onDisappear` is the only clearer of.
+            guard !catalogSkipLoad else { return }
             // Suppresses the push banner for this same session while it's
             // open live (AppDelegate.willPresent, AppState.activeSessionID).
             appState.activeSessionID = liveSession.id
@@ -2082,6 +2231,11 @@ struct SessionLiveView: View {
             pushWatchSessionState()
         }
         .onDisappear {
+            // THE TEARDOWN'S OWN GUARD (plan task S4). Nothing was opened, so
+            // nothing is closed — and `VoiceRoomService.shared.leave()` at the
+            // bottom of this block would otherwise hang up a room some OTHER
+            // screen in the catalog host is holding.
+            guard !catalogSkipLoad else { return }
             // Only clear the suppression flag if it's still pointing at THIS
             // session — a second SessionLiveView push (or a fast
             // navigate-away-and-back) could have already overwritten it with
@@ -2196,6 +2350,9 @@ struct SessionLiveView: View {
         .navigationTitle("")
         .sensoryFeedback(.success, trigger: logHapticTick)
         .onChange(of: selfHeartRate?.bpm) { _, newValue in
+            // A seeded reading never changes, so this cannot fire in a
+            // capture — and it reads `Date()` (plan task S4, constraint 11).
+            guard !catalogSkipLoad else { return }
             guard let newValue else { return }
             recoveryBuffer.append(bpm: newValue, at: Date().timeIntervalSinceReferenceDate)
         }
@@ -2237,6 +2394,9 @@ struct SessionLiveView: View {
             // only a genuinely newer turn/state is applied, so the realtime
             // echo remains the fast path.
             .task(id: liveSession.state) {
+                // LOAD PATH 7 of 9 (plan task S4): the 10 s turn poll, a
+                // `SessionRepository.session(id:)` read that never ends.
+                guard !catalogSkipLoad else { return }
                 guard liveSession.state == "in_progress" else { return }
                 while !Task.isCancelled {
                     try? await Task.sleep(for: .seconds(10))
@@ -2258,6 +2418,10 @@ struct SessionLiveView: View {
             // `set_session_stations`' idempotency on the exercise position is
             // what makes every repeat free.
             .task(id: currentRoutineExercise?.position) {
+                // LOAD PATH 8 of 9 (plan task S4): `remixStations` calls
+                // `set_session_stations`, a WRITE — the one load path that
+                // would change a real row.
+                guard !catalogSkipLoad else { return }
                 guard let position = currentRoutineExercise?.position else { return }
                 await remixStations(exercisePosition: position)
             }
@@ -2331,12 +2495,12 @@ struct SessionLiveView: View {
                 detail: details.now,
                 // A door this client cannot open is drawn as a line, not as
                 // a button that does nothing (`ExerciseDoorRow`'s own rule).
-                opens: allExercises.contains { $0.id == proposal.exerciseID }),
+                opens: allExercises.contains(where: { $0.id == proposal.exerciseID })),
             to: SwapConsentCard.Door(
                 exerciseID: proposal.target.id,
                 name: proposal.target.name,
                 detail: details.proposed,
-                opens: allExercises.contains { $0.id == proposal.target.id }),
+                opens: allExercises.contains(where: { $0.id == proposal.target.id })),
             crewSize: crewSize,
             agreed: agreedIDs.count,
             agreedNames: presentRotation
@@ -2449,7 +2613,7 @@ struct SessionLiveView: View {
                 // so a door opens the real exercise page with its own PR and
                 // trend reads rather than a second, thinner copy of it.
                 onOpen: { exerciseID in
-                    exerciseDetailSheet = allExercises.first { $0.id == exerciseID }
+                    exerciseDetailSheet = allExercises.first(where: { $0.id == exerciseID })
                 },
                 onAgree: { castVote(true) },
                 onKeep: { castVote(false) })
@@ -2498,7 +2662,14 @@ struct SessionLiveView: View {
             }
             .navigationTitle("Swap \(currentExerciseForSheet?.name ?? "exercise")")
             .navigationBarTitleDisplayMode(.inline)
-            .task { await loadGroupSwapOptions() }
+            // LOAD PATH 9 of 9 (plan task S4): `ExerciseSubstitutionRepository`.
+            // The sheet is never presented in a capture — `showGroupSwapSheet`
+            // starts false and nothing taps — but a guard on the presentation
+            // is not a guard on the fetch, and this is the fetch.
+            .task {
+                guard !catalogSkipLoad else { return }
+                await loadGroupSwapOptions()
+            }
         }
     }
 
@@ -2844,6 +3015,10 @@ struct SessionLiveView: View {
     /// The window only restores while still in the future, and its
     /// auto-clear task is RE-ARMED here — the original died with the view.
     private func restoreTimersFromStore() {
+        // Guarded here as well as at its one `.onAppear` call site (plan task
+        // S4): a store read is a disk read, and a re-armed clear `Task` is a
+        // clock.
+        guard !catalogSkipLoad else { return }
         guard let snap = LiveSessionTimerStore.shared.snapshot(for: session.id) else { return }
         if selfRotationRestDrops.isEmpty, !snap.restDrops.isEmpty {
             selfRotationRestDrops = snap.restDrops
@@ -2918,6 +3093,13 @@ struct SessionLiveView: View {
     /// below, it already reads `"completed"`, immediately, without waiting
     /// for the realtime UPDATE to round-trip back in.
     private func pushWatchSessionState() {
+        // CONSTRAINT 10, AT THE FUNCTION RATHER THAN AT ITS SIX CALL SITES
+        // (plan task S4). `.onAppear`, three `.onChange` handlers,
+        // `openAndSubscribe()` and `presentCompletion()` all reach
+        // `WatchConnectivityBridge` through here; guarding the function is
+        // what makes "no catalog path reaches the Watch bridge" a property of
+        // the code rather than of a list somebody keeps up to date.
+        guard !catalogSkipLoad else { return }
         let currentLifter = rotationOrder.first(where: { $0.participant.userID == liveSession.currentTurnUserID })?.profile
         let payload = WatchSessionStatePayload(
             sessionID: liveSession.id,

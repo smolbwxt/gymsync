@@ -161,8 +161,7 @@ struct SwapConsentCard: View {
             ExerciseDoorRow(kicker: SwapConsentCopy.nowKicker,
                             name: model.from.name,
                             detail: model.from.detail,
-                            onTap: model.from.opens
-                                ? { onOpen(model.from.exerciseID) } : nil)
+                            onTap: tap(model.from))
             Image(systemName: "arrow.down")
                 .font(.system(size: 12, weight: .bold))
                 .foregroundStyle(theme.neutral500)
@@ -170,9 +169,16 @@ struct SwapConsentCard: View {
             ExerciseDoorRow(kicker: SwapConsentCopy.proposedKicker,
                             name: model.to.name,
                             detail: model.to.detail,
-                            onTap: model.to.opens
-                                ? { onOpen(model.to.exerciseID) } : nil)
+                            onTap: tap(model.to))
         }
+    }
+
+    /// Nil for a door this client cannot open, which is what makes the row a
+    /// line instead of a button.
+    private func tap(_ door: Door) -> (() -> Void)? {
+        guard door.opens else { return nil }
+        let exerciseID = door.exerciseID
+        return { onOpen(exerciseID) }
     }
 
     private var agreement: some View {

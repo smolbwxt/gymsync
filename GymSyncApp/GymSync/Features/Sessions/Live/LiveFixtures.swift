@@ -73,6 +73,51 @@ struct FreestyleWorld {
     var behindLine: String? = nil
 }
 
+/// One catalog world for the LIVE BODY ITSELF (plan task S4) — the only
+/// world here that drives `SessionLiveView` rather than one of the value-in
+/// pages beneath it.
+///
+/// IT CARRIES NO ROSTER, DELIBERATELY. `SessionLiveView.participants` is
+/// `[(SessionParticipant, Profile)]` and both of those replace their
+/// synthesized memberwise init with `init(from:)` — they are decode-only
+/// types, which is the same fact `LobbyFixtures`' own header records about
+/// `LobbyWorld`. So the world names the COUNT the header rail prints
+/// (`rosterCount`) and leaves the array empty, which is also what keeps the
+/// my-turn page on screen: `showsCrewPage` requires a non-empty roster.
+///
+/// NO CLOCK IS REACHABLE FROM IT (constraint 11). `startedAt` and
+/// `currentTurnStartedAt` are deliberately nil — see `LiveFixtures.yourTurn`.
+struct LiveWorld {
+    /// Carries the style too, so `SessionLiveView.init(catalog:)` needs no
+    /// second argument that could disagree with it.
+    let session: WorkoutSession
+    /// Whose turn it is, and who is reading — a capture has no signed-in
+    /// profile, so the world states it.
+    let selfID: UUID
+    let routineName: String
+    let routineExercises: [RoutineExercise]
+    /// The exercises those rows name. Only these are resolvable: the live
+    /// view looks every name up in this array.
+    let allExercises: [Exercise]
+    /// Already-logged sets, `logged_at` ASC — `allSessionSets`' own order.
+    let sets: [SetLog]
+    /// What the header rail's people-count prints.
+    let participantCount: Int
+    /// The vitals card's reading, past `heartRateFor(_:)`'s freshness gate
+    /// rather than through it.
+    let heartRate: Reading?
+    /// The entry card, pre-filled — `prefillLogInputs()` is a repository-fed
+    /// derivation, so a capture states what it would have produced.
+    let logReps: String
+    let logWeight: String
+    let logRPE: Double
+
+    struct Reading: Equatable {
+        let bpm: Int
+        let zone: HeartRateZone?
+    }
+}
+
 /// One catalog world for `SpotterView` (plan task S8).
 struct SpotterWorld {
     let kicker: String
@@ -464,6 +509,131 @@ enum LiveFixtures {
         agreed: 2,
         agreedNames: ["Dana", "Lee"],
         iHaveAnswered: false)
+
+    // MARK: - Rounds, your turn (frame 145, plan task S4)
+
+    private static let liveSessionID = UUID(uuidString: "00000000-0000-0000-0000-0000000001d0") ?? UUID()
+    private static let liveGroupID   = UUID(uuidString: "00000000-0000-0000-0000-0000000001d1") ?? UUID()
+    private static let liveRoutineID = UUID(uuidString: "00000000-0000-0000-0000-0000000001d2") ?? UUID()
+    private static let rdlID         = UUID(uuidString: "00000000-0000-0000-0000-0000000001c3") ?? UUID()
+    private static let legPressID    = UUID(uuidString: "00000000-0000-0000-0000-0000000001c4") ?? UUID()
+    private static let lungeID       = UUID(uuidString: "00000000-0000-0000-0000-0000000001c5") ?? UUID()
+
+    /// Noon UTC from components — `LobbyFixtures.utcDate`'s own idiom, the
+    /// only hour that survives a simulator anywhere from UTC-11 to UTC+11
+    /// printing the same calendar day. Never `Date()`, never an epoch
+    /// literal (constraint 11).
+    private static func utcDate(year: Int, month: Int, day: Int, hour: Int = 12) -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        return calendar.date(from: DateComponents(year: year, month: month,
+                                                  day: day, hour: hour))
+            ?? Date(timeIntervalSince1970: 0)
+    }
+
+    /// The four exercises the live body can name. The current one is a
+    /// BARBELL movement on purpose: `turnVitalsRow`'s second slot is LOAD THE
+    /// BAR for barbell work and LAST TIME otherwise, and LAST TIME's meta
+    /// line ("6 DAYS AGO") is computed against `Date()`.
+    static let liveExercises: [Exercise] = [
+        Exercise(id: backSquatID, name: "Back squat", slug: "back-squat",
+                 category: "compound", primaryMuscle: "quads",
+                 secondaryMuscles: ["glutes", "core"], equipment: "barbell",
+                 defaultUnit: "lb", demoVideoURL: nil),
+        Exercise(id: rdlID, name: "Romanian deadlift", slug: "romanian-deadlift",
+                 category: "compound", primaryMuscle: "hamstrings",
+                 secondaryMuscles: ["glutes"], equipment: "barbell",
+                 defaultUnit: "lb", demoVideoURL: nil),
+        Exercise(id: legPressID, name: "Leg press", slug: "leg-press",
+                 category: "compound", primaryMuscle: "quads",
+                 secondaryMuscles: ["glutes"], equipment: "machine",
+                 defaultUnit: "lb", demoVideoURL: nil),
+        Exercise(id: lungeID, name: "Walking lunge", slug: "walking-lunge",
+                 category: "compound", primaryMuscle: "quads",
+                 secondaryMuscles: ["glutes"], equipment: "dumbbell",
+                 defaultUnit: "lb", demoVideoURL: nil),
+    ]
+
+    /// The same leg day `plan` words, as the routine rows the live body
+    /// actually reads. Fixed row ids, reused from `plan` so one session is
+    /// described once.
+    static let liveRoutineExercises: [RoutineExercise] = [
+        RoutineExercise(id: squatRowID, routineID: liveRoutineID, exerciseID: backSquatID,
+                        position: 1, targetSets: 4, targetReps: "5",
+                        targetWeight: "225", restSeconds: 150, notes: nil),
+        RoutineExercise(id: rdlRowID, routineID: liveRoutineID, exerciseID: rdlID,
+                        position: 2, targetSets: 3, targetReps: "8",
+                        targetWeight: "185", restSeconds: 120, notes: nil),
+        RoutineExercise(id: pressRowID, routineID: liveRoutineID, exerciseID: legPressID,
+                        position: 3, targetSets: 3, targetReps: "10",
+                        targetWeight: "270", restSeconds: 120, notes: nil),
+        RoutineExercise(id: lungeRowID, routineID: liveRoutineID, exerciseID: lungeID,
+                        position: 4, targetSets: 3, targetReps: "20",
+                        targetWeight: nil, restSeconds: 90, notes: nil),
+    ]
+
+    /// Two of four back squats already logged, so the entry card reads
+    /// `3 OF 4` and the SETS page has two columns behind the live one.
+    /// `loggedAt` is a fixture date and is not rendered on this page — the
+    /// only reader of a `loggedAt` here is `turnSetsPage`'s ORDER.
+    static let liveSets: [SetLog] = [
+        SetLog(id: UUID(uuidString: "00000000-0000-0000-0000-0000000001e1") ?? UUID(),
+               userID: alexID, sessionID: liveSessionID, exerciseID: backSquatID,
+               setIndex: 1, reps: 5, weight: 225, rpe: 7,
+               isFailed: false, isPenalty: false, note: nil,
+               loggedAt: utcDate(year: 2026, month: 9, day: 16, hour: 18)),
+        SetLog(id: UUID(uuidString: "00000000-0000-0000-0000-0000000001e2") ?? UUID(),
+               userID: alexID, sessionID: liveSessionID, exerciseID: backSquatID,
+               setIndex: 2, reps: 5, weight: 225, rpe: 8,
+               isFailed: false, isPenalty: false, note: nil,
+               loggedAt: utcDate(year: 2026, month: 9, day: 16, hour: 19)),
+    ]
+
+    /// `session-your-turn` (frame 145): Rounds, round 2, the turn is mine.
+    ///
+    /// NO CLOCK, ANYWHERE (constraint 11). `startedAt` and
+    /// `currentTurnStartedAt` are NIL rather than dates built from
+    /// components, and that is a deliberate departure from the plan's
+    /// wording: both are rendered as `Text(date, style: .timer)`, a LIVE
+    /// counter, so any non-nil value makes the frame differ from itself
+    /// between two runs. Nil takes the header rail's clock off the rail
+    /// (its `if` requires the date) and prints the entry card's turn clock
+    /// as an em dash — which is what a session with no turn stamp honestly
+    /// shows, and it needed no edit to either surface.
+    ///
+    /// `liftingStartedAt` is nil for the same reason it is on every other
+    /// world here: the round wait's own derivations measure from it, and the
+    /// my-turn page reads it not at all.
+    static let yourTurn = LiveWorld(
+        session: WorkoutSession(
+            id: liveSessionID,
+            routineID: liveRoutineID,
+            organizerID: danaID,
+            state: "in_progress",
+            startedAt: nil,
+            completedAt: nil,
+            createdAt: utcDate(year: 2026, month: 9, day: 16),
+            groupID: liveGroupID,
+            roomCode: nil,
+            scheduledFor: utcDate(year: 2026, month: 9, day: 16, hour: 18),
+            seriesID: nil,
+            currentTurnUserID: alexID,
+            currentTurnStartedAt: nil,
+            style: .rounds,
+            round: 2),
+        selfID: alexID,
+        routineName: rungLine,
+        routineExercises: liveRoutineExercises,
+        allExercises: liveExercises,
+        sets: liveSets,
+        participantCount: 4,
+        heartRate: LiveWorld.Reading(bpm: 142, zone: HeartRateZone.zone(bpm: 142)),
+        // What `prefillLogInputs()` would have produced from the two logged
+        // sets: the routine's rep target, and the same load at RPE 8 (which
+        // `SetProgression` holds rather than steps).
+        logReps: "5",
+        logWeight: "225",
+        logRPE: 7.0)
 
     /// `session-freestyle-rail` (frame 141): the rail, the stretched rest,
     /// and Coach's accessory — both suggestions, because the frame is built
