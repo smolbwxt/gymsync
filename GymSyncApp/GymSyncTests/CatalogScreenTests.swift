@@ -9,6 +9,8 @@ final class CatalogScreenTests: XCTestCase {
     func testEveryDocumentedIdRoundTrips() {
         let ids = [
             "pr-celebration",
+            // The 2026-09-18 design round — both retire at the owner's pick.
+            "pr-celebration-a", "pr-celebration-b",
             "voice-idle", "voice-connecting", "voice-transmitting",
             "voice-mic-denied", "voice-unavailable",
             "voice-coach-mark", "voice-connected-toast", "voice-mixer-sheet",

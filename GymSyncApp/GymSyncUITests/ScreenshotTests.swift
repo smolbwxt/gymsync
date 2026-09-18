@@ -514,6 +514,9 @@ final class ScreenshotTests: XCTestCase {
     }
 
     func testCatalogPRCelebration()      { captureCatalog("pr-celebration") }
+    // The 2026-09-18 design round (frames 151, 152) — both retire at the pick.
+    func testCatalogPRCelebrationA()     { captureCatalog("pr-celebration-a") }
+    func testCatalogPRCelebrationB()     { captureCatalog("pr-celebration-b") }
     func testCatalogVoiceIdle()          { captureCatalog("voice-idle") }
     func testCatalogVoiceConnecting()    { captureCatalog("voice-connecting") }
     func testCatalogVoiceTransmitting()  { captureCatalog("voice-transmitting") }
