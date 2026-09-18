@@ -325,8 +325,8 @@ B1's, carried forward verbatim where they are still true, with the four changes 
 | `GymSyncApp/GymSyncTests/CatalogScreenTests.swift` | three ids in, three out | S10 |
 | `GymSyncApp/GymSyncUITests/ScreenshotTests.swift` | three capture methods in, three out; the class `setUp()`/`launchApp()` duplication factored (N5) | S9, S10 |
 | `docs/design/frame-map.json` | 142-145 in; 118, 119, 125 out; `pump-feed-post` gains frame 146; the three duplicate numbers renumbered to 147-150 | S10 |
-| `supabase/tests/rls_proposals_test.sql`, `proposal_session_id_private_schema_test.sql` | deleted (D3) | D3 |
-| `supabase/tests/session_realtime_publication_test.sql`, `routine_bootstrap_test.sql`, `drop_undocumented_debug_functions_test.sql` | their proposal assertions retired, `plan(N)` reduced | D3 |
+| `supabase/tests/rls_proposals_test.sql`, `proposal_session_id_private_schema_test.sql`, `routine_bootstrap_test.sql` | deleted (D3; `routine_bootstrap_test.sql` per R-B2-10 — every assertion depended on the retired tables, no subject left) | D3 |
+| `supabase/tests/session_realtime_publication_test.sql`, `drop_undocumented_debug_functions_test.sql` | their proposal assertions retired, `plan(N)` reduced | D3 |
 | `scripts/qa_p3a.js` | the two proposal commands (`:69`, `:75`) leave | D3 |
 | `supabase/functions/account-deletion-cascade/index.ts` | two comment lines (`:39`, `:89`) stop naming dropped tables | D3 |
 | `scripts/seed_qa_fixtures.js` | the QA session is pinned relative to the walk (`:340-341`, `:353`) | D6 |
@@ -686,10 +686,12 @@ zero-session row` + the trailer.
 
 ### D3 — the `routine_proposals` references retire — **M** · Sonnet
 
-**Files:** delete `supabase/tests/rls_proposals_test.sql` and
-`supabase/tests/proposal_session_id_private_schema_test.sql`; edit
+**Files:** delete `supabase/tests/rls_proposals_test.sql`,
+`supabase/tests/proposal_session_id_private_schema_test.sql`, and
+`supabase/tests/routine_bootstrap_test.sql` (R-B2-10: every one of its four assertions depended on the
+retired tables — 1-2 named them directly, 3-4 asserted on the side effects of the INSERT that 1-2
+removed, leaving no subject once they are gone); edit
 `supabase/tests/session_realtime_publication_test.sql` (1 reference, `plan(1)`),
-`supabase/tests/routine_bootstrap_test.sql` (2, `plan(4)`),
 `supabase/tests/drop_undocumented_debug_functions_test.sql` (4, `plan(8)`),
 `scripts/qa_p3a.js` (`:69`, `:75`), `supabase/functions/account-deletion-cascade/index.ts` (`:39`, `:89`).
 
