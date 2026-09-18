@@ -1832,7 +1832,7 @@ struct SessionLiveView: View {
 
     var body: some View {
         arenaWithLifecycle
-        .overlay(alignment: .top) { swapVoteBanner }
+        .overlay(alignment: .top) { swapConsentOverlay }
         // Log Set sheet — penalty (burpee) logging only now; normal sets log inline.
         .scrollDismissesKeyboard(.interactively)
         .sheet(isPresented: $showLogSetSheet) { logSetSheetContent }
@@ -2288,62 +2288,88 @@ struct SessionLiveView: View {
         if style != .together, !showsCrewPage { turnChrome }
     }
 
-    /// Squad-swap vote banner: visible to everyone while a proposal is
-    /// open. Unanimous consent applies; one pass ends it quietly.
+    /// THE CREW'S ROUTINE CHANGE (plan task S1, spec §3.4 mode 1, decision 3).
+    ///
+    /// Was `swapVoteBanner`: one line, a bare count and two capsule pills,
+    /// with the old exercise named only inside a sentence. You cannot consent
+    /// to a swap you cannot look up, so the card `SwapConsentCard` draws in
+    /// its place makes both exercises doors onto the real exercise page.
+    ///
+    /// THE FIVE SOURCES ARE THE BANNER'S OWN — `swapProposal`, `participants`,
+    /// `presentRotation`, `exerciseNames` and `allExercises`. Nothing about
+    /// the wire moved (constraint 21): `receiveSwap`, `evaluateUnanimity`,
+    /// `armProposalExpiry` and the broadcast payloads are untouched, and the
+    /// two answers are `castVote(true)` / `castVote(false)` exactly as before.
+    private var swapConsentModel: SwapConsentCard.Model? {
+        guard let proposal = swapProposal else { return nil }
+        let proposer = participants.first { $0.participant.userID == proposal.proposerID }?
+            .profile.username ?? "Someone"
+        let fromName = exerciseNames[proposal.exerciseID]
+            ?? allExercises.first(where: { $0.id == proposal.exerciseID })?.name
+            ?? "this exercise"
+        let agreedIDs = Set(proposal.votes.filter { $0.value }.map(\.key))
+        // The pips count the PRESENT crew, because that is exactly the set
+        // `evaluateUnanimity` requires to have said yes. `max` guards the one
+        // case where a vote can outrun the roster this client has fetched —
+        // a meter showing 3 of 2 would be worse than a wide one.
+        let crewSize = max(presentRotation.count, agreedIDs.count)
+        let details = swapDoorDetails(for: proposal.exerciseID)
+        return SwapConsentCard.Model(
+            proposerName: SessionCopy.firstName(proposer),
+            from: SwapConsentCard.Door(
+                exerciseID: proposal.exerciseID,
+                name: fromName,
+                detail: details.now,
+                // A door this client cannot open is drawn as a line, not as
+                // a button that does nothing (`ExerciseDoorRow`'s own rule).
+                opens: allExercises.contains { $0.id == proposal.exerciseID }),
+            to: SwapConsentCard.Door(
+                exerciseID: proposal.target.id,
+                name: proposal.target.name,
+                detail: details.proposed,
+                opens: allExercises.contains { $0.id == proposal.target.id }),
+            crewSize: crewSize,
+            agreed: agreedIDs.count,
+            agreedNames: presentRotation
+                .filter { agreedIDs.contains($0.participant.userID) }
+                .map { SessionCopy.firstName($0.profile.username) },
+            iHaveAnswered: selfID.map { proposal.votes[$0] != nil } ?? true)
+    }
+
+    /// Both doors' load lines, from the ONE routine row the swap would
+    /// replace. The proposed door drops the weight because
+    /// `effectiveRoutineExercises` drops it (`targetWeight: nil`) — a door
+    /// that repeated `@ 225` would promise a prescription the swap does not
+    /// produce. A row the routine does not carry prints the honest dash
+    /// `SessionPlanRow.prescription(for:)` already returns.
+    private func swapDoorDetails(for exerciseID: UUID) -> (now: String, proposed: String) {
+        guard let re = routineExercises.first(where: { $0.exerciseID == exerciseID }) else {
+            return ("—", "—")
+        }
+        var swapped = re
+        swapped.targetWeight = nil
+        return (SessionPlanRow.prescription(for: re),
+                SessionPlanRow.prescription(for: swapped))
+    }
+
+    /// The card, mounted where the banner was mounted, with the same
+    /// transition.
     @ViewBuilder
-    private var swapVoteBanner: some View {
-        if let proposal = swapProposal {
-            let proposer = participants.first { $0.participant.userID == proposal.proposerID }?
-                .profile.username ?? "Someone"
-            let fromName = exerciseNames[proposal.exerciseID]
-                ?? allExercises.first(where: { $0.id == proposal.exerciseID })?.name
-                ?? "this exercise"
-            let present = presentRotation.count
-            let yes = proposal.votes.values.filter { $0 }.count
-            let iVoted = selfID.map { proposal.votes[$0] != nil } ?? true
-            VStack(spacing: 8) {
-                Text("\(proposer) proposes \(fromName) → \(proposal.target.name)")
-                    .font(GSFont.bold(13, relativeTo: .footnote))
-                    .foregroundStyle(theme.text)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 10) {
-                    Text("\(yes) of \(max(present, yes)) in · needs everyone")
-                        .font(GSFont.body(11, relativeTo: .caption))
-                        .foregroundStyle(theme.neutral500)
-                    if !iVoted {
-                        Button { castVote(true) } label: {
-                            Text("I'm in")
-                                .font(GSFont.bold(12, relativeTo: .caption))
-                                .foregroundStyle(theme.bg)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 6)
-                                .background(theme.accent)
-                                .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                        Button { castVote(false) } label: {
-                            Text("Pass")
-                                .font(GSFont.bold(12, relativeTo: .caption))
-                                .foregroundStyle(theme.neutral700)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 6)
-                                .background(theme.surface)
-                                .clipShape(Capsule())
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(theme.surface)
-            .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusMd)
-                .strokeBorder(theme.divider, lineWidth: 1))
-            .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusMd))
-            .padding(.horizontal, 24)
-            .padding(.top, 52)
-            .transition(.move(edge: .top).combined(with: .opacity))
+    private var swapConsentOverlay: some View {
+        if let model = swapConsentModel {
+            SwapConsentCard(
+                model: model,
+                // The sheet the body already presents (`:exerciseDetailSheet`),
+                // so a door opens the real exercise page with its own PR and
+                // trend reads rather than a second, thinner copy of it.
+                onOpen: { exerciseID in
+                    exerciseDetailSheet = allExercises.first { $0.id == exerciseID }
+                },
+                onAgree: { castVote(true) },
+                onKeep: { castVote(false) })
+                .padding(.horizontal, 24)
+                .padding(.top, 52)
+                .transition(.move(edge: .top).combined(with: .opacity))
         }
     }
 

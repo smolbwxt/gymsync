@@ -398,6 +398,34 @@ enum LiveFixtures {
         ],
         totalSets: 18)
 
+    // MARK: - The crew's routine change (frame 142, plan task S1)
+
+    /// Two exercise ids, fixed for the same reason the lifters' are.
+    static let backSquatID = UUID(uuidString: "00000000-0000-0000-0000-0000000001c1") ?? UUID()
+    static let gobletSquatID = UUID(uuidString: "00000000-0000-0000-0000-0000000001c2") ?? UUID()
+
+    /// `session-swap-consent` (frame 142): Dana proposes back squat → goblet
+    /// squat for the whole crew; two of four present lifters have agreed and
+    /// I have not answered, which is the only state that draws the answers.
+    ///
+    /// The PROPOSED door's load line carries no weight, deliberately: a
+    /// squad swap inherits the row's sets and reps and drops `targetWeight`
+    /// (`SessionLiveView.effectiveRoutineExercises`), so a proposed door
+    /// that repeated `@ 225` would promise a prescription the swap does not
+    /// produce.
+    static let swapConsent = SwapConsentCard.Model(
+        proposerName: "Dana",
+        from: SwapConsentCard.Door(exerciseID: backSquatID,
+                                   name: "Back squat",
+                                   detail: "4 × 5 @ 225"),
+        to: SwapConsentCard.Door(exerciseID: gobletSquatID,
+                                 name: "Goblet squat",
+                                 detail: "4 × 5"),
+        crewSize: 4,
+        agreed: 2,
+        agreedNames: ["Dana", "Lee"],
+        iHaveAnswered: false)
+
     /// `session-freestyle-rail` (frame 141): the rail, the stretched rest,
     /// and Coach's accessory — both suggestions, because the frame is built
     /// to show the crew's ahead branch (`round-wait-v2`'s sister frame 116
