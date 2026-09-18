@@ -7,11 +7,12 @@ import SwiftUI
 // `lobby-crew-waiting-v2` (120), `lobby-crew-ready-v3` (127),
 // `warmup-solo-v2` (122) and `warmup-crew` (111).
 //
-// They are those compositions with production types in place of `SVLifter` /
-// `SVPlanRow`, and no `#if DEBUG`. **NOTHING HERE IMPORTS OR REFERENCES
-// `Features/Sessions/Variations/`** — that folder is the design round's proof
-// deck and S11 deletes most of it; a production screen that depended on it
-// would be a production screen that stopped compiling.
+// They are those compositions with production types in place of the design
+// round's own lifter/plan-row types, and no `#if DEBUG`. **NOTHING HERE EVER
+// IMPORTED OR REFERENCED `Features/Sessions/Variations/`** — that folder was
+// the design round's proof deck; S11 retired most of it and plan task S10
+// retired what was left, so a production screen that had depended on it
+// would have been a production screen that stopped compiling.
 //
 // ONE PRIMARY PER SCREEN (rule 4) is enforced by composition, not by hope:
 // none of these renders `GSPrimaryButtonStyle`. The lobby and the warm-up
@@ -54,6 +55,10 @@ enum SessionCopy {
     /// same way everywhere in the app.
     static let accept = GSConsentCopy.accept
     static let decline = GSConsentCopy.decline
+    /// Spec §3.2's "the Coach line for each lifter privately", said out loud on
+    /// the CREW warm-up. The solo frame does not print it: nobody else is
+    /// there, and "only you see this" on a screen with one lifter is noise.
+    static let onlyYouSeeThis = "Only you see this."
     /// Coach's door (spec §3.6).
     static let talkToCoach = "Talk to Coach"
     static let talkToCoachDetail = "This session's focus · form questions · demo videos"
@@ -64,6 +69,17 @@ enum SessionCopy {
     static let changeRoutine = "Change routine"
     /// THE CREW'S WEEK (owner addition 2026-09-12, on trial in Phase A).
     static let theCrewsWeek = "THE CREW'S WEEK"
+
+    /// THE VERB THAT DID NOT HAPPEN (plan task S3). The live body's
+    /// `errorText` covers ending the session, leaving it, the burpee ledger,
+    /// the crew's skip and the re-mix — everything the lifter PRESSED that
+    /// failed. It is deliberately not the entry card's line: `logSetErrorText`
+    /// means "nothing was saved, try again" and holds the card up for the
+    /// retry, which is the one thing a persisted set must never invite.
+    static let verbFailed = "That didn't go through."
+    /// It clears on tap, and on the next successful attempt. Said out loud,
+    /// because a banner with no stated exit reads as a stuck warning.
+    static let verbFailedDismiss = "TAP TO DISMISS"
 
     /// First name only, for the places a full name would wrap a 40 pt column.
     static func firstName(_ full: String) -> String {
@@ -81,7 +97,8 @@ enum SessionCopy {
 
 /// One exercise on the session's plan card.
 ///
-/// The production analogue of `SVPlanRow`. A `RoutineExercise` carries an
+/// The production analogue of the design round's own plan row (retired,
+/// `Features/Sessions/Variations/`). A `RoutineExercise` carries an
 /// exercise id and not a name — the name needs the catalog, which the lobby
 /// already resolves through `exerciseName(for:)` — so the card takes rows that
 /// are already worded and does no lookups of its own.
@@ -437,8 +454,14 @@ struct SessionPlanCardWithSuggestion: View {
     let rungHeadline: String
     let rungDetail: String
     let rows: [SessionPlanRow]
-    /// Coach's line. Nil renders the card with no suggestion and no rule.
-    var suggestion: String?
+    /// Coach's readiness suggestion (plan task S8, spec §2 and §4). Nil renders
+    /// the card with no suggestion and no rule, which is the shipped screen and
+    /// the normal case.
+    ///
+    /// ONE VALUE, not two strings: a suggestion that does not say what it read
+    /// is the thing Phase A deleted, so the two sentences travel together and a
+    /// caller cannot half-fill them.
+    var suggestion: WarmUpReadiness.Suggestion?
     var isPrivate: Bool = false
     var onAccept: () -> Void = {}
     var onDecline: () -> Void = {}
@@ -450,17 +473,57 @@ struct SessionPlanCardWithSuggestion: View {
             ForEach(rows) { row in
                 SessionPlanRowView(row: row)
             }
-            // `suggestion` (and `isPrivate`/`onAccept`/`onDecline` below)
-            // render nothing today: `CoachSuggestionBlock`, the type that
-            // used to read them here, had no path anywhere in the app after
-            // R-17 (production and both fixtures always pass nil) and was
-            // deleted (review push-5 N4). Left wired rather than removed —
-            // Phase B re-adds the block with the readiness signal, on this
-            // same card.
+            if let suggestion {
+                GSDivider()
+                suggestionBlock(suggestion)
+            }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .gs3DCard(cornerRadius: GSMetrics.radiusMd, lipHeight: 6)
+    }
+
+    /// What was read, then what is proposed, then the two answers.
+    ///
+    /// NO ACCENT: the warm-up's accent is `START LIFTING` (design rule 2) and a
+    /// suggestion is not the screen's act. Accept and Not today are both raised
+    /// faces — `GSConsentCard`'s own pair, spelled the same way here, so a
+    /// suggestion answers identically everywhere in the app.
+    private func suggestionBlock(_ suggestion: WarmUpReadiness.Suggestion) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(suggestion.read)
+                .font(GSFont.body(12.5, relativeTo: .caption))
+                .foregroundStyle(theme.neutral700)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(suggestion.proposal)
+                .font(GSFont.bodyMedium(13.5, relativeTo: .subheadline))
+                .foregroundStyle(theme.text)
+                .fixedSize(horizontal: false, vertical: true)
+            if isPrivate {
+                Text(SessionCopy.onlyYouSeeThis)
+                    .font(GSFont.body(11, relativeTo: .caption2))
+                    .foregroundStyle(theme.neutral500)
+            }
+            HStack(spacing: 8) {
+                answer(SessionCopy.accept, action: onAccept)
+                answer(SessionCopy.decline, action: onDecline)
+                // The faces hug their labels rather than splitting the width,
+                // exactly as `GSConsentCard`'s pair does: two half-width
+                // buttons read as a fork in the road, and this is a suggestion.
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    private func answer(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(GSFont.bold(12.5, relativeTo: .subheadline))
+                .foregroundStyle(theme.text)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 9)
+        }
+        .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm, lipHeight: 4))
     }
 
     private var header: some View {

@@ -66,8 +66,10 @@ final class ScreenshotTests: XCTestCase {
     /// every test still runs its own `launchApp()` + `waitForTabBar()` gate
     /// regardless — so it does not share `launchApp()`'s hard `XCTFail` on
     /// missing credentials. Same launch arguments and environment as
-    /// `launchApp()`, duplicated rather than factored out, so `launchApp()`'s
-    /// existing 19 call sites stay untouched.
+    /// `launchApp()` — both now built by the shared `applyLaunchDefaults(to:)`
+    /// below (plan task S9, docket item N5); this override adds nothing of
+    /// its own beyond that shared call, so `launchApp()`'s existing 19 call
+    /// sites stay untouched.
     ///
     /// `launchTimeout` (60s, above) is UNCHANGED for the tests themselves —
     /// this warm-up's own budget is a separate, more generous 120s, spent
@@ -75,13 +77,7 @@ final class ScreenshotTests: XCTestCase {
     override class func setUp() {
         super.setUp()
         let app = XCUIApplication()
-        app.launchArguments += ["-hasSeenWalkthroughV1", "YES"]
-        app.launchArguments += ["-guidanceTipsEnabled", "NO"]
-        app.launchArguments += ["-gsPalette", "onyx", "-gsAccent", "sky"]
-        var env = app.launchEnvironment
-        env["UITEST_EMAIL"] = ProcessInfo.processInfo.environment["UITEST_EMAIL"] ?? ""
-        env["UITEST_PASSWORD"] = ProcessInfo.processInfo.environment["UITEST_PASSWORD"] ?? ""
-        app.launchEnvironment = env
+        applyLaunchDefaults(to: app)
         app.launch()
 
         let warmUpTimeout: TimeInterval = 120
@@ -111,8 +107,15 @@ final class ScreenshotTests: XCTestCase {
 
     // MARK: - Launch
 
-    private func launchApp() -> XCUIApplication {
-        let app = XCUIApplication()
+    /// The launch-argument pins (walkthrough seen, guidance tips off, the
+    /// onyx/sky palette) and the `UITEST_EMAIL`/`UITEST_PASSWORD` environment
+    /// forwarding every launch in this file needs — factored out of
+    /// `launchApp()` (plan task S9, docket item N5) so its 19 call sites and
+    /// the class-level warm-up above share one spelling of both. Values are
+    /// forwarded as-is, empty string included: turning an empty credential
+    /// into a failure is `launchApp()`'s own job below, and the warm-up must
+    /// never fail the class at all, so neither belongs here.
+    private static func applyLaunchDefaults(to app: XCUIApplication) {
         // Suppress the first-run walkthrough cover: RootView presents it when
         // OneShotFlags.walkthroughSeen(userID:) is false, and a fresh CI
         // simulator account has never seen it. The covered tab buttons still
@@ -148,13 +151,20 @@ final class ScreenshotTests: XCTestCase {
         // (which DOES `@testable import GymSync`) asserts these key strings so
         // a rename can't silently orphan them.
         app.launchArguments += ["-gsPalette", "onyx", "-gsAccent", "sky"]
-        var env = app.launchEnvironment
         // Sourced from the UI test *process's* environment — CI's
         // `xcodebuild test` step sets these via `env:`, which XCTest inherits
         // into ProcessInfo.processInfo.environment on the Mac running the
         // test bundle. We must explicitly forward them into
         // `launchEnvironment` for the simulated app process to see them.
-        //
+        var env = app.launchEnvironment
+        env["UITEST_EMAIL"] = ProcessInfo.processInfo.environment["UITEST_EMAIL"] ?? ""
+        env["UITEST_PASSWORD"] = ProcessInfo.processInfo.environment["UITEST_PASSWORD"] ?? ""
+        app.launchEnvironment = env
+    }
+
+    private func launchApp() -> XCUIApplication {
+        let app = XCUIApplication()
+        Self.applyLaunchDefaults(to: app)
         // Fail FAST on missing/empty credentials: on fork PRs GitHub resolves
         // secrets to empty strings (not unset), which would otherwise send
         // every test into a doomed 60s wait at the sign-in screen.
@@ -162,11 +172,7 @@ final class ScreenshotTests: XCTestCase {
         let password = ProcessInfo.processInfo.environment["UITEST_PASSWORD"] ?? ""
         if email.isEmpty || password.isEmpty {
             XCTFail("UITEST_EMAIL/UITEST_PASSWORD not set or empty — repo secrets unavailable (fork PR?); screenshots require them")
-        } else {
-            env["UITEST_EMAIL"] = email
-            env["UITEST_PASSWORD"] = password
         }
-        app.launchEnvironment = env
         app.launch()
         return app
     }
@@ -757,21 +763,10 @@ final class ScreenshotTests: XCTestCase {
     // `testCatalogSessionRoundWait` and its neighbours below for what
     // replaced them.
     //
-    // THE TWO CARDS (frames 118-119, unchanged). Not screens — objects that
-    // sit on them, rendered alone on the ground the way
-    // pump-composer-highlight is, because what is being judged is the card.
-    // `pump-check-card-v2` is the owner's "along with the pump check cards":
-    // the same seven lines the shipped card renders, on the same fixture
-    // values, re-composed.
-    func testCatalogSwapConsensusCard()      { captureCatalog("swap-consensus-card") }
-    func testCatalogPumpCheckCardV2()        { captureCatalog("pump-check-card-v2") }
-
-    // THE SECOND PASS'S ONE REMAINING SURVIVOR (frame 125). Its round-wait,
-    // spotter and Together siblings (123, 124, 126) retired alongside their
-    // v1 counterparts in task S13; the consensus swap card's production
-    // twin has no catalog id of its own, so the pair is still worth
-    // comparing.
-    func testCatalogSwapConsensusCardV2()    { captureCatalog("swap-consensus-card-v2") }
+    // THE TWO CARDS (frames 118-119) AND THE SECOND PASS'S ONE SURVIVOR
+    // (frame 125) — retired in group-session Phase B2 (plan task S10); see
+    // `testCatalogSessionSwapConsent` and its neighbours below for their
+    // production twins.
 
     // THE PRODUCTION SESSION SCREENS (frames 129-134, group-session Phase A,
     // task S11) — what the round's lobby and warm-up ids became once the
@@ -800,6 +795,16 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogSessionRoundSpotter()    { captureCatalog("session-round-spotter") }
     func testCatalogSessionTogetherClock()   { captureCatalog("session-together-clock") }
     func testCatalogSessionFreestyleRail()   { captureCatalog("session-freestyle-rail") }
+
+    // THE SESSION ROUND, CLOSED OUT (frames 142-145, group-session Phase B2,
+    // task S10) — the design round's last three survivors (frames 118, 119,
+    // 125) retire into these four production screens; `session-your-turn`
+    // is spec §7's own last missing session frame, built on plan task S4's
+    // `SessionLiveView(catalog:)` fixture init.
+    func testCatalogSessionSwapConsent()     { captureCatalog("session-swap-consent") }
+    func testCatalogSessionScaleDown()       { captureCatalog("session-scale-down") }
+    func testCatalogSessionWarmupSuggestion() { captureCatalog("session-warmup-suggestion") }
+    func testCatalogSessionYourTurn()        { captureCatalog("session-your-turn") }
 
     // MARK: - Seeded deep-screen captures
     //

@@ -94,9 +94,11 @@ struct WarmUpScreen: View {
     /// are about to lift.
     let rungHeadline: String
     let rungDetail: String
-    /// Coach's line. Solo shows it inside the plan card; crew shows it below,
-    /// marked private.
-    let coachLine: String?
+    /// Coach's readiness suggestion (plan task S8). Solo shows it inside the
+    /// plan card; crew shows it inside the same card, marked private — spec
+    /// §3.2's "the Coach line for each lifter privately". Nil is the normal
+    /// case and the shipped screen.
+    let coachSuggestion: WarmUpReadiness.Suggestion?
 
     // The block, solo only (`warmup-solo-v2`'s ladder strip).
     let blockWeek: Int
@@ -152,7 +154,7 @@ struct WarmUpScreen: View {
             rungHeadline: rungHeadline,
             rungDetail: rungDetail,
             rows: planRows,
-            suggestion: coachLine,
+            suggestion: coachSuggestion,
             // Nobody else is here, so nothing needs saying about who can see
             // it — `Only you see this.` on a solo screen is noise.
             isPrivate: false,
@@ -173,21 +175,35 @@ struct WarmUpScreen: View {
 
     /// Who's warm, then the plan, then the clock. The readiness row is what
     /// crew presence adds; the order below it is the solo order minus the
-    /// block strip, which is a personal fact. Coach's PRIVATE line is
-    /// Phase B's: `CoachSuggestionBlock`, the type that used to render it
-    /// here, had no path anywhere in the app after R-17 (production and
-    /// both fixtures always pass `coachLine == nil`) and was deleted
-    /// (review push-5 N4); `coachLine` itself stays, still read by
-    /// `soloBody`, for Phase B's re-add with the readiness signal.
+    /// block strip, which is a personal fact.
+    ///
+    /// COACH'S PRIVATE LINE ARRIVED (plan task S8, spec §3.2). The card
+    /// SWITCHES — `SessionPlanCardWithSuggestion` with `isPrivate: true` —
+    /// **only when there is a suggestion**, so a crew warm-up with none
+    /// renders byte-identically to frame 133 (constraint 14). Nothing is added
+    /// beneath the card: the suggestion lives inside it, the way the solo
+    /// frame's does, because a suggestion about the plan belongs on the plan.
     @ViewBuilder
     private var crewBody: some View {
         SessionReadinessRow(rows: warmthRows,
                             kicker: SessionCopy.whosWarm,
                             count: WarmUpGate.warmCaption(warm: warmCount,
                                                           total: warmthRows.count))
-        SessionPlanCard(kicker: SessionCopy.theSession,
-                        rungLine: rungHeadline,
-                        rows: planRows)
+        if let coachSuggestion {
+            SessionPlanCardWithSuggestion(
+                kicker: SessionCopy.theSession,
+                rungHeadline: rungHeadline,
+                rungDetail: rungDetail,
+                rows: planRows,
+                suggestion: coachSuggestion,
+                isPrivate: true,
+                onAccept: onAcceptSuggestion,
+                onDecline: onDeclineSuggestion)
+        } else {
+            SessionPlanCard(kicker: SessionCopy.theSession,
+                            rungLine: rungHeadline,
+                            rows: planRows)
+        }
         WarmUpClockStrip(elapsed: elapsed)
     }
 

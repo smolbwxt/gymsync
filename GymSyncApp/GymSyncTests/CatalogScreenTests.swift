@@ -116,15 +116,11 @@ final class CatalogScreenTests: XCTestCase {
             // group-session Phase A plan (task S11) — see the "production
             // session screens" block below.
             //
-            // The round's last two survive: the crew's consensus swap as a
-            // consent card, and the pump-check post re-composed.
-            "swap-consensus-card",
-            "pump-check-card-v2",
-            // Of the session round's SECOND PASS (frames 123-126 survived
-            // the first retirement), only the consensus swap card (125)
-            // survives task S13 too — its production twin has no catalog id
-            // of its own.
-            "swap-consensus-card-v2",
+            // The round's last three survivors — the crew's consensus swap
+            // as a consent card (both passes) and the pump-check post
+            // re-composed — retired in group-session Phase B2 (plan task
+            // S10): production twins are session-swap-consent (below) and
+            // the shipped pump-feed-post (above).
             // The production session screens (group-session Phase A plan,
             // task S11), frames 129-134 — what the round's lobby and
             // warm-up ids became once the owner picked.
@@ -147,6 +143,13 @@ final class CatalogScreenTests: XCTestCase {
             "session-round-spotter",
             "session-together-clock",
             "session-freestyle-rail",
+            // Group-session Phase B2 (plan task S10), frames 142-145: the
+            // four production session screens the design round's last
+            // survivors retire into.
+            "session-swap-consent",
+            "session-scale-down",
+            "session-warmup-suggestion",
+            "session-your-turn",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

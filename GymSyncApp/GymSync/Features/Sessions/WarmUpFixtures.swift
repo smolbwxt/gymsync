@@ -23,7 +23,10 @@ struct WarmUpWorld {
     let planRows: [SessionPlanRow]
     let rungHeadline: String
     let rungDetail: String
-    let coachLine: String?
+    /// Coach's readiness suggestion (plan task S8). Nil on the two shipped
+    /// frames, so neither moves; `suggestion` below is the one world that has
+    /// one.
+    let coachSuggestion: WarmUpReadiness.Suggestion?
     let blockWeek: Int
     let blockWeeks: Int
     let blockMilestone: String
@@ -97,11 +100,10 @@ enum WarmUpFixtures {
         // in production; this fixture now says so too.
         rungHeadline: "Push Day A",
         rungDetail: "",
-        // Coach's readiness suggestion is Phase B: production always passes
-        // nil (`SessionRunnerView.swift`), so the frame shows none either —
-        // `SessionPlanCardWithSuggestion` renders with no suggestion and no
-        // rule when `suggestion` is nil.
-        coachLine: nil,
+        // NIL IS THE NORMAL CASE (plan decision 4), and a warm-up with no
+        // suggestion is the shipped screen — `SessionPlanCardWithSuggestion`
+        // renders with no suggestion and no rule, so frame 132 does not move.
+        coachSuggestion: nil,
         // NOT dishonest: `SessionRunnerView` now wires this from the
         // athlete's own active block goal (`BlockGoalRepository.activeGoal()`
         // → `.page(goalID:)`), so a lifter mid-block genuinely sees this —
@@ -140,12 +142,53 @@ enum WarmUpFixtures {
         planRows: LobbyFixtures.planRows,
         rungHeadline: LobbyFixtures.rungLine,
         rungDetail: "",
-        // Coach's per-lifter warm-up line is Phase B: production always
-        // passes nil (review push-5 R-17), so `CoachSuggestionBlock` does
-        // not render on this frame either.
-        coachLine: nil,
+        // None here either, so `crewBody` draws the plain `SessionPlanCard`
+        // and frame 133 is byte-identical to the one B1 shipped. The crew
+        // frame WITH a suggestion is `suggestion` below, its own world.
+        coachSuggestion: nil,
         blockWeek: 3,
         blockWeeks: 8,
         blockMilestone: "",
         elapsed: "6:38")
+}
+
+// MARK: - Crew, with Coach's suggestion (`session-warmup-suggestion`)
+
+extension WarmUpFixtures {
+
+    /// THE THIRD WARM-UP WORLD (plan task S8), for the id S10 mints.
+    ///
+    /// Its own frame rather than a switch inside frame 133: constraint 14
+    /// freezes what 133 renders, and a suggestion is a state the crew frame
+    /// does not otherwise have. The CREW frame carries it, because the crew is
+    /// where `isPrivate` means something — spec §3.2's "the Coach line for each
+    /// lifter privately" — and the solo card already photographs the same
+    /// block's composition without the line.
+    ///
+    /// THE VALUES ARE THE RULE'S OWN OUTPUT, not free text: decision 4's one
+    /// suggesting branch is an open probe on a muscle today trains, plus a mean
+    /// RPE of 9 a day ago, against `LobbyFixtures.planRows`' four-set opener —
+    /// which is a LEG day, so the sore muscle is quads and the row a set comes
+    /// off is Back squat. Written as a literal because a fixture may not read a
+    /// repository (constraint 11); `WarmUpReadinessTests` is what proves the
+    /// rule produces exactly this shape.
+    static let suggestionForCrew = WarmUpReadiness.Suggestion(
+        exerciseID: UUID(uuidString: "00000000-0000-0000-0000-00000000f021") ?? UUID(),
+        setsInstead: 3,
+        read: "Your last session averaged RPE 9 yesterday, and you haven't marked quads recovered yet.",
+        proposal: "Today is 4 × 5 on Back squat — want 3 × 5?")
+
+    static let suggestion = WarmUpWorld(
+        session: crew.session,
+        warmthRows: crew.warmthRows,
+        isSolo: false,
+        isOrganizer: crew.isOrganizer,
+        planRows: crew.planRows,
+        rungHeadline: crew.rungHeadline,
+        rungDetail: crew.rungDetail,
+        coachSuggestion: suggestionForCrew,
+        blockWeek: crew.blockWeek,
+        blockWeeks: crew.blockWeeks,
+        blockMilestone: crew.blockMilestone,
+        elapsed: crew.elapsed)
 }

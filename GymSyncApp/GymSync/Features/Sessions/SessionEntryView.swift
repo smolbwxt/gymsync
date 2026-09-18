@@ -106,7 +106,7 @@ struct SessionEntryView: View {
                                    participantCount: participants.count,
                                    roomCode: session.roomCode) {
         case .lobby:
-            LobbyView(session: session)
+            LobbyView(session: session, initialParticipants: participants)
         case .warmUp, .live:
             // `.live` routes here too: the runner routes to
             // `SessionInProgressView` itself once lifting has begun

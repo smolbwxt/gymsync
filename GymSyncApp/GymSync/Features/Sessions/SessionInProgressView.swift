@@ -20,6 +20,11 @@ import SwiftUI
 struct SessionInProgressView: View {
     let session: WorkoutSession
     let participants: [(participant: SessionParticipant, profile: Profile)]
+    /// Today's accepted set reduction, carried from the warm-up (plan task S8,
+    /// decision 5). Nil is the normal case. This router passes it through and
+    /// reads nothing from it: `effectiveRoutineExercises` is the one place it
+    /// is applied.
+    var todaysScale: TodaysScale? = nil
 
     var body: some View {
         // Phase O Task 5 (3e follow-up queue item 6): this router is the
@@ -30,11 +35,14 @@ struct SessionInProgressView: View {
         // needing a fresh reconnect.
         switch session.style {
         case .rounds:
-            SessionLiveView(session: session, style: .rounds, voicePersistsOnPop: true)
+            SessionLiveView(session: session, style: .rounds,
+                            voicePersistsOnPop: true, todaysScale: todaysScale)
         case .freestyle:
-            SessionLiveView(session: session, style: .freestyle, voicePersistsOnPop: true)
+            SessionLiveView(session: session, style: .freestyle,
+                            voicePersistsOnPop: true, todaysScale: todaysScale)
         case .together:
-            SessionLiveView(session: session, style: .together, voicePersistsOnPop: true)
+            SessionLiveView(session: session, style: .together,
+                            voicePersistsOnPop: true, todaysScale: todaysScale)
         }
     }
 }

@@ -62,9 +62,10 @@ final class LobbyRealtimeService {
     ///                Caller is expected to refetch sessions and participants.
     ///
     /// THREE SUBSCRIPTIONS, exactly as spec §3.1 counts them: `sessions` and
-    /// `session_participants` (insert, update, delete). The two
-    /// `routine_proposals` streams and the `routine_proposal_votes` stream
-    /// left with the proposal-and-vote flow (plan task S8).
+    /// `session_participants` (insert, update, delete). The proposal-and-vote
+    /// flow's own two streams left in plan task S8; the tables behind them,
+    /// `routine_proposals` and `routine_proposal_votes`, are on their way
+    /// out too (plan task D4 drops them once written and applied).
     func subscribe(
         sessionID: UUID,
         selfID: UUID,

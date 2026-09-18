@@ -142,18 +142,15 @@ enum CatalogScreen: String, CaseIterable {
     // production in the group-session Phase A plan (task S11) — see
     // `content_sessionLobbyWaiting` below for what replaced THOSE.
     //
-    // The round's last two survive: not screens but objects that sit on
-    // them — the crew's consensus swap as a consent card, and the
-    // pump-check post re-composed on the design language. Frames 118-119.
-    case swapConsensusCard = "swap-consensus-card"
-    case pumpCheckCardV2 = "pump-check-card-v2"
-    // The session round's SECOND PASS (the owner reviewed all fourteen and
-    // picked). Of the four that survived the first retirement (frames
-    // 123-126), only the consensus swap card (125) survives task S13 —
-    // its production twin has no catalog id of its own, so the pair is
-    // still worth comparing. The round wait, spotter and Together v2 ids
-    // (123, 124, 126) retired alongside their v1 counterparts.
-    case swapConsensusCardV2 = "swap-consensus-card-v2"
+    // THE ROUND'S LAST SURVIVORS RETIRE TOO (group-session Phase B2, plan
+    // task S10): the crew's consensus swap as a consent card
+    // (`swap-consensus-card`, 118) and the second pass's tappable-exercise
+    // variant (`swap-consensus-card-v2`, 125) are replaced by the
+    // production `SwapConsentCard` (`session-swap-consent`, 142); the
+    // pump-check post re-composed (`pump-check-card-v2`, 119) is replaced
+    // by the shipped `PumpPostCard` itself, which `pump-feed-post` (146)
+    // already captures. `Features/Sessions/Variations/` — the whole design-
+    // round proof deck — retires with them.
     // The production session screens (group-session Phase A plan, task
     // S11), frames 129-134 — what the ten retired ids above became once the
     // owner picked. See `content_sessionLobbyWaiting` for the whole story.
@@ -177,6 +174,14 @@ enum CatalogScreen: String, CaseIterable {
     case sessionRoundSpotter = "session-round-spotter"
     case sessionTogetherClock = "session-together-clock"
     case sessionFreestyleRail = "session-freestyle-rail"
+    // Group-session Phase B2 (plan task S10), frames 142-145: the four
+    // production session screens the focused design round's retirement left
+    // owed — spec §7's own list of session frames is only complete once
+    // these exist. See each `content_session*` builder below for its world.
+    case sessionSwapConsent = "session-swap-consent"
+    case sessionScaleDown = "session-scale-down"
+    case sessionWarmupSuggestion = "session-warmup-suggestion"
+    case sessionYourTurn = "session-your-turn"
 }
 
 struct CatalogHostView: View {
@@ -278,9 +283,6 @@ struct CatalogHostView: View {
             case .homeGoalStripBlock:         content_homeGoalStripBlock
             case .crewsTab:                   content_crewsTab
             case .blockCalendar:              content_blockCalendar
-            case .swapConsensusCard:          content_swapConsensusCard
-            case .pumpCheckCardV2:            content_pumpCheckCardV2
-            case .swapConsensusCardV2:        content_swapConsensusCardV2
             case .sessionLobbyWaiting:        content_sessionLobbyWaiting
             case .sessionLobbyReady:          content_sessionLobbyReady
             case .sessionLobbyLate:           content_sessionLobbyLate
@@ -294,6 +296,10 @@ struct CatalogHostView: View {
             case .sessionRoundSpotter:        content_sessionRoundSpotter
             case .sessionTogetherClock:       content_sessionTogetherClock
             case .sessionFreestyleRail:       content_sessionFreestyleRail
+            case .sessionSwapConsent:         content_sessionSwapConsent
+            case .sessionScaleDown:           content_sessionScaleDown
+            case .sessionWarmupSuggestion:    content_sessionWarmupSuggestion
+            case .sessionYourTurn:            content_sessionYourTurn
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1400,15 +1406,28 @@ struct CatalogHostView: View {
     /// placeholder), and the viewer's own late, summary-only post. Exercises
     /// cover the barbell mini-bar and a bodyweight entry.
     ///
-    /// THE CLOCK ANCHOR IS INHERITED, NOT INTRODUCED (global constraint 7):
-    /// `createdAt` has been `Date().addingTimeInterval(…)` since 2026-07 so
-    /// the author row reads a stable `1 hour ago` rather than drifting into
-    /// `3 years ago`. Every NEW fact is anchored RELATIVE to it —
-    /// `completedAt` is 47 minutes before its own post — so `posted 47 min
-    /// after` is the same string on every run.
+    /// THE CLOCK ANCHOR IS A FIXTURE NOW (global constraint 11). `createdAt`
+    /// was `Date().addingTimeInterval(…)` from 2026-07 until this round — the
+    /// last `Date.now` reachable from a catalog builder on this screen, and
+    /// the reason the frame's "1 hour ago" was a read of the runner's wall
+    /// clock rather than a value the frame owns. Both posts are built from
+    /// components now, an hour apart, and every derived fact stays anchored
+    /// RELATIVE to its own post — `completedAt` is 47 minutes before the
+    /// friend's, 50 hours before mine — so `posted 47 min after` and the
+    /// day-scale tag beside it are the same strings on every run.
+    ///
+    /// THE DRIFT IS FIXED (S5-S8 review finding 4, closed leg 3):
+    /// `PumpPostCard` now takes an injected `now:` rather than reading
+    /// `Date()` inside its own `.formatted(.relative:)` call, so this frame
+    /// pins it to `pumpFixtureNow` — one hour after the friend's post, two
+    /// after mine — and "1 hour ago" / "2 hours ago" no longer grow with the
+    /// calendar. Production passes nothing (`now` defaults to `Date()`),
+    /// unchanged.
+    private static let pumpFixtureNow = pumpFixturePostedAt(hour: 19)
+
     private var content_pumpFeedPost: some View {
-        let friendPostedAt = Date().addingTimeInterval(-3600)
-        let myPostedAt = Date().addingTimeInterval(-7200)
+        let friendPostedAt = Self.pumpFixturePostedAt(hour: 18)
+        let myPostedAt = Self.pumpFixturePostedAt(hour: 17)
         return ScrollView {
             VStack(spacing: 14) {
                 PumpPostCard(
@@ -1432,7 +1451,8 @@ struct CatalogHostView: View {
                     // fixture no longer carries a `snd:` row to prove they
                     // are gone — emoji only, always.
                     reactionCounts: ["🔥": 3, "💪": 1],
-                    onReact: { _ in }, onDelete: {}, onReport: {})
+                    onReact: { _ in }, onDelete: {}, onReport: {},
+                    now: Self.pumpFixtureNow)
                 PumpPostCard(
                     post: WorkoutPost(
                         id: UUID(), authorID: UUID(), sessionID: UUID(),
@@ -1453,10 +1473,18 @@ struct CatalogHostView: View {
                     author: nil, isMine: true,
                     myReactions: [],
                     reactionCounts: [:],
-                    onReact: { _ in }, onDelete: {}, onReport: {})
+                    onReact: { _ in }, onDelete: {}, onReport: {},
+                    now: Self.pumpFixtureNow)
             }
             .padding(16)
         }
+    }
+
+    /// Local 17 Sep 2026 at `hour`:40 — the same `Calendar.current.date(from:)`
+    /// idiom `blockFixtureDay` uses for the block calendar's cells.
+    private static func pumpFixturePostedAt(hour: Int) -> Date {
+        Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 17,
+                                                   hour: hour, minute: 40))!
     }
 
     private static let pumpFixtureSummary = PostSummary(
@@ -2465,83 +2493,29 @@ struct CatalogHostView: View {
         ProgramWeek(sets: 3, reps: 5, isDeload: true, note: "Deload - leave two in the tank"),
     ]
 
-    // MARK: - The focused session design round
+    // MARK: - The focused session design round — RETIRED (group-session
+    // Phase B2, plan task S10)
     //
     // Spec: `docs/superpowers/specs/2026-09-12-group-session-and-lobby
     // -design.md` §8 step 1 — "a focused design round first … the session
     // screens … and the pump-check cards brought onto the design language,
     // as rendered proofs for the owner, the way the Home and You rounds were
-    // run." Owner decision 10 makes the round a precondition of the plan.
+    // run." Owner decision 10 made the round a precondition of the plan.
     //
-    // FOURTEEN IDS ORIGINALLY, frames 106-119: the lobby (two compositions
-    // plus the everyone-ready state), the shared warm-up screen (two
-    // compositions plus its crew frame), Rounds (two compositions of the
-    // round wait, plus the skip offer and spotter mode), Freestyle, Together,
-    // the consensus swap card and the pump-check card re-composed. TEN OF
-    // THEM RETIRED — every lobby and warm-up id, across all three passes —
-    // once the group-session Phase A plan (task S11) built production to the
-    // owner's picks; see `content_sessionLobbyWaiting` below for what
-    // replaced them. What remains here is Rounds, Freestyle, Together and
-    // the two cards, which are Phase B's own to retire.
-    //
-    // Same contract as the Home v3 ten (`content_homeV3Tiles` above): each is
-    // a plain value-driven view from `SVFixtures`, reads no `AppState`, makes
-    // no repository call, holds no `.task`, and takes no parameters — the
-    // fixtures live in `Features/Sessions/Variations/SessionVariationKit.swift`
-    // beside the views that render them, the way `HomeV2Fixtures` does, so a
-    // frame and the world it draws are read together.
-    //
-    // PROOF AUTHORITY: none, exactly as for the Home v3 round. These frames
-    // ARE the proof.
-    //
-    // TWO ANIMATIONS SURVIVE, both shipped components' own: `PTTDockRow`'s
-    // resting accent waveform (already captured by `voice-idle`) and
-    // `GSHeartRatePill`'s beat on `together-clock` (already captured by
-    // `heart-rate-pill`). Nothing else here moves, and no view reads a clock.
-
-    private var content_swapConsensusCard: some View {
-        SwapConsensusCardView()
-    }
-
-    /// The pump card re-composed. Deliberately does NOT reuse `PumpPostCard`:
-    /// the shipped card runs a signed-URL `.task` for its photo, and this
-    /// round's frames read nothing off the network. The values are
-    /// `pumpFixtureSummary` / `pumpFixtureTrajectory` / `pumpFixtureHighlight`
-    /// re-spelled as literals in `SVFixtures`, so the `pump-feed-post` capture
-    /// and this frame are a before/after of the composition and of nothing
-    /// else.
-    private var content_pumpCheckCardV2: some View {
-        PumpCheckCardV2View()
-    }
-
-    // MARK: - The session round, second pass
-    //
-    // The owner reviewed all fourteen round-1 frames (run 34706889112) and
-    // picked: the lobby's arrival track, the warm-up screen as rendered, the
-    // round wait's station cards, and the skip offer, Freestyle, Together,
-    // the swap card and the pump card as they stand. This pass added SEVEN
-    // ids beside them, frames 120-126 — FOUR SURVIVE below; the pass's
-    // lobby and warm-up ids (120-122) retired alongside their v1 siblings
-    // (group-session Phase A plan, task S11).
-    //
-    // EVERY v1 ID IS FROZEN. The owner has approved those renders, so a moved
-    // pixel in one of them is a moved decision: `SessionVariationKit.swift`
-    // gains exactly one additive defaulted field (`SVLifter.energy`) and
-    // nothing else, and the v2 pieces live in their own files. The v1 and v2
-    // frames are meant to be looked at as pairs.
-    //
-    // Three rules are added by this pass and are recorded in
-    // `SessionVariationsV2Kit.swift`'s header: alignment is a rule (fixed
-    // slots, so two cards cannot disagree about a baseline); a heart rate is
-    // neutral ink with the zone as a word (the language reserves red and
-    // gold); and checked in IS ready, one signal, which also settles the
-    // round-1 lobby fixture's own inconsistency.
-
-    /// The consensus swap with both exercises tappable. `swap-consensus-card`
-    /// is untouched beside it — the pair is the frame the owner compares.
-    private var content_swapConsensusCardV2: some View {
-        SwapConsensusCardV2View()
-    }
+    // FOURTEEN IDS ORIGINALLY, frames 106-119, across two passes (the second
+    // pass added seven more, frames 120-126). Ten retired to production in
+    // the group-session Phase A plan (task S11) — every lobby and warm-up id
+    // — and the remaining four (Rounds, Freestyle, Together) in the
+    // group-session Phase B1 plan (task S13); see `content_sessionLobbyWaiting`
+    // and `content_sessionRoundWait` below for what replaced them. The
+    // round's last three survivors — `swap-consensus-card` (118),
+    // `pump-check-card-v2` (119) and `swap-consensus-card-v2` (125) — retired
+    // in this task: the first two production twins are `session-swap-consent`
+    // (142, see below) and the shipped `pump-feed-post` (146); the third had
+    // no production twin of its own to wait for. `Features/Sessions/
+    // Variations/` — the whole design-round proof deck (`SVFixtures`,
+    // `SVFixturesV2`, `SVName`, `SVQuietPill`, `SVTappableExerciseRow`,
+    // `SVZoneColor`) — retires with them.
 
     // MARK: - The production session screens (group-session Phase A plan,
     // task S11), frames 129-134
@@ -2595,7 +2569,7 @@ struct CatalogHostView: View {
                             planRows: world.planRows,
                             rungHeadline: world.rungHeadline,
                             rungDetail: world.rungDetail,
-                            coachLine: world.coachLine,
+                            coachSuggestion: world.coachSuggestion,
                             blockWeek: world.blockWeek,
                             blockWeeks: world.blockWeeks,
                             blockMilestone: world.blockMilestone,
@@ -2613,7 +2587,7 @@ struct CatalogHostView: View {
                             planRows: world.planRows,
                             rungHeadline: world.rungHeadline,
                             rungDetail: world.rungDetail,
-                            coachLine: world.coachLine,
+                            coachSuggestion: world.coachSuggestion,
                             blockWeek: world.blockWeek,
                             blockWeeks: world.blockWeeks,
                             blockMilestone: world.blockMilestone,
@@ -2759,6 +2733,73 @@ struct CatalogHostView: View {
                                  stretchSuggestion: world.stretchSuggestion,
                                  accessorySuggestion: world.accessorySuggestion,
                                  behindLine: world.behindLine)
+    }
+
+    // MARK: - The session round, closed out (group-session Phase B2 plan,
+    // task S10), frames 142-145
+    //
+    // Spec §7's last four session frames — the ones the focused design
+    // round's own survivors (`swap-consensus-card`, `pump-check-card-v2`,
+    // `swap-consensus-card-v2`) retire in this same commit. Every arm below
+    // is a value-in view over a fixture world, exactly like the production
+    // block above: no `Date()`, no `await`, no `Task`, no `.shared` and no
+    // repository (constraint 11).
+
+    /// `session-swap-consent` (frame 142): the crew's routine change, as the
+    /// production `SwapConsentCard` renders it — Dana's proposal, NOW /
+    /// PROPOSED doors with their load lines, two of four pips filled, the
+    /// consequence line, Agree / Keep. No accent on the page (decision 3,
+    /// rule 2): on the live body the accent is already the LOG card.
+    private var content_sessionSwapConsent: some View {
+        SwapConsentCard(model: LiveFixtures.swapConsent)
+    }
+
+    /// `session-scale-down` (frame 143): a crewmate's quiet scale-down where
+    /// the crew already looks. **R-B2-11**: the plan's own frame table names
+    /// `RoundWaitView`, but `LiveFixtures.scaleDown` is a `SpotterWorld` and
+    /// `RoundWaitView` mounts no `TurnStrip` — `SpotterView` is the strip's
+    /// only mount in the app, and Sam's `doing` line lives on his tile there.
+    /// The station-card half of mode 2 already ships on frame 137
+    /// (`LiveFixtures.roundWait`'s `rackA`); this is the half that needed a
+    /// frame of its own.
+    private var content_sessionScaleDown: some View {
+        let world = LiveFixtures.scaleDown
+        return SpotterView(kicker: world.kicker, title: world.title,
+                           turn: world.turn, stillToGo: world.stillToGo,
+                           crew: world.crew, coach: world.coach,
+                           dockNames: world.dockNames, reactionEmojis: world.reactionEmojis)
+    }
+
+    /// `session-warmup-suggestion` (frame 144): solo warm-up with Coach's
+    /// readiness suggestion on it — the plan card, the rung headline, the
+    /// rule, Coach's one sentence naming what it read, Accept / Not today as
+    /// two raised faces. `WarmUpFixtures.suggestion` is a CREW world, not the
+    /// solo one — the crew frame is where `isPrivate` means something (spec
+    /// §3.2's "the Coach line for each lifter privately") — so this arm is
+    /// `content_sessionWarmupCrew`'s own body over that fixture, exactly as
+    /// both existing warm-up arms already spell `coachSuggestion:`.
+    private var content_sessionWarmupSuggestion: some View {
+        let world = WarmUpFixtures.suggestion
+        return WarmUpScreen(warmthRows: world.warmthRows,
+                            isSolo: world.isSolo,
+                            isOrganizer: world.isOrganizer,
+                            planRows: world.planRows,
+                            rungHeadline: world.rungHeadline,
+                            rungDetail: world.rungDetail,
+                            coachSuggestion: world.coachSuggestion,
+                            blockWeek: world.blockWeek,
+                            blockWeeks: world.blockWeeks,
+                            blockMilestone: world.blockMilestone,
+                            elapsed: world.elapsed)
+    }
+
+    /// `session-your-turn` (frame 145): Rounds, your turn — the live body's
+    /// own page, spec §7's last missing session frame. Built on S4's fixture
+    /// init (`SessionLiveView(catalog:)`); the same `NavigationStack` wrapper
+    /// the lobby ids above use, since this view sets no navigation chrome of
+    /// its own but still wants the bar's safe-area behavior.
+    private var content_sessionYourTurn: some View {
+        NavigationStack { SessionLiveView(catalog: LiveFixtures.yourTurn) }
     }
 }
 

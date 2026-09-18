@@ -212,56 +212,74 @@ struct PumpPostCard: View {
     let onReact: (String) -> Void
     let onDelete: () -> Void
     let onReport: () -> Void
+    /// The reader's own clock — S5-S8 review finding 4 (review-app-push2.md),
+    /// closed by leg 3: `authorRow`'s "posted … ago" line used to read
+    /// `Date()` inside `.formatted(.relative(presentation:))`, which has no
+    /// seam to pin, so the catalog's `pump-feed-post` frame drifted with the
+    /// calendar instead of sitting at "1 hour ago" the day it was captured.
+    /// `RelativeDateTimeFormatter.localizedString(for:relativeTo:)` takes the
+    /// reference instant explicitly, so this defaults to `Date()` for every
+    /// production call site (unchanged behaviour) and the catalog fixture is
+    /// the one caller that pins it.
+    var now: Date = Date()
 
     @Environment(\.gsTheme) private var theme
     @State private var photoURL: URL?
+    @State private var showsMetrics = false
+
+    /// `.formatted(.relative(presentation: .named))`'s own style
+    /// ("yesterday", "2 days ago") re-created on `RelativeDateTimeFormatter`,
+    /// whose `localizedString(for:relativeTo:)` is the only relative-date
+    /// API that takes an explicit reference date instead of reading `Date()`
+    /// internally.
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.dateTimeStyle = .named
+        return formatter
+    }()
 
     private var unit: WeightUnit { ThemeStore.shared.weightUnit }
 
     var body: some View {
         // gs3D pass (2026-08-13): the bordered flat card joins the extruded
         // language — static depth (the card itself isn't a button; its
-        // reaction chips and menus are the tappables). gs3DCard clips
-        // content to the rounded face, so the full-bleed photo block keeps
-        // its edges.
-        VStack(alignment: .leading, spacing: 0) {
+        // reaction chips, the photo door and its menus are the tappables).
+        //
+        // SPEC §1'S ANATOMY, ALL SEVEN LINES, RE-COMPOSED (spec §5, reference
+        // frame `pump-check-card-v2`): 1 who and when, 2 the trajectory,
+        // 3 this week's rung, 4 the highlight, 5 the workout in plain terms,
+        // 6 the picture, 7 reactions. The same seven facts about half the
+        // height, and three moves buy it:
+        //
+        //  1. THE HIGHLIGHT LEADS, as a raised island with the picture beside
+        //     it. Line 4 is the thing the lifter chose to say and it used to
+        //     sit buried between the rung chips and the set rows.
+        //  2. THE PICTURE IS A THUMBNAIL, NOT A BLOCK. 300 pt of full-bleed
+        //     photo pushed the reactions off the fold and made every card the
+        //     same height whatever it said. At 88 pt it still says there is a
+        //     picture; tapping it opens `WorkoutMetricsSheet`, where the whole
+        //     frame and every set live.
+        //  3. THE SET ROWS COLLAPSE TO ONE LINE EACH (`PumpCardCollapse`).
+        //     Two exercises and three sets were seven rows of furniture under
+        //     the one sentence that mattered.
+        //
+        // Lines 2, 3, 4 and 7 are above the fold together, which is spec §1's
+        // whole claim for the card. NOTHING ABOUT THE POST'S DATA CHANGED:
+        // same initializer, same `WorkoutPost`, same call sites.
+        VStack(alignment: .leading, spacing: 12) {
             authorRow
-                .padding(12)
-
-            // SPEC §1'S ANATOMY, IN ITS ORDER: 1 who and when, 2 the
-            // trajectory, 3 this week's rung, 4 the highlight, 5 the workout
-            // in plain terms, 6 the picture, 7 reactions.
-            //
-            // The picture is SIXTH. Lines 2-5 are the reason the card exists
-            // ("a snapshot of where people are in their fitness trajectory")
-            // and a 300 pt photo above any of them buries it below the fold.
-            // This is review fix 4 and it supersedes the plan's S2.7 snippet,
-            // which left the photo between line 3 and line 4 and so shipped
-            // the order 1, 2, 3, picture, 4, 5, 7.
-            //
-            // `summaryBlock` carries lines 4 and 5 and the per-exercise rows
-            // they sit with. The exercise rows are not one of the seven lines
-            // — they are the detail this card has shown since 2026-07 — so
-            // they travel with the summary rather than being split from it.
+            highlightFace
             if let trajectory = post.trajectory {
                 trajectoryBlock(trajectory)
-                    .padding(.horizontal, 12)
-                    .padding(.bottom, 12)
             }
-
-            summaryBlock
-                .padding(.horizontal, 12)
-                .padding(.bottom, 12)
-
-            if post.photoPath != nil {
-                photoBlock
-            }
-
+            collapsedRows
+            PumpPlainTerms(post: post, unit: unit)
+            GSDivider()
             reactionsRow
-                .padding(12)
         }
+        .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .gs3DCard(cornerRadius: GSMetrics.radiusMd)
+        .gs3DCard(cornerRadius: GSMetrics.radiusMd, lipHeight: 6)
         .contextMenu {
             if isMine {
                 Button(role: .destructive, action: onDelete) {
@@ -277,6 +295,13 @@ struct PumpPostCard: View {
             guard let path = post.photoPath else { return }
             photoURL = try? await WorkoutPostRepository.signedPhotoURL(path: path)
         }
+        .sheet(isPresented: $showsMetrics) {
+            // THE SHEET TAKES THE URL THIS CARD ALREADY HOLDS. It is built
+            // entirely from `post.summary` / `post.photoPath` — no repository
+            // read of its own, and no second signed-URL round trip for a
+            // photo whose link is already in hand.
+            WorkoutMetricsSheet(post: post, photoURL: photoURL)
+        }
     }
 
     private var authorRow: some View {
@@ -287,7 +312,7 @@ struct PumpPostCard: View {
                 Text(isMine ? "You" : (author?.username ?? "Lifter"))
                     .font(GSFont.bold(13.5, relativeTo: .subheadline))
                     .foregroundStyle(theme.text)
-                Text(post.createdAt.formatted(.relative(presentation: .named)))
+                Text(Self.relativeFormatter.localizedString(for: post.createdAt, relativeTo: now))
                     .font(GSFont.body(11, relativeTo: .caption2))
                     .foregroundStyle(theme.neutral500)
             }
@@ -344,7 +369,73 @@ struct PumpPostCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
-    private var photoBlock: some View {
+    /// Lines 4 and 6 — the pick the lifter made, and the picture, on one
+    /// raised island (design rule 1's "a folder is a raised island"), the
+    /// first thing under the name.
+    ///
+    /// A post can have a highlight, a photo, both, or neither — the second
+    /// fixture post on `pump-feed-post` has neither — so the island appears
+    /// only when it has something to hold, and the two halves are independent.
+    @ViewBuilder
+    private var highlightFace: some View {
+        if post.highlight != nil || post.photoPath != nil {
+            HStack(alignment: .top, spacing: 12) {
+                if let highlight = post.highlight {
+                    highlightColumn(highlight)
+                }
+                if post.photoPath != nil {
+                    photoDoor
+                }
+                if post.highlight == nil {
+                    Spacer(minLength: 0)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .gs3DCard(cornerRadius: GSMetrics.radiusSm, lipHeight: 5)
+        }
+    }
+
+    /// NO ACCENT and no colour: the kind is carried by the WORD — the line
+    /// itself already reads "PR — Back Squat" — and this card's one accent is
+    /// a reaction of your own, which is the only thing on it you can do.
+    private func highlightColumn(_ highlight: PostHighlight) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            GSSectionHeader("THE ONE THING")
+            Text(HighlightText.line(highlight, unit: unit))
+                .font(GSFont.bold(17, relativeTo: .title3))
+                .foregroundStyle(theme.text)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(PumpCardCollapse.note(for: highlight))
+                .font(GSFont.bodyMedium(12, relativeTo: .caption))
+                .foregroundStyle(theme.neutral700)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// An 88 pt tile that is also a door needs one line telling you so, or the
+    /// composition's whole argument — the picture shrinks, the detail moves
+    /// behind it — is a claim the card never makes to its reader. The caption
+    /// sits under the tile and inside its column, at the caption's own size.
+    private var photoDoor: some View {
+        Button {
+            showsMetrics = true
+        } label: {
+            VStack(spacing: 5) {
+                photoThumb
+                Text(PumpCardCollapse.photoCaption)
+                    .font(GSFont.body(10, relativeTo: .caption2))
+                    .foregroundStyle(theme.neutral500)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .frame(width: 88)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var photoThumb: some View {
         AsyncImage(url: photoURL) { phase in
             switch phase {
             case .success(let image):
@@ -358,90 +449,32 @@ struct PumpPostCard: View {
                     }
             }
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: 300)
-        .clipped()
+        .frame(width: 88, height: 88)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
     }
 
-    private var summaryBlock: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            // Line 4 — the lifter's one pick. Bold body text, no glyph and no
-            // colour: the set rows below already carry a `PR` tag in accent,
-            // and a second accent on the same card would be two.
-            if let highlight = post.highlight {
-                Text(HighlightText.line(highlight, unit: unit))
-                    .font(GSFont.bold(13, relativeTo: .subheadline))
-                    .foregroundStyle(theme.text)
-                    .lineLimit(2)
-            }
-
+    /// One line per exercise, every number kept — the full per-set rows live
+    /// in `WorkoutMetricsSheet`, behind the photo.
+    ///
+    /// The `PR` tag here is NEUTRAL, not accent. The shipped card spent accent
+    /// on it and again on a reaction of your own, which is two (design rule 2);
+    /// a finished post is none of accent's jobs, and the word says it anyway.
+    private var collapsedRows: some View {
+        VStack(alignment: .leading, spacing: 6) {
             ForEach(Array(post.summary.exercises.enumerated()), id: \.offset) { _, exercise in
-                exerciseRow(exercise)
-            }
-
-            // Line 5 — `Push day · 42 min · 7,240 lb`. The routine name is
-            // dropped rather than replaced for a freeform session; "Workout ·
-            // 42 min" names nothing.
-            HStack(spacing: 6) {
-                let minutes = max(1, post.summary.durationSeconds / 60)
-                if let routineName = post.summary.routineName, !routineName.isEmpty {
-                    Text(routineName)
-                    Text("·")
-                }
-                Text("\(minutes) min")
-                Text("·")
-                Text("\(StatMath.compactNumber(Units.fromPounds(post.summary.totalVolumeLbs, to: unit))) \(unit.label)")
-                if post.includesHR, let avg = post.avgBpm, let maxBpm = post.maxBpm {
-                    Text("·")
-                    Text("avg \(avg) · max \(maxBpm) bpm")
-                }
-                Spacer(minLength: 0)
-            }
-            .font(GSFont.body(11.5, relativeTo: .caption))
-            .foregroundStyle(theme.neutral500)
-        }
-    }
-
-    private func exerciseRow(_ exercise: PostSummary.ExerciseEntry) -> some View {
-        // Spec decision 4: one mini bar per BARBELL exercise, its top set.
-        let topWeight = exercise.sets.compactMap { $0.isFailed ? nil : $0.weightLbs }.max()
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 10) {
-                Text(exercise.name)
-                    .font(GSFont.bold(13.5, relativeTo: .subheadline))
-                    .foregroundStyle(theme.text)
-                    .lineLimit(1)
-                Spacer(minLength: 8)
-                if exercise.equipment == "barbell", let topWeight {
-                    GSBarLoaderMini(
-                        target: Units.fromPounds(topWeight, to: unit),
-                        barWeight: unit.defaultBar,
-                        plates: unit.standardPlates,
-                        unit: unit)
-                }
-            }
-            ForEach(Array(exercise.sets.enumerated()), id: \.offset) { index, set in
-                HStack(spacing: 6) {
-                    Text("Set \(index + 1)")
-                        .font(GSFont.body(11, relativeTo: .caption2))
-                        .foregroundStyle(theme.neutral500)
-                        .frame(width: 40, alignment: .leading)
-                    Text(setText(set))
+                HStack(spacing: 8) {
+                    Text(PumpCardCollapse.line(for: exercise, unit: unit))
                         .font(GSFont.bodyMedium(12.5, relativeTo: .caption).monospacedDigit())
                         .foregroundStyle(theme.text)
-                    if set.isPR { GSTag(text: "PR", style: .accent) }
-                    if set.isFailed { GSTag(text: "FAIL", style: .neutral) }
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                    if PumpCardCollapse.hasPR(exercise) {
+                        GSTag(text: "PR", style: .neutral)
+                    }
                     Spacer(minLength: 0)
                 }
             }
         }
-    }
-
-    private func setText(_ set: PostSummary.ExerciseEntry.SetEntry) -> String {
-        let weight = set.weightLbs.map {
-            Units.format(pounds: $0, unit: unit, rounded: false, includeUnit: false)
-        } ?? "—"
-        return "\(weight) × \(set.reps.map(String.init) ?? "—")"
     }
 
     private var reactionsRow: some View {
@@ -476,4 +509,93 @@ struct PumpPostCard: View {
             Spacer(minLength: 0)
         }
     }
+}
+
+// MARK: - Line 5, in both places it is printed
+
+/// `Push day · 42 min · 7,240 lb · avg 142 · max 171 bpm` — spec §1 line 5,
+/// unchanged in content, spelling and type from the composition it was lifted
+/// out of. The routine name is dropped rather than replaced for a freeform
+/// session; "Workout · 42 min" names nothing.
+///
+/// A VIEW rather than two copies: the card prints it and so does
+/// `WorkoutMetricsSheet`, and one line of facts printed twice from two
+/// spellings is how they drift apart.
+struct PumpPlainTerms: View {
+    let post: WorkoutPost
+    let unit: WeightUnit
+
+    @Environment(\.gsTheme) private var theme
+
+    var body: some View {
+        HStack(spacing: 6) {
+            let minutes = max(1, post.summary.durationSeconds / 60)
+            if let routineName = post.summary.routineName, !routineName.isEmpty {
+                Text(routineName)
+                Text("·")
+            }
+            Text("\(minutes) min")
+            Text("·")
+            Text("\(StatMath.compactNumber(Units.fromPounds(post.summary.totalVolumeLbs, to: unit))) \(unit.label)")
+            if post.includesHR, let avg = post.avgBpm, let maxBpm = post.maxBpm {
+                Text("·")
+                Text("avg \(avg) · max \(maxBpm) bpm")
+            }
+            Spacer(minLength: 0)
+        }
+        .font(GSFont.body(11.5, relativeTo: .caption))
+        .foregroundStyle(theme.neutral500)
+    }
+}
+
+// MARK: - The collapse, pure
+
+/// Spec §5's third move: the per-set rows on the feed card become one line per
+/// exercise. Pure over `PostSummary` and the viewer's unit, so the wording is
+/// testable and identical everywhere it is printed.
+enum PumpCardCollapse {
+
+    /// `Back Squat · 2 × 235 lbs` — the exercise, how many sets it took, and
+    /// the heaviest bar that was not failed.
+    ///
+    /// The COUNT is every set, failed ones included: the lifter did them. The
+    /// WEIGHT excludes failed sets, exactly as the full rows' top-set bar
+    /// loader does — a bar you did not lift is not your top set.
+    ///
+    /// An entry with no weight at all (bodyweight, cardio) falls back to its
+    /// best rep count — `Walking Lunge · 1 × 20` — and one with neither to a
+    /// bare set count, because a line that printed `— × —` says nothing.
+    static func line(for exercise: PostSummary.ExerciseEntry, unit: WeightUnit) -> String {
+        let count = exercise.sets.count
+        let topWeight = exercise.sets.compactMap { $0.isFailed ? nil : $0.weightLbs }.max()
+        if let topWeight {
+            let weight = Units.format(pounds: topWeight, unit: unit,
+                                      rounded: false, includeUnit: true)
+            return "\(exercise.name) · \(count) × \(weight)"
+        }
+        let topReps = exercise.sets.compactMap { $0.isFailed ? nil : $0.reps }.max()
+        if let topReps {
+            return "\(exercise.name) · \(count) × \(topReps)"
+        }
+        return "\(exercise.name) · \(count) \(count == 1 ? "set" : "sets")"
+    }
+
+    /// Whether the collapsed line earns a `PR` tag beside it. A PR on a FAILED
+    /// set is not a record — the same rule the weight above obeys.
+    static func hasPR(_ exercise: PostSummary.ExerciseEntry) -> Bool {
+        exercise.sets.contains(where: { $0.isPR && !$0.isFailed })
+    }
+
+    /// The island's detail line: what kind of thing the lifter picked, in
+    /// words, under the highlight itself.
+    static func note(for highlight: PostHighlight) -> String {
+        switch highlight.kind {
+        case .pr:        return "a personal record"
+        case .topSet:    return "the day's top set"
+        case .milestone: return "a milestone"
+        }
+    }
+
+    /// The caption under the 88 pt thumbnail. The tile is a door and it says so.
+    static let photoCaption = "Tap for the full workout"
 }
