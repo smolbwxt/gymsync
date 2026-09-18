@@ -445,7 +445,12 @@ jobs:
           # session-round-spotter 139, session-together-clock 140, session-freestyle-rail 141) and TEN
           # design-round frames out (112-117, 123, 124, 126, 128): 134 -> 130. The -4 is the invariant;
           # app-lobby, app-tab-you and app-pump-feed-post change content, not count.
-          FLOOR=130
+          # Phase B2 (2026-09-18, 2026-09-18-group-session-phase-b2-plan.md I1): session-swap-consent 142,
+          # session-scale-down 143, session-warmup-suggestion 144, session-your-turn 145 in;
+          # swap-consensus-card 118, pump-check-card-v2 119, swap-consensus-card-v2 125 out (the Variations
+          # folder with them); pump-feed-post keeps its capture and gains frame 146; 41/69/70 renumbered
+          # 147-150 (no capture change): 130 -> 131.
+          FLOOR=131
           # `|| true` + the `:-0` default for the same `set -eo pipefail`
           # reason as the simulator picker above: a missing $SCREENS makes
           # `find` exit 1, which would kill the step before it printed the
