@@ -224,6 +224,16 @@ struct TogetherClockView: View {
 
     var dockNames: [String] = []
     var voice: VoiceFoot = VoiceFoot()
+    /// The reps/weight/RPE entry, mounted directly above the LOG button
+    /// below (fix round 4 / finding 1, ruling R-B21). Fix round 3 gave
+    /// Together the button; nothing gave it anything to enter reps INTO, so
+    /// the button rendered permanently disabled — the same hole one style
+    /// wider. `SessionLiveView` hands in the SAME `turnEntryCard` the
+    /// my-turn page mounts, type-erased since this view takes no generic
+    /// content parameter elsewhere — one view, one code path, regardless of
+    /// which of the three styles is on screen. `nil` in the catalog and
+    /// tests, which draw the clock alone.
+    var entryCard: AnyView? = nil
     /// The live log control (fix round 3 / F6, ruling R-B17). Together has
     /// no turn to gate it on — `logControlIsMine` reads true for every
     /// participant here — so every lifter needs the SAME button
@@ -240,6 +250,9 @@ struct TogetherClockView: View {
             timelineCard
         } foot: {
             VoiceNotices(foot: voice)
+            if let entryCard {
+                entryCard
+            }
             LogControlButton(
                 title: logControl.title,
                 readback: logControl.readback,
