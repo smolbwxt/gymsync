@@ -65,11 +65,16 @@ final class ScreenshotTests: XCTestCase {
     /// the class — a missing "Home" button here should cost nothing, because
     /// every test still runs its own `launchApp()` + `waitForTabBar()` gate
     /// regardless — so it does not share `launchApp()`'s hard `XCTFail` on
-    /// missing credentials. Same launch arguments and environment as
-    /// `launchApp()` — both now built by the shared `applyLaunchDefaults(to:)`
-    /// below (plan task S9, docket item N5); this override adds nothing of
-    /// its own beyond that shared call, so `launchApp()`'s existing 19 call
-    /// sites stay untouched.
+    /// missing credentials. Same launch ARGUMENTS as `launchApp()` — both now
+    /// built by the shared `applyLaunchDefaults(to:)` below (plan task S9,
+    /// docket item N5) — but the credential ENVIRONMENT forwarding stays
+    /// written out here rather than shared: this warm-up forwards
+    /// `UITEST_EMAIL`/`UITEST_PASSWORD` unconditionally, empty string
+    /// included, and never fails on them (a credential-less run just never
+    /// sees "Home" and the timeout log below says so); `launchApp()`'s guard
+    /// below is the opposite on purpose. This override adds nothing of its
+    /// own beyond the shared call plus that forwarding, so `launchApp()`'s
+    /// existing 19 call sites stay untouched.
     ///
     /// `launchTimeout` (60s, above) is UNCHANGED for the tests themselves —
     /// this warm-up's own budget is a separate, more generous 120s, spent
@@ -78,6 +83,10 @@ final class ScreenshotTests: XCTestCase {
         super.setUp()
         let app = XCUIApplication()
         applyLaunchDefaults(to: app)
+        var env = app.launchEnvironment
+        env["UITEST_EMAIL"] = ProcessInfo.processInfo.environment["UITEST_EMAIL"] ?? ""
+        env["UITEST_PASSWORD"] = ProcessInfo.processInfo.environment["UITEST_PASSWORD"] ?? ""
+        app.launchEnvironment = env
         app.launch()
 
         let warmUpTimeout: TimeInterval = 120
@@ -108,13 +117,15 @@ final class ScreenshotTests: XCTestCase {
     // MARK: - Launch
 
     /// The launch-argument pins (walkthrough seen, guidance tips off, the
-    /// onyx/sky palette) and the `UITEST_EMAIL`/`UITEST_PASSWORD` environment
-    /// forwarding every launch in this file needs — factored out of
+    /// onyx/sky palette) every launch in this file needs — factored out of
     /// `launchApp()` (plan task S9, docket item N5) so its 19 call sites and
-    /// the class-level warm-up above share one spelling of both. Values are
-    /// forwarded as-is, empty string included: turning an empty credential
-    /// into a failure is `launchApp()`'s own job below, and the warm-up must
-    /// never fail the class at all, so neither belongs here.
+    /// the class-level warm-up above share one spelling. The
+    /// `UITEST_EMAIL`/`UITEST_PASSWORD` environment forwarding is NOT shared
+    /// here on purpose: `launchApp()` must fail fast and withhold both keys
+    /// on an empty credential, while the class-level warm-up above must
+    /// forward them unconditionally and never fail — two incompatible
+    /// policies for the one thing they'd otherwise share, so each call site
+    /// keeps its own copy of that part.
     private static func applyLaunchDefaults(to app: XCUIApplication) {
         // Suppress the first-run walkthrough cover: RootView presents it when
         // OneShotFlags.walkthroughSeen(userID:) is false, and a fresh CI
@@ -151,20 +162,18 @@ final class ScreenshotTests: XCTestCase {
         // (which DOES `@testable import GymSync`) asserts these key strings so
         // a rename can't silently orphan them.
         app.launchArguments += ["-gsPalette", "onyx", "-gsAccent", "sky"]
-        // Sourced from the UI test *process's* environment — CI's
-        // `xcodebuild test` step sets these via `env:`, which XCTest inherits
-        // into ProcessInfo.processInfo.environment on the Mac running the
-        // test bundle. We must explicitly forward them into
-        // `launchEnvironment` for the simulated app process to see them.
-        var env = app.launchEnvironment
-        env["UITEST_EMAIL"] = ProcessInfo.processInfo.environment["UITEST_EMAIL"] ?? ""
-        env["UITEST_PASSWORD"] = ProcessInfo.processInfo.environment["UITEST_PASSWORD"] ?? ""
-        app.launchEnvironment = env
     }
 
     private func launchApp() -> XCUIApplication {
         let app = XCUIApplication()
         Self.applyLaunchDefaults(to: app)
+        var env = app.launchEnvironment
+        // Sourced from the UI test *process's* environment — CI's
+        // `xcodebuild test` step sets these via `env:`, which XCTest inherits
+        // into ProcessInfo.processInfo.environment on the Mac running the
+        // test bundle. We must explicitly forward them into
+        // `launchEnvironment` for the simulated app process to see them.
+        //
         // Fail FAST on missing/empty credentials: on fork PRs GitHub resolves
         // secrets to empty strings (not unset), which would otherwise send
         // every test into a doomed 60s wait at the sign-in screen.
@@ -172,7 +181,11 @@ final class ScreenshotTests: XCTestCase {
         let password = ProcessInfo.processInfo.environment["UITEST_PASSWORD"] ?? ""
         if email.isEmpty || password.isEmpty {
             XCTFail("UITEST_EMAIL/UITEST_PASSWORD not set or empty — repo secrets unavailable (fork PR?); screenshots require them")
+        } else {
+            env["UITEST_EMAIL"] = email
+            env["UITEST_PASSWORD"] = password
         }
+        app.launchEnvironment = env
         app.launch()
         return app
     }

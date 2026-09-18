@@ -175,15 +175,6 @@ enum WeekMath {
                       parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }
 
-    /// The inverse of `weekStartString(_:)`: midnight, in `calendar`'s
-    /// timezone, of the day that string names.
-    ///
-    /// Parsed from the digits rather than through a `DateFormatter`, for the
-    /// same reason the formatting side is built from components — no locale,
-    /// no calendar and no caching question between the DATE column and the
-    /// day it means. nil for anything that is not `yyyy-MM-dd`, which is a
-    /// value this app never writes but a hand-typed one might be.
-    ///
     /// The device-local week start as an ISO-8601 INSTANT, with its offset —
     /// what `crew_week(p_session_id, p_week_start timestamptz)` (ruling
     /// R-B2-16, plan task S7) needs, and NOT `weekStartString(_:)`'s
@@ -202,6 +193,15 @@ enum WeekMath {
         return formatter.string(from: startOfWeek(date, calendar: calendar))
     }
 
+    /// The inverse of `weekStartString(_:)`: midnight, in `calendar`'s
+    /// timezone, of the day that string names.
+    ///
+    /// Parsed from the digits rather than through a `DateFormatter`, for the
+    /// same reason the formatting side is built from components — no locale,
+    /// no calendar and no caching question between the DATE column and the
+    /// day it means. nil for anything that is not `yyyy-MM-dd`, which is a
+    /// value this app never writes but a hand-typed one might be.
+    ///
     /// `detect(weekStart:)` is why this exists (final review finding 3): a
     /// week's goal must be derived from THAT week's routines, and the only
     /// thing the caller has is the row key.

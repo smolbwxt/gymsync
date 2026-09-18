@@ -1400,6 +1400,12 @@ struct CatalogHostView: View {
         ],
         routineName: "Push day")
 
+    /// Fixture clock anchor for `content_pumpFeedPost`'s injected `now:`
+    /// (S5-S8 review finding 4, closed leg 3) — one hour after the friend's
+    /// post, two after mine, so the relative-time strings don't drift with
+    /// the calendar.
+    private static let pumpFixtureNow = pumpFixturePostedAt(hour: 19)
+
     /// `pump-feed-post`: two feed cards from a world that HAS a block — a
     /// friend's photo post carrying the full trajectory snapshot (signed-URL
     /// fetch fails in the harness, so the photo block shows its honest
@@ -1423,8 +1429,6 @@ struct CatalogHostView: View {
     /// after mine — and "1 hour ago" / "2 hours ago" no longer grow with the
     /// calendar. Production passes nothing (`now` defaults to `Date()`),
     /// unchanged.
-    private static let pumpFixtureNow = pumpFixturePostedAt(hour: 19)
-
     private var content_pumpFeedPost: some View {
         let friendPostedAt = Self.pumpFixturePostedAt(hour: 18)
         let myPostedAt = Self.pumpFixturePostedAt(hour: 17)
