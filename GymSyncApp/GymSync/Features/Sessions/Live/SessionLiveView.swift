@@ -208,7 +208,9 @@ struct SessionLiveView: View {
     /// Canvas Completion Task 4 fix round 1 (proof p31-errors, "Set didn't
     /// save"): dedicated to `logSetAndAdvance`'s failure only — deliberately
     /// separate from the generic `errorText` above (which stays the small
-    /// red caption for skipTurn/endSession/penalty-log failures, unchanged).
+    /// red caption for the crew skip / endSession / penalty-log failures —
+    /// `skipTurn()`, the organizer's old one-lifter skip, was swept in fix
+    /// round 5 with the rest of finding 4's orphans).
     /// Cleared optimistically at the start of every `logSetAndAdvance` call.
     @State private var logSetErrorText: String?
     /// Phase O Task 3 fix wave 1 (reviewer Finding 1): set when the most
@@ -526,34 +528,14 @@ struct SessionLiveView: View {
         return effectiveRoutineExercises.first(where: { $0.exerciseID == ex.id })
     }
 
-    private var targetSetsPerLifter: Int { currentRoutineExercise?.targetSets ?? 1 }
-
-    /// The set number about to be logged by whoever currently holds the turn — doubles as
-    /// the "Round N" figure on the roster header (one set per lifter per round).
-    private var currentTurnSetNumber: Int {
-        guard let turnID = liveSession.currentTurnUserID, let ex = currentExerciseForSheet else { return 1 }
-        return setCount(userID: turnID, exerciseID: ex.id) + 1
-    }
-
-    // Units sweep: stored weights (and the routine's free-text target, which
-    // carries canonical-lbs digits) render in the user's unit. Exact
+    // Units sweep: stored weights render in the user's unit. Exact
     // conversion, no plate snapping — these echo what was/should be lifted.
+    // (`targetWeightText`, the free-text-target sibling this block used to
+    // carry, went with `currentExerciseTargetText` in the fix-round-5 sweep
+    // below — it had no other caller.)
     private func weightText(_ pounds: Decimal) -> String {
         Units.format(pounds: pounds, unit: ThemeStore.shared.weightUnit,
                      rounded: false, includeUnit: false)
-    }
-
-    /// "185" → "84.09" for a kg user; non-numeric target strings pass
-    /// through untouched (they were never weights to begin with).
-    private func targetWeightText(_ target: String?) -> String {
-        guard let target else { return "—" }
-        guard let parsed = Decimal(string: target) else { return target }
-        return weightText(parsed)
-    }
-
-    private var currentExerciseTargetText: String? {
-        guard let re = currentRoutineExercise, re.targetReps != nil || re.targetWeight != nil else { return nil }
-        return "target \(targetWeightText(re.targetWeight)) × \(re.targetReps ?? "—")"
     }
 
     private func hasLoggedCurrentExercise(_ userID: UUID) -> Bool {
@@ -561,12 +543,17 @@ struct SessionLiveView: View {
         return allSessionSets.contains { $0.userID == userID && $0.exerciseID == ex.id && !$0.isPenalty }
     }
 
-    private func lastSetForCurrentExercise(_ userID: UUID) -> SetLog? {
-        guard let ex = currentExerciseForSheet else { return nil }
-        return allSessionSets
-            .filter { $0.userID == userID && $0.exerciseID == ex.id && !$0.isPenalty }
-            .max(by: { $0.loggedAt < $1.loggedAt })
-    }
+    // Retired by the fix-round-5 sweep (final review, finding 4): the pages
+    // that read them left with plan task S4's spectate/roster strip, and plan
+    // task S13's own sweep inherited an incomplete list. All had exactly one
+    // occurrence left in the app — their own declaration — and Swift does not
+    // warn on an unused private member, so nothing but a grep would have said
+    // so. `targetSetsPerLifter`, `currentTurnSetNumber` (the old roster
+    // header's "Round N"), `currentExerciseTargetText` + `targetWeightText`,
+    // `lastSetForCurrentExercise`, `turnTunerStep` and `skipTurn()` — the
+    // organizer's old skip, superseded by `skipHeldLifter()` and the crew's
+    // own line (R-B13). The round's figure now comes from `liveSession.round`,
+    // the server's own count.
 
     private func lastSetAnyExercise(_ userID: UUID) -> SetLog? {
         allSessionSets
@@ -670,13 +657,6 @@ struct SessionLiveView: View {
     /// Owner item 7: latest logged body weight (canonical lbs), stamped
     /// onto bodyweight-exercise sets. Fetched once in reload's task.
     @State private var turnLatestBodyWeightLbs: Decimal?
-
-    /// Equipment-aware tuner step for the inline log card (owner
-    /// 2026-08-14: machines move a whole peg).
-    private var turnTunerStep: Double {
-        NSDecimalNumber(decimal: Units.tunerStep(
-            unit: .lbs, equipment: currentExerciseForSheet?.equipment)).doubleValue
-    }
 
     /// Mirror of the solo captureRestDrop — called before every path that
     /// clears `selfRotationRestUntil`; no-op without a window or HR data.
@@ -4582,17 +4562,6 @@ struct SessionLiveView: View {
             if feedSets.count > 30 { feedSets = Array(feedSets.prefix(30)) }
             allSessionSets.append(log)
             if isPenalty && !isFailed { penaltyLogged += reps ?? 0 }
-        } catch {
-            errorText = error.localizedDescription
-        }
-    }
-
-    @MainActor
-    private func skipTurn() async {
-        do {
-            try await SessionRepository.advanceTurn(sessionID: session.id)
-        } catch let error as GymSyncError {
-            errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription
         }
