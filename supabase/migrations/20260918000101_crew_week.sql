@@ -1,5 +1,8 @@
 -- 20260918000101_crew_week.sql
 --
+-- APPLIED LIVE 2026-09-18 18:45:31 UTC (schema_migrations version
+-- 20260918184531).
+--
 -- Spec §6 and owner decision 21 (Phase B2 brief, decisions 1-2). The crew's
 -- weekly consistency strip needs one cross-member read: per participant of
 -- a session, this week's goal and how many sessions they have completed.

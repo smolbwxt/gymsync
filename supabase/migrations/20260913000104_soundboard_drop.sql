@@ -1,5 +1,8 @@
 -- 20260913000104_soundboard_drop.sql
 --
+-- APPLIED LIVE 2026-09-18 18:46:12 UTC (schema_migrations version
+-- 20260918184612).
+--
 -- IRREVERSIBLE. Spec: docs/superpowers/specs/2026-09-12-group-session-and-
 -- lobby-design.md (owner decisions 8 and 14 -- the throwables are tabled
 -- indefinitely). Plan: docs/superpowers/plans/2026-09-13-group-session-
