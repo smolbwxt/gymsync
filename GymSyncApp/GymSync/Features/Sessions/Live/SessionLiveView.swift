@@ -332,9 +332,11 @@ struct SessionLiveView: View {
     /// rather than a shared constant since neither view currently has a
     /// common home for session-state helpers, and this codebase has no
     /// existing precedent of factoring session-state string sets out of
-    /// individual views.
+    /// individual views. `editing`/`voting`/`locked` narrowed out (D7's
+    /// five-state CHECK, mechanical cleanup decision 6, plan task S13): the
+    /// states no longer exist.
     private static let voiceEligibleStates: Set<String> = [
-        "lobby_open", "editing", "voting", "locked", "in_progress"
+        "lobby_open", "in_progress"
     ]
 
     private var isVoiceEligible: Bool {

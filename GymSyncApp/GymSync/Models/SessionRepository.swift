@@ -474,7 +474,10 @@ enum SessionRepository {
                 .from("sessions")
                 .select("*, session_participants!inner(user_id)")
                 .eq("session_participants.user_id", value: userID.uuidString)
-                .in("state", values: ["scheduled", "lobby_open", "editing", "voting", "locked"])
+                // `editing`/`voting`/`locked` narrowed out (D7's five-state
+                // CHECK, mechanical cleanup decision 6, plan task S13): the
+                // states no longer exist, so a row can no longer carry one.
+                .in("state", values: ["scheduled", "lobby_open"])
                 .gte("scheduled_for", value: ISO8601DateFormatter().string(from: floor))
                 .order("scheduled_for", ascending: true)
                 .limit(limit)

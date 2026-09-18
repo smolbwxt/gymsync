@@ -42,7 +42,10 @@ enum SentryContext {
 
         init(rawState: String?) {
             switch rawState {
-            case "scheduled", "lobby_open", "editing", "voting", "locked":
+            // `editing`/`voting`/`locked` narrowed out (D7's five-state
+            // CHECK, mechanical cleanup decision 6, plan task S13): the
+            // states no longer exist.
+            case "scheduled", "lobby_open":
                 self = .scheduled
             case "in_progress":
                 self = .live
