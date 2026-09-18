@@ -440,7 +440,12 @@ jobs:
           # Phase A (2026-09-13): seven production session frames in (129-135, the seventh being
           # the lobby's second screen with THE CREW'S WEEK on trial), ten design-round variation
           # frames out (106-111, 120-122, 127): 137 -> 134.
-          FLOOR=134
+          # Phase B1 (2026-09-13, 2026-09-13-group-session-phase-b-plan.md I1): six production
+          # session frames in (session-style-choice 136, session-round-wait 137, session-round-skip 138,
+          # session-round-spotter 139, session-together-clock 140, session-freestyle-rail 141) and TEN
+          # design-round frames out (112-117, 123, 124, 126, 128): 134 -> 130. The -4 is the invariant;
+          # app-lobby, app-tab-you and app-pump-feed-post change content, not count.
+          FLOOR=130
           # `|| true` + the `:-0` default for the same `set -eo pipefail`
           # reason as the simulator picker above: a missing $SCREENS makes
           # `find` exit 1, which would kill the step before it printed the
