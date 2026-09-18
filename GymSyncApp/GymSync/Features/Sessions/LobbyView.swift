@@ -627,6 +627,18 @@ struct LobbyView: View {
         // lands in `currentSession` and the onChange above completes the
         // handoff. The realtime echo remains the fast path.
         .task(id: currentSession?.state ?? session.state) {
+            #if DEBUG
+            // GLOBAL CONSTRAINT 11, the same guard `openAndLoad`, `reload`,
+            // `publishOwnStage`, `applyStyleDefaultIfNeeded` and `pickStyle`
+            // carry — this poll was the one entry point in this file without
+            // it (final review, finding 5). `LobbyFixtures.waiting`'s session
+            // is `lobby_open`, which is IN the pre-live set below, so every
+            // lobby frame was firing `SessionRepository.session(id:)` at a
+            // fixture UUID every five seconds for as long as the capture ran
+            // — Phase A's N3 defect, and now across five frames rather than
+            // four (`session-style-choice` joined them).
+            if catalog != nil { return }
+            #endif
             // `editing`/`voting`/`locked` narrowed out (D7's five-state
             // CHECK, mechanical cleanup decision 6, plan task S13).
             let preLive: Set<String> = ["scheduled", "lobby_open"]
