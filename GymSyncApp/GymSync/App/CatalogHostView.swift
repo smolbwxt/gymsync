@@ -1429,9 +1429,10 @@ struct CatalogHostView: View {
                         weekStartString: "2026-09-06"),
                     author: nil, isMine: false,
                     myReactions: ["🔥"],
-                    reactionCounts: ["🔥": 3, "💪": 1, "snd:airhorn": 2],
-                    ownedSoundSlugs: ["airhorn"],
-                    soundNames: ["airhorn": "Airhorn"],
+                    // Sound reactions left the app (plan task S12); the
+                    // fixture no longer carries a `snd:` row to prove they
+                    // are gone — emoji only, always.
+                    reactionCounts: ["🔥": 3, "💪": 1],
                     onReact: { _ in }, onDelete: {}, onReport: {})
                 PumpPostCard(
                     post: WorkoutPost(
@@ -1453,8 +1454,6 @@ struct CatalogHostView: View {
                     author: nil, isMine: true,
                     myReactions: [],
                     reactionCounts: [:],
-                    ownedSoundSlugs: [],
-                    soundNames: [:],
                     onReact: { _ in }, onDelete: {}, onReport: {})
             }
             .padding(16)
