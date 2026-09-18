@@ -194,8 +194,9 @@ struct TogetherLane: Identifiable, Equatable {
 /// Before fix round 3, Together had no log control at all; F6 mounted the
 /// SAME `LogControlButton` `turnChrome` draws, which meant the screen briefly
 /// carried two accent faces — the ring and the button — the same tension the
-/// round wait's ring/`SkipOfferLine` pair raised (review finding 7). Ruling
-/// R-B18 settles it the way that one was settled: one accent, not two. The
+/// round wait's ring/`SkipOfferLine` pair raised (review finding 7, settled
+/// the same way in fix round 5: the line went ink, the ring kept the accent).
+/// Ruling R-B18 settles this one: one accent, not two. The
 /// ring's colour is the only thing that moved; its geometry, its progress
 /// math and the button beneath it are unchanged.
 struct TogetherClockView: View {

@@ -500,11 +500,20 @@ struct SkipOffer: Equatable {
 
 /// ONE QUIET LINE, NEVER A DIALOG (spec §9a). Nothing happens on its own.
 ///
-/// Accent INK on a `surface` strip with an accent hairline — an invitation,
-/// not a filled slab, which would read as the crew's next step rather than as
-/// an option. It is the round wait's second accent-bearing element and the
-/// only one on screen when it shows, because at the threshold the ring on the
-/// held lifter and this line are the same fact.
+/// INK on a `surface` strip with a `neutral700` hairline — an invitation, not
+/// a filled slab, which would read as the crew's next step rather than as an
+/// option.
+///
+/// NO ACCENT (fix round 5, final review finding 7; design rule 2). This line
+/// used to paint an accent hairline AND accent ink, which made it the round
+/// wait's SECOND accent-bearing element beside `StationCard`'s turn ring —
+/// and the old justification, that at the threshold the ring and this line
+/// are the same fact, is false with two racks: the global turn can sit on a
+/// lifter this line does not name, which is exactly the configuration plan
+/// task S3 exists to create. The ring keeps the accent because the turn is
+/// the round wait's primary; the skip is an option about it, drawn in ink,
+/// and it still leads with the glyph and the largest type in the strip so
+/// nothing about its weight on the page changes.
 ///
 /// ALWAYS TAPPABLE, BY ANY CREWMATE (ruling R-B13, fix-forward
 /// `20260913000107`, applied live). Spec §9a's own rule, finally true:
@@ -524,7 +533,7 @@ struct SkipOfferLine: View {
             lines
                 .roundStrip()
                 .overlay(RoundedRectangle(cornerRadius: 14)
-                    .strokeBorder(theme.accent, lineWidth: 1))
+                    .strokeBorder(theme.neutral700, lineWidth: 1))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -541,7 +550,7 @@ struct SkipOfferLine: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(theme.accent)
+            .foregroundStyle(theme.text)
 
             Text(RoundCopy.skipWaited(waited: offer.waited, threshold: offer.threshold))
                 .font(GSFont.body(11.5, relativeTo: .caption2))
