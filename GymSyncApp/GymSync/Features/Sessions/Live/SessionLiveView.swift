@@ -39,9 +39,12 @@ import UIKit
 //     `logControlIsMine`, not `isMyTurn`, is what every prefill call site
 //     gates on now, so the same fix reaches all three styles at once.
 //   • Chess clock: Text(_, style: .timer), state-driven from currentTurnStartedAt — never
-//     a Swift Timer. Advance-turn flow (priorMax-before-logSet ordering, fire-and-forget
-//     PR record, advanceTurn call) is UNCHANGED — only the caller moved from a sheet's
-//     onLog closure to the inline card's commit action.
+//     a Swift Timer. The log flow keeps its priorMax-before-logSet ordering
+//     and its fire-and-forget PR record; what follows the insert is now the
+//     STYLE'S answer, not one fixed call (`LogFollowUp.calls(for:)`, ruling
+//     R-B22): Rounds advances the turn and then offers to close the round,
+//     Together and Freestyle run neither, and a follow-up that fails never
+//     takes the saved set's entry card back down.
 //   • Burpee debt: `burpeeDebtStrip`, a compact accent-fill strip above
 //     `turnChrome`'s CTA — "YOU OWE N BURPEES" + LOG THEM, opens
 //     `LogSetSheet` for penalty-only logging. The full-page penalty banner
@@ -218,6 +221,15 @@ struct SessionLiveView: View {
     /// two different meanings. Cleared optimistically at the start of every
     /// `logSetAndAdvance` call, same convention as `logSetErrorText`.
     @State private var didQueueSetOffline = false
+    /// A FOLLOW-UP THAT FAILED ON AN ALREADY-SAVED SET (ruling R-B22) —
+    /// `advance_turn` / `advance_round` after the insert landed. Deliberately
+    /// NOT `logSetErrorText`: that one means "nothing was saved, try again"
+    /// and holds the entry card up for the retry, which is the one thing a
+    /// persisted set must never invite. This is a one-line note, it never
+    /// blocks anything, and it clears itself (`noteLogFollowUpFailure`) — the
+    /// set is safe, the rotation or the round will be nudged on by the next
+    /// lifter's own call, and there is nothing for this lifter to do.
+    @State private var logFollowUpNote: String?
     /// THE CREW'S READINGS PER INTERVAL (plan task S9). Session-local,
     /// bounded and it dies with this view -- `RecoveryBuffer`'s own category,
     /// which is what spec §6's "no new store" blesses. Filled by
@@ -1614,6 +1626,29 @@ struct SessionLiveView: View {
 
             Color.clear.frame(height: 6)
             RPESwipeTrack(value: $logRPE, isFailed: $logIsFailed, theme: theme)
+
+            // THE LOG PATH'S ONE LINE (ruling R-B22). Two states, one line,
+            // because they are mutually exclusive by construction: a failed
+            // INSERT sets `logSetErrorText` and holds this card up for the
+            // retry; a failed FOLLOW-UP on an already-saved set sets
+            // `logFollowUpNote`, which clears itself and blocks nothing. Both
+            // were write-only until now — plan task S4 deleted
+            // `legacyBottomChrome`, which was where the banner used to render,
+            // so a lifter whose set genuinely failed to save was told nothing
+            // at all. This card is the one surface every style's log path
+            // mounts (`myTurnFixedPage`, and Together/Freestyle through
+            // `entryCard:`), so it is where the line belongs.
+            if let line = logSetErrorText ?? logFollowUpNote {
+                Color.clear.frame(height: 6)
+                Text(line.uppercased())
+                    .font(GSFont.bold(11, relativeTo: .caption2))
+                    .tracking(0.6)
+                    .foregroundStyle(logSetErrorText == nil ? theme.neutral700 : theme.text.opacity(0.82))
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.top, 12)
@@ -2559,9 +2594,20 @@ struct SessionLiveView: View {
         showPlateStack = false
     }
 
-    /// Commit the inline "LOG THIS SET" card — delegates to `logSetAndAdvance` UNCHANGED
-    /// (same priorMax-before-insert ordering, same PR pipeline, same advanceTurn call).
-    /// Only the caller changed (was a sheet's onLog closure).
+    /// Commit the inline "LOG THIS SET" card — delegates to `logSetAndAdvance`
+    /// (same priorMax-before-insert ordering, same PR pipeline). Only the
+    /// caller changed (was a sheet's onLog closure).
+    ///
+    /// THE INSERT IS THE TRANSACTION (ruling R-B22): `logSetAndAdvance`
+    /// answers `true` the moment the set is durably recorded, so everything
+    /// below — closing the loader, dismissing the keyboard, re-prefilling —
+    /// runs on every saved set in every style, whatever the follow-up RPCs
+    /// went on to return. `false` now means one thing only: nothing was
+    /// saved. That is what makes the retry this card offers honest, and it is
+    /// what closes the duplicate hazard the final review found (finding 1),
+    /// where a P0001 from `advance_turn` — raised at every Together and
+    /// Freestyle lifter who was not the turn holder — kept the card up over a
+    /// set that was already in the database.
     ///
     /// `isLoggingSet` guards against re-entrancy: the CTA stays tappable for the whole
     /// async round-trip otherwise, and a double-tap would double-insert the set and
@@ -2603,8 +2649,9 @@ struct SessionLiveView: View {
             // logging over the open loader looked like nothing happened) —
             // close the loader and keyboard so the my-turn page is reset when
             // the rotation returns, and let the turn advance flip the body to
-            // the round wait (plan task S6). Failure keeps everything up for a retry —
-            // it also must NOT enter the rest interlude below.
+            // the round wait (plan task S6). A set that never saved keeps
+            // everything up for a retry — it also must NOT enter the rest
+            // interlude below.
             withAnimation(.easeInOut(duration: 0.18)) { showBarLoader = false }
             UIApplication.shared.sendAction(
                 #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -4034,6 +4081,9 @@ struct SessionLiveView: View {
         // convention) so a retry that succeeds drops the banner immediately,
         // and a retry that fails re-sets it fresh below.
         logSetErrorText = nil
+        // Same convention for the follow-up note (ruling R-B22): a fresh
+        // attempt never shows the previous set's leftover.
+        logFollowUpNote = nil
         // Field report #20 instrumentation: failed-set sends reportedly
         // hang for seconds with no obvious synchronous culprit. Every
         // await on the critical path gets a millisecond stamp, tagged by
@@ -4158,9 +4208,18 @@ struct SessionLiveView: View {
                 // manually in the meantime, or a no-show is marked, the
                 // queued advance quietly does nothing instead of shoving the
                 // rotation forward a second time.
-                PendingTurnAdvanceStore.shared.record(
-                    sessionID: session.id,
-                    observedVersion: liveSession.turnVersion)
+                //
+                // ONLY IN A STYLE THAT HAS TURNS (ruling R-B22): a recorded
+                // advance is an `advance_turn` deferred, not a different call,
+                // so it answers to the same law as the online path below. A
+                // Together or Freestyle lifter who logged offline would
+                // otherwise have that replay fire on reconnect and raise
+                // P0001 against a rotation their style does not run.
+                if LogFollowUp.calls(for: style).contains(.advanceTurn) {
+                    PendingTurnAdvanceStore.shared.record(
+                        sessionID: session.id,
+                        observedVersion: liveSession.turnVersion)
+                }
                 didQueueSetOffline = true
             }
             // The set is durably recorded either way (server insert or offline
@@ -4213,24 +4272,65 @@ struct SessionLiveView: View {
                 }
             }
 
-            // Phase O Task 3 fix wave 1 (reviewer Finding 1) — skip advanceTurn
-            // entirely when this attempt queued offline; see the queuing
-            // branch's comment above for the full rationale. The normal
-            // ONLINE path is unaffected: `didQueueSetOffline` stays false, so
-            // advanceTurn still runs, and a genuine failure here (e.g. a real
-            // permanent error, or connectivity dropping between logSet and
-            // advanceTurn) still falls into the catch below and shows the
-            // existing retry banner exactly as before.
+            // Phase O Task 3 fix wave 1 (reviewer Finding 1) — skip the
+            // follow-ups entirely when this attempt queued offline; see the
+            // queuing branch's comment above for the full rationale. The
+            // normal ONLINE path is unaffected: `didQueueSetOffline` stays
+            // false, so the follow-ups below still run.
             guard !didQueueSetOffline else { stamp("TOTAL (offline)", tTotal); return true }
-            let tAdvance = Date()
-            try await SessionRepository.advanceTurn(sessionID: session.id)
-            stamp("advanceTurn", tAdvance)
+            // THE INSERT WAS THE TRANSACTION (ruling R-B22). Everything past
+            // this line is a follow-up on a set that is ALREADY IN THE
+            // DATABASE, so it gets its own `do` and can never reach the outer
+            // `catch` — which returns `false`, which `commitInlineLog` reads
+            // as "nothing was saved, keep the card up for a retry". That read
+            // was true when the only follow-up was `advance_turn` on a turn
+            // this lifter necessarily held; it became a duplicate-set factory
+            // the moment Together and Freestyle started logging (final review,
+            // finding 1), because `advance_turn` raises P0001 for every lifter
+            // who is neither the current turn holder nor the organizer.
+            // WHICH calls run is `LogFollowUp.calls(for:)`'s answer, not a
+            // condition spelled here (RoundPieces.swift, unit-tested).
+            do {
+                for call in LogFollowUp.calls(for: style) {
+                    switch call {
+                    case .advanceTurn:
+                        let tAdvance = Date()
+                        try await SessionRepository.advanceTurn(sessionID: session.id)
+                        stamp("advanceTurn", tAdvance)
+                        // A live advance settles any advance this device still
+                        // owed from an earlier offline set — the queued one
+                        // would no-op anyway (version guard), but dropping it
+                        // keeps the store honest rather than accumulating
+                        // entries that only ever fizzle.
+                        PendingTurnAdvanceStore.shared.clear(sessionID: session.id)
+                    case .advanceRound:
+                        // NEVER FORCED: `p_force` is the crew's skip line's own
+                        // escape (R-B13) and nothing else. Unforced, the server
+                        // returns the round unchanged unless every present
+                        // lifter has logged since the round opened — so this
+                        // call is a cheap OFFER to close, safe to repeat and
+                        // safe to lose, made by whoever happens to log last.
+                        let tRound = Date()
+                        let round = try await SessionRepository.advanceRound(
+                            sessionID: session.id, expectedRound: liveSession.round)
+                        stamp("advanceRound", tRound)
+                        // Lead the realtime echo with the round the server just
+                        // told us (`endSession`'s own idiom — see
+                        // `pushWatchSessionState`'s doc comment). ONLY the
+                        // round: `round_started_at` belongs to the same UPDATE
+                        // and arrives with it, and stamping a client `Date()`
+                        // in its place would hand every round-wait derivation a
+                        // window this device invented — exactly what
+                        // `RoundHold`'s "never from a view timer" law forbids.
+                        if round != liveSession.round { liveSession.round = round }
+                    }
+                }
+            } catch let error as GymSyncError {
+                noteLogFollowUpFailure(error.errorDescription)
+            } catch {
+                noteLogFollowUpFailure(error.localizedDescription)
+            }
             stamp("TOTAL", tTotal)
-            // A live advance settles any advance this device still owed from
-            // an earlier offline set — the queued one would no-op anyway
-            // (version guard), but dropping it keeps the store honest rather
-            // than accumulating entries that only ever fizzle.
-            PendingTurnAdvanceStore.shared.clear(sessionID: session.id)
             return true
         } catch let error as GymSyncError {
             // Upgraded treatment (Canvas Completion Task 4 fix round 1, proof
@@ -4242,6 +4342,28 @@ struct SessionLiveView: View {
         } catch {
             logSetErrorText = error.localizedDescription
             return false
+        }
+    }
+
+    /// Say once, quietly, that a follow-up on an already-saved set did not go
+    /// through (ruling R-B22), then take it back down.
+    ///
+    /// Auto-clearing because there is no action attached: the set is in the
+    /// database, and the turn or the round is moved on by the next lifter's
+    /// own call — a note that outlived its moment would just be a stuck
+    /// warning about something already fixed. The `==` re-check before
+    /// clearing is `selfRotationRestUntil`'s own idiom in this file: only the
+    /// note still on screen clears itself, so a newer one is never wiped by an
+    /// older one's timer.
+    @MainActor
+    private func noteLogFollowUpFailure(_ text: String?) {
+        guard let text else { return }
+        AppLogger.workout.warning(
+            "logSet follow-up failed on a persisted set (style \(style.rawValue, privacy: .public)): \(text, privacy: .public)")
+        logFollowUpNote = text
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(6))
+            if logFollowUpNote == text { logFollowUpNote = nil }
         }
     }
 

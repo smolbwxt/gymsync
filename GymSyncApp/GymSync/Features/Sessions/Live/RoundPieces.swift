@@ -973,6 +973,38 @@ enum LogControlGate {
     }
 }
 
+/// WHAT RUNS AFTER A SET IS PERSISTED, BY STYLE (ruling R-B22) — the second
+/// half of `LogControlGate`'s law, pulled out for the same reason: the log
+/// path's style rule is a pure question and belongs where it can be tested
+/// without a live view.
+///
+/// `.rounds` is a rotation over a round: the set hands the turn on
+/// (`advance_turn`) and then offers to close the round (`advance_round`,
+/// never forced — the server closes it only once every present lifter has
+/// logged, and returns the current round unchanged otherwise). Order matters:
+/// the turn moves first, so the round that closes behind it already points at
+/// the next lifter.
+///
+/// `.together` and `.freestyle` have NO turns and NO rounds (spec §3.3), so
+/// they run NEITHER. That is not an optimisation — `advance_turn` is
+/// current-lifter-or-organizer gated (`20260801000001`) and raises P0001
+/// `'not your turn'` for everyone else, which is exactly what made every
+/// non-turn-holder's perfectly good set report failure (final review,
+/// finding 1). In those two styles the insert IS the whole transaction.
+enum LogFollowUp {
+    /// One server call, named rather than spelled, so the decision below is a
+    /// value a test can read.
+    enum Call: Equatable {
+        case advanceTurn
+        case advanceRound
+    }
+
+    /// In call order. Empty means the persisted set is the end of it.
+    static func calls(for style: SessionStyle) -> [Call] {
+        style == .rounds ? [.advanceTurn, .advanceRound] : []
+    }
+}
+
 // MARK: - The rest card
 
 /// What the resting lifter is told (spec §2): how long they have been
