@@ -879,6 +879,16 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogSessionWarmupSuggestion() { captureCatalog("session-warmup-suggestion") }
     func testCatalogSessionYourTurn()        { captureCatalog("session-your-turn") }
 
+    // Owner-decisions round (plan task S9), frame 154: the rack count's
+    // station-card chip, alone — the production RoundWaitView over the same
+    // LiveFixtures.roundWait world frame 137 captures, with a rack count and
+    // a no-op correction closure.
+    func testCatalogSessionRoundRackChip()   { captureCatalog("session-round-rack-chip") }
+    // Coordinator ruling, same task, frame 153: the lobby's style card with
+    // the rack question showing, over LobbyFixtures.rackAsk (waiting's crew,
+    // rackAskClass: "barbell" named on the fixture).
+    func testCatalogSessionLobbyRackAsk()    { captureCatalog("session-lobby-rack-ask") }
+
     // MARK: - Seeded deep-screen captures
     //
     // Reachable via the deterministic fixture world the QA seed builds for the

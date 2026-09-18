@@ -48,6 +48,15 @@ struct LobbyWorld {
     /// here so the owner sees the strip on the proof frames; nil in
     /// production until a per-member weekly read exists.
     let crewWeek: CrewWeek?
+    /// Feeds `LobbyView.rackAskClass` directly (owner-decisions round, plan
+    /// task S9, frame 153): a catalog world may NAME the equipment class the
+    /// rack question is about, rather than deriving it from a live
+    /// `routineInfo`/`allExercises` lookup — the derivation only a
+    /// `RoutineRepository`/`ExerciseRepository` read can perform, which
+    /// constraint 11 forbids a catalog builder from making. `nil` for every
+    /// existing world (frames 129/130/131/135/136), so they render exactly
+    /// what they render today.
+    var rackAskClass: String? = nil
 }
 
 enum LobbyFixtures {
@@ -179,6 +188,28 @@ enum LobbyFixtures {
         planRows: planRows,
         isOrganizer: true,
         crewWeek: crewWeek)
+
+    /// `session-lobby-rack-ask` (frame 153, owner-decisions round, plan task
+    /// S9): the SAME crew, routine and Rounds style `waiting` (frame 129)
+    /// captures, copied rather than shared so 129 cannot drift if this world
+    /// is ever edited — with `rackAskClass: "barbell"` naming the class the
+    /// question is about, which is what makes `LobbyView.styleCard` draw the
+    /// stepper. `rack_counts` stays empty (no read happens in catalog mode
+    /// either way), so the ask reads as "no count yet, skippable" here.
+    static let rackAsk = LobbyWorld(
+        session: session(style: .rounds),
+        groupName: "Push Crew",
+        rows: [
+            row(alexID, "Alex Rue", .checkedIn, energy: 4, isYou: true),
+            row(danaID, "Dana Kord", .checkedIn, energy: 5),
+            row(samID, "Sam Obi", .atTheGym, energy: 3),
+            row(leeID, "Lee Vance", .onTheWay, energy: nil),
+        ],
+        rungLine: rungLine,
+        planRows: planRows,
+        isOrganizer: true,
+        crewWeek: crewWeek,
+        rackAskClass: "barbell")
 
     /// `session-lobby-ready` (frame 130): everyone checked in. The accent
     /// moves to the arrival widget and the foot's Start becomes the neutral
