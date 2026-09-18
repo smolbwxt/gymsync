@@ -13,7 +13,12 @@ import Supabase
 // THIS TASK IS THE READ AND NOTHING ELSE. The strip's composition does not
 // change and frame 135 keeps its fixture.
 
-/// One row of `crew_week(p_session_id uuid, p_week_start date)`.
+/// One row of `crew_week(p_session_id uuid, p_week_start timestamptz)`.
+/// **R-B2-16**: `p_week_start` was `date` when this file was first written;
+/// review found that a device-local date cast at the server's own time zone
+/// silently moves the week boundary for anyone not on it, so the parameter
+/// is timestamptz and the client sends the INSTANT, with its own offset —
+/// see `WeekMath.weekStartISO8601(_:calendar:)`.
 ///
 /// The RPC's shape is `group_consistency_honor`'s, deliberately: the
 /// participant gate runs FIRST (`private.is_session_participant`), one
@@ -54,8 +59,11 @@ enum CrewWeekRepository {
     ///
     /// `GroupRepository.consistencyHonor`'s idiom verbatim, including the
     /// `ErrorMapping.map` on the catch. `weekStart` is
-    /// `WeekMath.weekStartString()` — the device-calendar week key, the same
-    /// one `weekly_goals` rows are filed under.
+    /// `WeekMath.weekStartISO8601()` (ruling R-B2-16) — the device-local
+    /// week-start INSTANT, offset and all, not the `yyyy-MM-dd` key
+    /// `weekly_goals` rows are filed under; the RPC's own `p_week_start` is
+    /// timestamptz, so a date string here would let the server's time zone
+    /// silently pick a different week for anyone not on it.
     ///
     /// THE GATE IS THE SERVER'S. A caller who is not a participant of the
     /// session raises `P0001` inside the function rather than reading somebody

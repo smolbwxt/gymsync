@@ -1128,10 +1128,14 @@ struct LobbyView: View {
     /// **THE READ IS `crew_week(p_session_id, p_week_start)`** (plan task S7,
     /// owner decision 21) — one row per participant of THIS session carrying
     /// their weekly session goal and their completed count inside the window
-    /// `WeekMath.weekStartString()` names, gated server-side on membership of
-    /// the session. It replaces the Phase A gap this comment used to describe:
-    /// the per-member weekly count existed nowhere, since `SocialTabView`'s bar
-    /// counts the whole crew and `group_consistency_honor` counts thirty days.
+    /// `WeekMath.weekStartISO8601()` names (ruling R-B2-16: the RPC's
+    /// `p_week_start` is timestamptz, not date — the client sends the
+    /// device-local week-start INSTANT, with its own offset, so the server's
+    /// time zone cannot silently pick a different week), gated server-side
+    /// on membership of the session. It replaces the Phase A gap this
+    /// comment used to describe: the per-member weekly count existed
+    /// nowhere, since `SocialTabView`'s bar counts the whole crew and
+    /// `group_consistency_honor` counts thirty days.
     ///
     /// NIL WHILE THE ROWS ARE EMPTY, so the strip and its space appear together
     /// or not at all — which is what this property has always promised. A
@@ -1751,7 +1755,7 @@ struct LobbyView: View {
         do {
             crewWeekRows = try await CrewWeekRepository.week(
                 sessionID: effectiveSession.id,
-                weekStart: WeekMath.weekStartString())
+                weekStart: WeekMath.weekStartISO8601())
         } catch {
             AppLogger.db.error(
                 "crew_week failed: \(error.localizedDescription, privacy: .public)")

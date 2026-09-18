@@ -50,7 +50,7 @@ final class CrewWeekLiveRepositoryTests: XCTestCase {
 
         let rows = try await CrewWeekRepository.week(
             sessionID: session.id,
-            weekStart: WeekMath.weekStartString())
+            weekStart: WeekMath.weekStartISO8601())
 
         // A MEMBER WITH ZERO SESSIONS IS A ROW, not an absence (plan decision
         // 2) — the one way this RPC deliberately departs from
