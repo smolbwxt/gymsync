@@ -1,6 +1,22 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(12);
+SELECT plan(10);
+
+-- plan(12) -> plan(10), 2026-09-18: assertions 5 and 6 read and wrote
+-- soundboard_sounds, which 20260913000104_soundboard_drop.sql drops (plan
+-- task D5, decision 5). scripts/run_pgtap.js runs every file in this
+-- directory against the LIVE database, so a suite that touches a dropped
+-- table aborts its whole transaction, not one assertion. The surviving
+-- assertions KEEP their historical numbers (1-4, 7-12) rather than being
+-- renumbered — the plan() count is what pgTAP checks; the labels are
+-- history.
+--
+-- Three things this file still proves that LOOK like soundboard and are
+-- deliberately kept: assertions 3 and 12 exercise chat_messages.kind =
+-- 'soundboard_echo', whose CHECK D5 does not narrow (shipped chat history
+-- holds that kind), and assertion 9 asserts the 'soundboard' storage bucket
+-- is public, which D5 does not drop either — the objects under it are
+-- removed by hand afterwards, the bucket and its read policy stay.
 
 -- ── Fixtures ──────────────────────────────────────────────────────────────────
 INSERT INTO auth.users (id, email) VALUES
@@ -69,28 +85,13 @@ SELECT throws_ok(
   'outsider audio message rejected'
 );
 
--- ── 5. soundboard_sounds: authenticated read allowed ─────────────────────────
--- Seed a row as superuser first
-SET LOCAL role postgres;
-INSERT INTO soundboard_sounds (id, slug, display_name, storage_path, duration_ms)
-VALUES ('d0000000-0000-0000-0000-000000000001', 'zz-test-sound', 'ZZ Test Sound', 'zz-test-sound.wav', 1200);
-
-SET LOCAL role authenticated;
-SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-000000000ca1';
-
-SELECT results_eq(
-  $$SELECT count(*)::int FROM soundboard_sounds WHERE slug='zz-test-sound'$$,
-  ARRAY[1],
-  'authenticated user can read soundboard_sounds'
-);
-
--- ── 6. soundboard_sounds: client INSERT rejected (42501) ──────────────────────
-SELECT throws_ok(
-  $$INSERT INTO soundboard_sounds (slug, display_name, storage_path)
-    VALUES ('boo', 'Boo', 'boo.wav')$$,
-  '42501', NULL,
-  'client cannot insert into soundboard_sounds'
-);
+-- ── 5-6 RETIRED (20260913000104_soundboard_drop.sql) ─────────────────────────
+-- They proved that any authenticated user could read the soundboard_sounds
+-- catalog and that no client could insert into it (the curator path was
+-- scripts/add_sound.js, deleted with the drop). The table is gone; the
+-- role state they left behind is not needed by what follows — assertion 7
+-- sets its own claim, and `role authenticated` has been in effect since
+-- assertion 1.
 
 -- ── 7. chat-audio outsider upload rejected (42501) ───────────────────────────
 SET LOCAL request.jwt.claim.sub = '00000000-0000-0000-0000-000000000ca3';

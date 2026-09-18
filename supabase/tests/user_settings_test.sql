@@ -78,9 +78,12 @@ SELECT results_eq(
 -- ── 5b. Task 7 item 5: UPDATE bumps updated_at (BEFORE UPDATE trigger,
 --         20260726000006) — the client's upsert() only ever sends {user_id,
 --         default_rest_seconds, palette}, so without the trigger this column
---         would stay frozen at row-creation time forever. Same idiom as
---         curation_test.sql's soundboard_favorites proof (assertion 5b
---         there): clock_timestamp(), not now()/transaction_timestamp()
+--         would stay frozen at row-creation time forever. Same idiom
+--         curation_test.sql once proved for soundboard_favorites, in an
+--         assertion retired with 20260913000104_soundboard_drop.sql —
+--         which leaves THIS assertion (and weekly_goals_test.sql's, for
+--         20260906000001) as where the idiom is still proved against a
+--         live table: clock_timestamp(), not now()/transaction_timestamp()
 --         (frozen at this whole test's transaction start), is what makes the
 --         INSERT-time updated_at and this UPDATE's stamp compare greater
 --         rather than equal. The writable CTE (UPDATE ... RETURNING) must be
