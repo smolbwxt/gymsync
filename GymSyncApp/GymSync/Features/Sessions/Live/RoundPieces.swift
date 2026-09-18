@@ -739,6 +739,16 @@ struct TurnStrip: View {
         /// The speaking ring — `VoiceRoomService.speakingParticipantIDs`,
         /// resolved by the caller because only it holds the identity map.
         var isSpeaking: Bool = false
+        /// SPEC §3.4 MODE 2, WHERE THE CREW ALREADY LOOKS (plan task S2).
+        /// The replacement exercise this lifter has quietly scaled to for the
+        /// exercise the crew is on — `SessionLiveView.selfScales`, the same
+        /// lookup `stationLifter` makes for the station card.
+        ///
+        /// Nil draws NOTHING, not a blank line: a tile without a scale-down
+        /// keeps its current two-line height, so the strip's baselines do not
+        /// move on frames 137-139 (constraint 14). Defaulted, so every
+        /// existing call site compiles unchanged.
+        var doing: String? = nil
     }
 
     let tiles: [Tile]
@@ -771,6 +781,16 @@ struct TurnStrip: View {
                 .foregroundStyle(filled ? theme.bg : theme.text)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
+            // Quiet, and only when there is one (plan task S2): no badge, no
+            // banner, no colour — the name of the lift they are actually on,
+            // under the name of the lifter.
+            if let doing = tile.doing {
+                Text(doing)
+                    .font(GSFont.body(11, relativeTo: .caption2))
+                    .foregroundStyle(filled ? theme.bg.opacity(0.85) : theme.neutral500)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
         }
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, minHeight: 44)

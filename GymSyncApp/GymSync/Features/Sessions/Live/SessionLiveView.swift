@@ -3625,15 +3625,26 @@ struct SessionLiveView: View {
     /// `rotationTiles`, worded for the strip. The speaking ring is resolved
     /// here because only this view holds the identity map
     /// (`VoiceRoomService` knows LiveKit identity strings, never usernames).
+    ///
+    /// `doing` is spec §3.4 mode 2 reaching the second place the crew already
+    /// looks (plan task S2). The lookup is `stationLifter`'s own — the SAME
+    /// `selfScales[userID]?[currentExerciseID]` the station card reads, for
+    /// EVERY lifter including the viewer, so who's up next and who's at the
+    /// rack cannot disagree about what somebody is lifting. Nothing new is
+    /// broadcast: `selfScales` is filled by `chooseSwap`'s "Just me" path and
+    /// by the inbound `self` event, and `evaluateUnanimity` is not on this
+    /// path at all.
     private var turnStripTiles: [TurnStrip.Tile] {
-        rotationTiles.map { tile in
+        let currentExerciseID = currentExerciseForSheet?.id
+        return rotationTiles.map { tile in
             TurnStrip.Tile(
                 id: tile.userID,
                 label: tile.label,
                 name: tile.userID == selfID ? "You" : tile.profile.username,
                 isNow: tile.label == "NOW",
                 isSpeaking: VoiceRoomService.shared.speakingParticipantIDs
-                    .contains(tile.userID.uuidString.lowercased()))
+                    .contains(tile.userID.uuidString.lowercased()),
+                doing: currentExerciseID.flatMap { selfScales[tile.userID]?[$0]?.name })
         }
     }
 

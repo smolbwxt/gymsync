@@ -279,6 +279,45 @@ enum LiveFixtures {
         dockNames: dockNames,
         reactionEmojis: reactionEmojis)
 
+    // MARK: - The quiet scale-down (frame 143, plan task S2)
+
+    /// `session-scale-down`: SAM IS ON A GOBLET SQUAT AND NOBODY WAS TOLD.
+    ///
+    /// The spotter world with the rotation re-ordered so Sam holds the turn,
+    /// and his tile — and only his — carrying the `doing` line spec §3.4
+    /// mode 2 adds. No banner, no badge, no colour, and nothing on anyone
+    /// else's tile: the whole point of mode 2 is that a scale-down is a fact
+    /// the crew can see, not an announcement it has to receive.
+    ///
+    /// IT IS A `SpotterWorld`, AND THE PLAN'S FRAME TABLE SAYS `RoundWaitView`
+    /// — a discrepancy this task records rather than papers over.
+    /// `RoundWaitView` mounts `StationCard`s and NO `TurnStrip`; `SpotterView`
+    /// is the strip's only mount in the app. The station-card half of mode 2
+    /// has shipped since plan task S6 and is already on frame 137 (see
+    /// `rackA`, where Sam carries `scaleDown: "Goblet squat"`), so the half
+    /// that needed a frame is this one. S10 renders `SpotterView` here, or
+    /// the plan gives `RoundWaitView` a strip of its own.
+    static let scaleDown = SpotterWorld(
+        kicker: RoundCopy.kicker(crew: crewName, round: 4),
+        title: "You're spotting",
+        turn: [
+            TurnStrip.Tile(id: samID, label: "NOW", name: "Sam", isNow: true,
+                           doing: "Goblet squat"),
+            TurnStrip.Tile(id: leeID, label: "NEXT", name: "Lee", isNow: false),
+            TurnStrip.Tile(id: danaID, label: "3RD", name: "Dana", isNow: false),
+            TurnStrip.Tile(id: alexID, label: "4TH", name: "You", isNow: false),
+        ],
+        stillToGo: RoundCopy.stillToGo(2),
+        crew: [
+            crewRow(samID, "Sam Obi", isLifting: true, bpm: 143),
+            crewRow(leeID, "Lee Vance", isLifting: false, bpm: 121),
+            crewRow(danaID, "Dana Kord", isLifting: false, bpm: 158),
+            crewRow(moID, "Mo Adeyemi", isLifting: false, bpm: nil),
+        ],
+        coach: coach,
+        dockNames: dockNames,
+        reactionEmojis: reactionEmojis)
+
     private static func crewRow(_ id: UUID, _ name: String,
                                 isLifting: Bool, bpm: Int?) -> CrewHeartRatesCard.Row {
         CrewHeartRatesCard.Row(id: id, name: name, isLifting: isLifting,
