@@ -46,7 +46,7 @@ INSERT INTO venue_checkins (venue_id, user_id, created_at) VALUES
   ('00000000-0000-4000-e000-000000001500', '00000000-0000-4000-e000-000000001502', now() - interval '20 hours');
 
 -- Helper for assertion 7: folds the two boundary checks (0 and 100) into
--- the one assertion this suite's plan(9) allots the clamp rule. pg_temp
+-- the one assertion this suite's plan allots the clamp rule. pg_temp
 -- disappears at this suite's ROLLBACK like the rest of the fixture; the
 -- function runs SECURITY INVOKER (the default), so it inherits whatever
 -- role/claim is active at CALL time -- only set_venue_rack_count itself
