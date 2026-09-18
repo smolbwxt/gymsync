@@ -99,9 +99,11 @@ GRANT  EXECUTE ON FUNCTION public.claim_session_venue(uuid) TO authenticated;
 -- Accept (SessionRunnerView.swift), best-effort -- a failed write leaves
 -- the in-memory value in place. Cleared by nothing: the session ends and
 -- the row stops being read. Crew visibility is unchanged -- this rides the
--- existing own-row-write / crew-read policies, adding no new surface.
+-- existing own-row-write policy (own-row *or organizer*: "participants
+-- updatable only by session organizer", 20260709000006:81-84, has no
+-- column list either) / crew-read policies, adding no new surface.
 ALTER TABLE public.session_participants
   ADD COLUMN IF NOT EXISTS todays_scale jsonb;
 
 COMMENT ON COLUMN public.session_participants.todays_scale IS
-  'Shape {"exercise_id": uuid, "sets_instead": int} (decision 3, owner-decisions round 2026-09-18). NULL until the lifter accepts a Coach-suggested set reduction for this session. Written by the lifter from SessionRunnerView on Accept, best-effort, through the existing "participant updates own check-in" policy -- no new policy. Read by RoutineLayering.apply() as the last of three layers (squad swaps, then self-scale, then today''s scale). Not cleared; the session ending is what stops it being read.';
+  'Shape {"exercise_id": uuid, "sets_instead": int} (decision 3, owner-decisions round 2026-09-18). NULL until the lifter accepts a Coach-suggested set reduction for this session. Written by the lifter from SessionRunnerView on Accept, best-effort, through the existing "participant updates own check-in" policy (own-row) or "participants updatable only by session organizer" (organizer) -- no new policy. Read by RoutineLayering.apply() as the last of three layers (squad swaps, then self-scale, then today''s scale). Not cleared; the session ending is what stops it being read.';
