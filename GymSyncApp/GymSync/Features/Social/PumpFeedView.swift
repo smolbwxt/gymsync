@@ -212,10 +212,31 @@ struct PumpPostCard: View {
     let onReact: (String) -> Void
     let onDelete: () -> Void
     let onReport: () -> Void
+    /// The reader's own clock — S5-S8 review finding 4 (review-app-push2.md),
+    /// closed by leg 3: `authorRow`'s "posted … ago" line used to read
+    /// `Date()` inside `.formatted(.relative(presentation:))`, which has no
+    /// seam to pin, so the catalog's `pump-feed-post` frame drifted with the
+    /// calendar instead of sitting at "1 hour ago" the day it was captured.
+    /// `RelativeDateTimeFormatter.localizedString(for:relativeTo:)` takes the
+    /// reference instant explicitly, so this defaults to `Date()` for every
+    /// production call site (unchanged behaviour) and the catalog fixture is
+    /// the one caller that pins it.
+    var now: Date = Date()
 
     @Environment(\.gsTheme) private var theme
     @State private var photoURL: URL?
     @State private var showsMetrics = false
+
+    /// `.formatted(.relative(presentation: .named))`'s own style
+    /// ("yesterday", "2 days ago") re-created on `RelativeDateTimeFormatter`,
+    /// whose `localizedString(for:relativeTo:)` is the only relative-date
+    /// API that takes an explicit reference date instead of reading `Date()`
+    /// internally.
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.dateTimeStyle = .named
+        return formatter
+    }()
 
     private var unit: WeightUnit { ThemeStore.shared.weightUnit }
 
@@ -291,7 +312,7 @@ struct PumpPostCard: View {
                 Text(isMine ? "You" : (author?.username ?? "Lifter"))
                     .font(GSFont.bold(13.5, relativeTo: .subheadline))
                     .foregroundStyle(theme.text)
-                Text(post.createdAt.formatted(.relative(presentation: .named)))
+                Text(Self.relativeFormatter.localizedString(for: post.createdAt, relativeTo: now))
                     .font(GSFont.body(11, relativeTo: .caption2))
                     .foregroundStyle(theme.neutral500)
             }

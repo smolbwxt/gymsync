@@ -1416,13 +1416,15 @@ struct CatalogHostView: View {
     /// friend's, 50 hours before mine — so `posted 47 min after` and the
     /// day-scale tag beside it are the same strings on every run.
     ///
-    /// DECLARED CONSEQUENCE: the author row prints
-    /// `createdAt.formatted(.relative:)`, which measures against the READER's
-    /// own now. Pinned to an instant, that line reads as a distance from
-    /// 17 Sep 2026 and grows with the calendar instead of sitting at "1 hour
-    /// ago". That is the trade the constraint asks for — the frame's INPUTS
-    /// are fixtures, and the one string that is not is the one the card
-    /// derives from the reader's clock by design.
+    /// THE DRIFT IS FIXED (S5-S8 review finding 4, closed leg 3):
+    /// `PumpPostCard` now takes an injected `now:` rather than reading
+    /// `Date()` inside its own `.formatted(.relative:)` call, so this frame
+    /// pins it to `pumpFixtureNow` — one hour after the friend's post, two
+    /// after mine — and "1 hour ago" / "2 hours ago" no longer grow with the
+    /// calendar. Production passes nothing (`now` defaults to `Date()`),
+    /// unchanged.
+    private static let pumpFixtureNow = pumpFixturePostedAt(hour: 19)
+
     private var content_pumpFeedPost: some View {
         let friendPostedAt = Self.pumpFixturePostedAt(hour: 18)
         let myPostedAt = Self.pumpFixturePostedAt(hour: 17)
@@ -1449,7 +1451,8 @@ struct CatalogHostView: View {
                     // fixture no longer carries a `snd:` row to prove they
                     // are gone — emoji only, always.
                     reactionCounts: ["🔥": 3, "💪": 1],
-                    onReact: { _ in }, onDelete: {}, onReport: {})
+                    onReact: { _ in }, onDelete: {}, onReport: {},
+                    now: Self.pumpFixtureNow)
                 PumpPostCard(
                     post: WorkoutPost(
                         id: UUID(), authorID: UUID(), sessionID: UUID(),
@@ -1470,7 +1473,8 @@ struct CatalogHostView: View {
                     author: nil, isMine: true,
                     myReactions: [],
                     reactionCounts: [:],
-                    onReact: { _ in }, onDelete: {}, onReport: {})
+                    onReact: { _ in }, onDelete: {}, onReport: {},
+                    now: Self.pumpFixtureNow)
             }
             .padding(16)
         }
