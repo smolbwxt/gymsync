@@ -16,6 +16,14 @@ import SwiftUI
 // `bottomChrome`'s pinned foot exactly the way `myTurnFixedPage` already
 // does, rather than replacing it.
 //
+// "THE BUTTON IS LIVE FOR EVERYONE" WAS ONLY HALF TRUE UNTIL FIX ROUND 4
+// (finding 1, ruling R-B21): `logControlIsMine` always read `true` here, but
+// nothing on this page ever gave a lifter reps to enter, so the button's own
+// `isDisabled` check never cleared. `entryCard` below is the fix — the SAME
+// `turnEntryCard` the my-turn page mounts, handed in rather than redrawn —
+// and `SessionLiveView.commitInlineLog`/`prefillLogInputs` are no longer
+// gated on a turn this style never has.
+//
 // THE STRETCHED REST AND COACH'S ACCESSORY ARE BOTH SUGGESTIONS, NEVER
 // APPLIED CHANGES (owner decision 4, spec §4, no exceptions). Accepting
 // either does not extend a rest timer or add a row to the routine — there is
@@ -135,6 +143,18 @@ struct FreestyleRailView: View {
     /// Present only while `standing` is `.behind`.
     var behindLine: String? = nil
 
+    /// The reps/weight/RPE entry, mounted directly above the pinned LOG
+    /// foot below this page (fix round 4 / finding 1, ruling R-B21). This
+    /// page still draws no foot of its own — the header comment's "no CTA
+    /// here" reasoning is unchanged — but before this it also drew nowhere
+    /// for a lifter to enter the reps that foot's button needed, so the
+    /// button rendered permanently disabled. `SessionLiveView` hands in the
+    /// SAME `turnEntryCard` the my-turn page mounts, type-erased since this
+    /// view takes no generic content parameter elsewhere — one view, one
+    /// code path, regardless of which of the three styles is on screen.
+    /// `nil` in the catalog, which draws the rail alone.
+    var entryCard: AnyView? = nil
+
     var onAcceptStretch: () -> Void = {}
     var onDeclineStretch: () -> Void = {}
     var onAcceptAccessory: () -> Void = {}
@@ -157,6 +177,9 @@ struct FreestyleRailView: View {
                         .font(GSFont.body(12.5, relativeTo: .caption))
                         .foregroundStyle(theme.neutral700)
                         .roundStrip()
+                }
+                if let entryCard {
+                    entryCard
                 }
             }
             .padding(.horizontal, 16)

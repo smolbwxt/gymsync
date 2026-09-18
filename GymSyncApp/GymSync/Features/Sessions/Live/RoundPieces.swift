@@ -958,6 +958,21 @@ struct LogControlFoot {
     var onTap: () -> Void = {}
 }
 
+/// Whose act the log control is — `SessionLiveView.logControlIsMine`'s own
+/// rule (plan task S5), pulled out as a pure function (finding 1, ruling
+/// R-B21) so it can be unit tested without standing up a live view. Rounds
+/// is a rotation: the entry belongs to whoever holds the turn. Freestyle and
+/// Together have no turn at all (spec §3.3) — the entry is EVERYONE'S,
+/// ALWAYS, never gated on who currently holds `currentTurnUserID`. Every
+/// prefill call site and the log foot's own `isDisabled` read this one
+/// answer, so the entry that fills the card and the button that logs it can
+/// never disagree about whose turn it is.
+enum LogControlGate {
+    static func isMine(style: SessionStyle, isMyTurn: Bool) -> Bool {
+        style == .rounds ? isMyTurn : true
+    }
+}
+
 // MARK: - The rest card
 
 /// What the resting lifter is told (spec §2): how long they have been

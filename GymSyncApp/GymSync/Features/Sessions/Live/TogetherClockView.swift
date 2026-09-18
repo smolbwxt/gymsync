@@ -183,19 +183,21 @@ struct TogetherLane: Identifiable, Equatable {
 /// in a row. Heart rate is shared by default (owner decision 13), which the
 /// timeline says out loud rather than leaving the lifter to discover.
 ///
-/// ACCENT: the interval ring — the current item (rule 2). Everything else in
-/// the readouts is heart-rate data colour, which §4a exempts, and every one of
+/// ACCENT: the LOG card — the screen's one action (rule 2, ruling R-B18,
+/// fix round 4). The interval ring goes INK (`theme.text`, progress track
+/// `theme.neutral700`): it is information, not an act, and Together's own
+/// action is logging a set, not watching a clock. Everything else in the
+/// readouts is heart-rate data colour, which §4a exempts, and every one of
 /// them carries its zone word.
 ///
-/// **KNOWN RULE-2 TENSION (fix round 3 / F6, ruling R-B17):** the log
-/// control (`LogControlButton`, mounted below) also paints `theme.accent` —
-/// it is `turnChrome`'s own button, unchanged, and the fix's whole point
-/// was that Together needed the SAME control Rounds and Freestyle already
-/// have, not a redrawn one. Before this fix Together had no way to log a
-/// set at all, which rule 2 does not have an opinion on; a second accent
-/// face is the smaller problem. Flagged for the controller, the same way
-/// the round wait's ring/`SkipOfferLine` tension was (review finding 7) —
-/// not resolved here.
+/// **THE RULE-2 TENSION FIX ROUND 3 FLAGGED (F6, ruling R-B17) IS RESOLVED.**
+/// Before fix round 3, Together had no log control at all; F6 mounted the
+/// SAME `LogControlButton` `turnChrome` draws, which meant the screen briefly
+/// carried two accent faces — the ring and the button — the same tension the
+/// round wait's ring/`SkipOfferLine` pair raised (review finding 7). Ruling
+/// R-B18 settles it the way that one was settled: one accent, not two. The
+/// ring's colour is the only thing that moved; its geometry, its progress
+/// math and the button beneath it are unchanged.
 struct TogetherClockView: View {
     @Environment(\.gsTheme) private var theme
 
@@ -224,6 +226,16 @@ struct TogetherClockView: View {
 
     var dockNames: [String] = []
     var voice: VoiceFoot = VoiceFoot()
+    /// The reps/weight/RPE entry, mounted directly above the LOG button
+    /// below (fix round 4 / finding 1, ruling R-B21). Fix round 3 gave
+    /// Together the button; nothing gave it anything to enter reps INTO, so
+    /// the button rendered permanently disabled — the same hole one style
+    /// wider. `SessionLiveView` hands in the SAME `turnEntryCard` the
+    /// my-turn page mounts, type-erased since this view takes no generic
+    /// content parameter elsewhere — one view, one code path, regardless of
+    /// which of the three styles is on screen. `nil` in the catalog and
+    /// tests, which draw the clock alone.
+    var entryCard: AnyView? = nil
     /// The live log control (fix round 3 / F6, ruling R-B17). Together has
     /// no turn to gate it on — `logControlIsMine` reads true for every
     /// participant here — so every lifter needs the SAME button
@@ -240,6 +252,9 @@ struct TogetherClockView: View {
             timelineCard
         } foot: {
             VoiceNotices(foot: voice)
+            if let entryCard {
+                entryCard
+            }
             LogControlButton(
                 title: logControl.title,
                 readback: logControl.readback,
@@ -249,9 +264,9 @@ struct TogetherClockView: View {
             PTTDockRow(otherParticipantNames: dockNames, compact: false)
             // The SHIPPED End control — the same confirmation the header's X
             // raises, reached from the foot because Together's page has no
-            // pinned chrome of its own. Neutral, never accent: the ring is
-            // this screen's one accent act, and ending is not what the crew
-            // came to do.
+            // pinned chrome of its own. Neutral, never accent: the LOG card
+            // above is this screen's one accent act (ruling R-B18), and
+            // ending is not what the crew came to do.
             RoundDoor(glyph: "xmark", title: RoundCopy.endSession, onTap: onEnd)
         }
     }
@@ -292,13 +307,19 @@ struct TogetherClockView: View {
     /// `boldFixed` for the numeral, which is what that helper exists for: a
     /// big number inside a hard-framed circle clips at large Dynamic Type,
     /// and the meaning is carried redundantly by the scaling labels beside it.
+    ///
+    /// INK, NOT ACCENT (ruling R-B18, fix round 4) — the LOG card below is
+    /// this screen's one action; the ring is information the lifter reads,
+    /// not a control they press. Track is `neutral700`, progress is
+    /// `theme.text`: same geometry, same trim math, only the two colours
+    /// moved.
     private var ring: some View {
         ZStack {
             Circle()
-                .strokeBorder(theme.neutral300, lineWidth: 9)
+                .strokeBorder(theme.neutral700, lineWidth: 9)
             Circle()
                 .trim(from: 0, to: min(max(progress, 0), 1))
-                .stroke(theme.accent, style: StrokeStyle(lineWidth: 9, lineCap: .round))
+                .stroke(theme.text, style: StrokeStyle(lineWidth: 9, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             Text(readout)
                 .font(GSFont.boldFixed(30))
@@ -384,6 +405,15 @@ struct TogetherClockView: View {
     /// `HeartRateZone`'s own header). A reading with no zone (an older
     /// sender, or a malformed payload) draws `neutral700` — present, but
     /// deliberately not colour-coded to a zone nobody sent.
+    ///
+    /// THE BARS CARRY NO WORD OF THEIR OWN (review-app-push2.md finding 3,
+    /// ruling R-B20). §4a is satisfied ONCE PER SCREEN, not once per mark:
+    /// the lifter's ROW already prints its current zone word beside the
+    /// bpm (`reading(_:)` above), and this history of bars is that row's
+    /// own visualisation of it. A past bar's colour can outrun the row's
+    /// current word — the crew moved zones since that interval — and that
+    /// is the ruling, not an oversight: the row names the CURRENT zone,
+    /// which is the fact a reader is actually asking this screen for.
     private func bar(_ sample: TogetherTrace.Sample) -> some View {
         let height: CGFloat = sample.bpm <= 0 ? 4 : max(6, CGFloat(sample.bpm - 90) * 0.24)
         let ink: Color

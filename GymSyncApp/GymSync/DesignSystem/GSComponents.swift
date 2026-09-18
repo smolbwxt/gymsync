@@ -1379,7 +1379,7 @@ struct GSVoiceUnavailableBanner: View {
     let message: String
     let retry: () -> Void
 
-    init(message: String = "Couldn't join the room. Text and soundboard still work.",
+    init(message: String = "Couldn't join the room. Text still works.",
          retry: @escaping () -> Void) {
         self.message = message
         self.retry = retry

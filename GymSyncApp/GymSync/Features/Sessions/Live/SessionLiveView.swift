@@ -30,7 +30,14 @@ import UIKit
 //     voice notices, the mic rail (`PTTDockRow`, compact) and, when burpees
 //     are owed, `burpeeDebtStrip` above it. The ROTATION strip
 //     (NOW/NEXT/3RD/4TH) moved to `RoundPieces.TurnStrip` (plan task S8);
-//     `SpotterView` mounts it now, not this page.
+//     `SpotterView` mounts it now, not this page. `turnEntryCard` ITSELF is
+//     no longer this page's alone (fix round 4 / finding 1, ruling R-B21):
+//     Together and Freestyle mount the IDENTICAL view, directly above their
+//     own copy of the LOG foot — `togetherScreen`/`freestyleScreen` hand it
+//     in as `entryCard` — because the button those two styles already had
+//     could never enable with nowhere on screen to enter reps into.
+//     `logControlIsMine`, not `isMyTurn`, is what every prefill call site
+//     gates on now, so the same fix reaches all three styles at once.
 //   • Chess clock: Text(_, style: .timer), state-driven from currentTurnStartedAt — never
 //     a Swift Timer. Advance-turn flow (priorMax-before-logSet ordering, fire-and-forget
 //     PR record, advanceTurn call) is UNCHANGED — only the caller moved from a sheet's
@@ -342,8 +349,14 @@ struct SessionLiveView: View {
     /// the round wait and spotter mode replace it in S6 and S8). Freestyle and
     /// Together have NO TURN — spec §3.3 — so the control is everyone's at
     /// once and `currentTurnUserID` is not consulted at all.
+    ///
+    /// `LogControlGate.isMine(style:isMyTurn:)` (`RoundPieces.swift`, fix
+    /// round 4 / finding 1) is the pure law behind this; every prefill call
+    /// site below reads THIS property rather than re-deriving the rule, so
+    /// the entry that fills the card and the button that logs it can never
+    /// disagree about whose turn it is.
     private var logControlIsMine: Bool {
-        style == .rounds ? isMyTurn : true
+        LogControlGate.isMine(style: style, isMyTurn: isMyTurn)
     }
 
     // MARK: - Voice (Task 4 — PTT dock, Dossier §A.1's locked session-state scope)
@@ -1880,8 +1893,13 @@ struct SessionLiveView: View {
         }
         // Realtime lifecycle — SessionLiveService + SessionBroadcastService
         .task { await openAndSubscribe() }
-        .onChange(of: liveSession.currentTurnUserID) { _, newValue in
-            if newValue == selfID { prefillLogInputs() }
+        .onChange(of: liveSession.currentTurnUserID) { _, _ in
+            // `logControlIsMine`, not `newValue == selfID` (fix round 4 /
+            // finding 1, ruling R-B21): Together and Freestyle never carry
+            // a turn to compare against, so gating this on the turn holder
+            // left their entry blank forever. Rounds is unaffected — the
+            // predicate reduces to the same `isMyTurn` check it always was.
+            if logControlIsMine { prefillLogInputs() }
             // Phase W Task 2 — the turn passing is exactly the moment the
             // Watch's "whose turn" state goes stale; re-push immediately
             // rather than waiting for the next scenePhase/reload cycle.
@@ -2151,7 +2169,11 @@ struct SessionLiveView: View {
             // curls because prefill only fired on turn CHANGES — and a solo
             // rotation's turn never changes (self → self).
             .onChange(of: currentExerciseForSheet?.id) { _, _ in
-                if isMyTurn { prefillLogInputs() }
+                // `logControlIsMine`, not `isMyTurn` (fix round 4 / finding
+                // 1, ruling R-B21) — Freestyle progresses through exercises
+                // per lifter same as Rounds, but `isMyTurn` never becomes
+                // true there, so the old gate never re-prefilled it.
+                if logControlIsMine { prefillLogInputs() }
             }
             // Realtime fallback: the turn state POLLS every 10s while live
             // (field 2026-07-31: one phone's dead websocket — "Voice
@@ -2586,6 +2608,13 @@ struct SessionLiveView: View {
             withAnimation(.easeInOut(duration: 0.18)) { showBarLoader = false }
             UIApplication.shared.sendAction(
                 #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+            // Together and Freestyle have no turn to hand the card back
+            // through (fix round 4 / finding 1, ruling R-B21) — Rounds gets
+            // its reset from the turn/exercise-change handlers above once
+            // the rotation returns to this lifter; these two styles never
+            // see that handler fire, so they get the reset explicitly here,
+            // on every successful log.
+            if style != .rounds { prefillLogInputs() }
             // Solo-in-a-rotation: the pass came straight back. Enter the
             // rest interlude instead of silently staying on my-turn — the
             // screen visibly changes, the rest is real, and START SET cuts
@@ -2835,7 +2864,11 @@ struct SessionLiveView: View {
         // already reachable sees this session's current state.
         pushWatchSessionState()
         await subscribeBroadcast()
-        if isMyTurn { prefillLogInputs() }
+        // `logControlIsMine`, not `isMyTurn` (fix round 4 / finding 1,
+        // ruling R-B21) — this is the PAGE-APPEAR prefill, and Together and
+        // Freestyle open with no turn at all, so `isMyTurn` never fired it:
+        // the entry sat blank, forever, for every lifter in either style.
+        if logControlIsMine { prefillLogInputs() }
         // Initial heartbeat — the scenePhase→active heartbeat above only
         // fires on a later transition, so this covers "already foreground,
         // just opened the session" (push-dossier.md §A.4).
@@ -3589,6 +3622,13 @@ struct SessionLiveView: View {
                                               count: intervals.count),
             dockNames: otherParticipantNames,
             voice: voiceFoot,
+            // The IDENTICAL entry card the my-turn page mounts (fix round 4
+            // / finding 1, ruling R-B21) — Together has no turn to render
+            // `myTurnFixedPage` at all, so without this the LOG button
+            // above had nothing to enable it. One view, injected, rather
+            // than a second copy: logging a set is one code path
+            // regardless of which of the three styles is on screen.
+            entryCard: AnyView(turnEntryCard),
             logControl: logControlFoot,
             onEnd: { showEndConfirmation = true })
     }
@@ -3723,6 +3763,12 @@ struct SessionLiveView: View {
             stretchSuggestion: stretch,
             accessorySuggestion: accessory,
             behindLine: behind,
+            // The IDENTICAL entry card the my-turn page mounts (fix round 4
+            // / finding 1, ruling R-B21) — Freestyle still owns no LOG foot
+            // of its own (the header comment's reasoning is unchanged), but
+            // it had nothing on screen to fill the reps `turnChrome`'s
+            // button needed, so the button below it could never enable.
+            entryCard: AnyView(turnEntryCard),
             // NEITHER APPLIES A CHANGE (owner decision 4) — acknowledging
             // either way just stops the card from showing again.
             onAcceptStretch: { freestyleStretchAcknowledged = true },
