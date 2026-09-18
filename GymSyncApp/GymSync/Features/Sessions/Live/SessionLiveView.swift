@@ -599,35 +599,6 @@ struct SessionLiveView: View {
         allSessionSets.filter { $0.userID == userID && $0.exerciseID == exerciseID && !$0.isPenalty }.count
     }
 
-    /// THE ONE REBUILD A SWAP PERFORMS on a routine row — the replacement's
-    /// exercise id, the same prescription, and no weight (a bar number for one
-    /// lift is not a bar number for another).
-    ///
-    /// A named function because TWO places need it: `effectiveRoutineExercises`
-    /// applies it for real, and `swapDoorDetails` applies it to word the
-    /// consent card's PROPOSED door. A door that computed the proposed
-    /// prescription its own way could promise something the swap does not
-    /// produce — which is exactly what it did for a to-failure row (R-B2-15).
-    ///
-    /// `targetFailure` IS CARRIED (R-B2-13). The old spelling listed fields by
-    /// hand and left it behind, so a swapped `AMRAP` row silently became
-    /// `3 × —`: a prescribed failure is the assignment fulfilled (the failure
-    /// doctrine), and swapping the lift does not cancel it. STILL DROPPED, and
-    /// named here rather than left to be discovered: `setType`, `dropSteps` and
-    /// `dropPercent` — set STRUCTURES, which the live body does not render and
-    /// which no surface in this file reads.
-    private static func swapped(_ re: RoutineExercise, to targetID: UUID) -> RoutineExercise {
-        RoutineExercise(
-            id: re.id, routineID: re.routineID, exerciseID: targetID,
-            position: re.position, targetSets: re.targetSets,
-            targetReps: re.targetReps, targetWeight: nil,
-            restSeconds: re.restSeconds, notes: re.notes,
-            supersetGroup: re.supersetGroup,
-            targetFailure: re.targetFailure,
-            targetRepsLow: re.targetRepsLow, targetRepsHigh: re.targetRepsHigh,
-            cardioZone: re.cardioZone, cardioMinutes: re.cardioMinutes)
-    }
-
     /// The shared routine with hot-swaps applied: squad swaps first
     /// (everyone), then MY quiet self-scales on top (my own choice for my
     /// body beats the squad's), then TODAY'S ACCEPTED SET REDUCTION last
@@ -635,21 +606,23 @@ struct SessionLiveView: View {
     /// alone and about the dose rather than the lift). Progression, logging,
     /// and display all read THIS, so a swapped lift is what actually gets
     /// logged and a scaled row is what actually gets counted.
+    ///
+    /// THE ORDER ITSELF LIVES IN `RoutineLayering` (plan task S7) — it was
+    /// hand-copied here, into `SessionRunnerView.planRows` and into a test,
+    /// which is three chances for two screens to print two prescriptions for
+    /// one lift. The doc above is kept because it is still the best statement
+    /// of WHY the order is that order; the body is now a delegation.
+    ///
+    /// `SwapTarget` carries a NAME for the consent card's wording, and the
+    /// layering needs only the replacement's id — so the two dictionaries are
+    /// mapped down here rather than dragging a view's nested type into a
+    /// model.
     private var effectiveRoutineExercises: [RoutineExercise] {
-        routineExercises.map { re in
-            var target: SwapTarget? = squadSwaps[re.exerciseID]
-            if let selfID, let mine = selfScales[selfID]?[re.exerciseID] { target = mine }
-            var row = target.map { Self.swapped(re, to: $0.id) } ?? re
-            // KEYED ON THE ROUTINE'S OWN EXERCISE, which is what the warm-up's
-            // plan rows carried when the athlete accepted. A squad swap that
-            // lands afterwards replaces the lift in that slot and the reduced
-            // set count rides with the slot, which is what "one set fewer
-            // today" meant.
-            if let scale = todaysScale, scale.exerciseID == re.exerciseID {
-                row.targetSets = scale.setsInstead
-            }
-            return row
-        }
+        RoutineLayering.apply(
+            routineExercises,
+            squadSwaps: squadSwaps.mapValues(\.id),
+            selfScale: selfID.flatMap { selfScales[$0] }?.mapValues(\.id) ?? [:],
+            todaysScale: todaysScale)
     }
 
     private var currentRoutineExercise: RoutineExercise? {
@@ -2622,7 +2595,7 @@ struct SessionLiveView: View {
     /// with the real rebuild on most rows and disagreed on a to-failure one:
     /// the door printed `3 × AMRAP` while `effectiveRoutineExercises` produced
     /// `3 × —`, because the rebuild dropped `targetFailure` and the copy kept
-    /// it. Both now go through `Self.swapped(_:to:)`, so a door cannot promise
+    /// it. Both now go through `RoutineLayering.swapped(_:to:)`, so a door cannot promise
     /// a prescription the swap does not produce, whatever field is added next.
     private func swapDoorDetails(for exerciseID: UUID,
                                  target: UUID) -> (now: String, proposed: String) {
@@ -2630,7 +2603,7 @@ struct SessionLiveView: View {
             return ("—", "—")
         }
         return (SessionPlanRow.prescription(for: re),
-                SessionPlanRow.prescription(for: Self.swapped(re, to: target)))
+                SessionPlanRow.prescription(for: RoutineLayering.swapped(re, to: target)))
     }
 
     /// THE BODY'S ONE TOP SLOT (plan tasks S1 and S3).

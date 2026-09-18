@@ -648,6 +648,45 @@ enum SessionRepository {
         } catch { throw ErrorMapping.map(error) }
     }
 
+    private struct TodaysScaleUpdate: Encodable {
+        let todaysScale: TodaysScale?
+        enum CodingKeys: String, CodingKey { case todaysScale = "todays_scale" }
+    }
+
+    /// Write MY OWN accepted set reduction for this session (decision 3,
+    /// owner 2026-09-18's "Yes").
+    ///
+    /// A direct UPDATE, not an RPC, and `setEnergy`'s reasoning applies
+    /// verbatim: "participant updates own check-in" (`20260712000001:22-25`)
+    /// is `USING (user_id = auth.uid()) WITH CHECK (user_id = auth.uid())`
+    /// WITH NO COLUMN LIST, so the policy already scopes this write to my own
+    /// row. A third policy would be permissive-ORed with the two that exist
+    /// and would grant nothing while looking like it granted something —
+    /// which is why `20260912000101`'s header says the same of `energy`.
+    ///
+    /// BOTH BEFORE UPDATE TRIGGERS PASS, and they were read rather than
+    /// assumed: `engine_guard` raises only when `late_minutes`,
+    /// `burpees_owed` or `turn_order` change, and this changes none of them;
+    /// `checkin_window_guard` compares `now() < scheduled_for - 20 minutes`,
+    /// and a warm-up Accept happens after check-in opened, so it returns
+    /// `NEW`. Identical to what `energy` already does in production.
+    ///
+    /// Every caller treats this as best-effort: a failed write leaves the
+    /// in-memory scale standing, which is exactly B2's shipped behaviour.
+    static func setTodaysScale(sessionID: UUID, scale: TodaysScale?) async throws {
+        guard let userID = await SupabaseService.shared.currentUserID() else {
+            throw GymSyncError.unauthorized
+        }
+        do {
+            _ = try await client
+                .from("session_participants")
+                .update(TodaysScaleUpdate(todaysScale: scale))
+                .eq("session_id", value: sessionID.uuidString)
+                .eq("user_id", value: userID.uuidString)
+                .execute()
+        } catch { throw ErrorMapping.map(error) }
+    }
+
     /// All sessions for a group (upcoming + past), server-side filtered by group_id.
     /// Participant-only RLS automatically scopes results.
     static func groupSessions(groupID: UUID, pastLimit: Int = 10) async throws -> [WorkoutSession] {

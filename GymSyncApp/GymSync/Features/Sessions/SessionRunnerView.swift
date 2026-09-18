@@ -74,8 +74,10 @@ struct SessionRunnerView: View {
     @State private var openProbeMuscles: Set<String> = []
     /// Decline clears the suggestion for the session and records nothing.
     @State private var suggestionDeclined = false
-    /// Accept's whole effect (decision 5): session-local, in memory, and passed
-    /// down to the live body so one array of rows carries it.
+    /// Accept's effect (decision 5): in memory, passed down to the live body
+    /// so one array of rows carries it — and, since 2026-09-18's decision 3,
+    /// WRITTEN to my own participant row and re-seeded from it, so a relaunch
+    /// mid-session comes back to the dose the athlete agreed to.
     @State private var todaysScale: TodaysScale?
     // Check-in — solo only (spec §2's path is check-in → warm-up; a
     // scheduled solo session never passes through a lobby to find the
@@ -203,6 +205,10 @@ struct SessionRunnerView: View {
         // is never assumed — `coachSuggestion` is derived and simply answers
         // differently as each lands.
         .task { await loadReadiness() }
+        // DECISION 3: the accepted scale outlives a relaunch. The rows the
+        // view was handed already carry `todays_scale`, so the seed costs
+        // no round trip at all; the poll below re-seeds from fresh rows.
+        .task { seedTodaysScale(from: roster) }
         // THE POLL, five seconds, only while warming up. `.task(id:)` cancels
         // itself the moment the gate flips, so the live view never runs two
         // pollers.
@@ -217,6 +223,7 @@ struct SessionRunnerView: View {
                 }
                 if let rows = try? await SessionRepository.participants(sessionID: session.id) {
                     liveParticipants = rows
+                    seedTodaysScale(from: rows)
                 }
             }
         }
@@ -245,14 +252,18 @@ struct SessionRunnerView: View {
     /// The plan, worded — with today's accepted reduction layered on, so the
     /// card re-renders the moment Accept is tapped and both screens print the
     /// number through the one `SessionPlanRow.prescription(for:)`.
+    /// THE LAYERING IS `RoutineLayering`'s (plan task S7), not this file's
+    /// own copy of it. The warm-up has no swaps to apply — the crew votes in
+    /// the live body, not here — so it names only the layer it has, and the
+    /// row it hands to `SessionPlanRow` is built by the same function the
+    /// live body builds its rows with.
+    /// The warm-up applies no swaps — the crew votes in the live body, not
+    /// here — so `exerciseID` is untouched by the layering and the name
+    /// lookup still reads the row's own id.
     private var planRows: [SessionPlanRow] {
-        planExercises.map { exercise in
-            var row = exercise
-            if let scale = todaysScale, scale.exerciseID == exercise.exerciseID {
-                row.targetSets = scale.setsInstead
-            }
-            return SessionPlanRow(exercise: row,
-                                  name: planNames[exercise.exerciseID] ?? "Exercise")
+        RoutineLayering.apply(planExercises, todaysScale: todaysScale).map { row in
+            SessionPlanRow(exercise: row,
+                           name: planNames[row.exerciseID] ?? "Exercise")
         }
     }
 
@@ -381,8 +392,36 @@ struct SessionRunnerView: View {
     /// two round trips beside it need.
     private func acceptSuggestion() {
         guard let suggestion = coachSuggestion else { return }
-        todaysScale = TodaysScale(exerciseID: suggestion.exerciseID,
-                                  setsInstead: suggestion.setsInstead)
+        let scale = TodaysScale(exerciseID: suggestion.exerciseID,
+                                setsInstead: suggestion.setsInstead)
+        todaysScale = scale
+        // DECISION 3 (owner 2026-09-18, "Yes"): and it outlives a relaunch.
+        // Detached and best-effort, so this function stays the synchronous
+        // one its doc argues for and a failed write changes nothing the
+        // athlete can see — the in-memory value above is what every screen
+        // reads, and B2's behaviour is what remains if the row never lands.
+        Task { try? await SessionRepository.setTodaysScale(sessionID: session.id,
+                                                           scale: scale) }
+    }
+
+    /// Re-seed the accepted scale from MY OWN participant row (decision 3).
+    ///
+    /// The runner already fetches the participant rows for the warmth track,
+    /// so `todays_scale` rides along and a relaunch costs no extra round
+    /// trip. ONLY WHEN NOTHING IS HELD: a poll landing a second after Accept
+    /// must never overwrite the tap with a row written milliseconds later,
+    /// and `coachSuggestion` already returns nil once `todaysScale != nil`,
+    /// so a seeded scale also suppresses the card exactly as an accepted one
+    /// does.
+    ///
+    /// `suggestionDeclined` is DELIBERATELY NOT PERSISTED, and this is where
+    /// a reader would look for it: a declined suggestion returning after a
+    /// relaunch is a second column and a second question nobody has asked.
+    private func seedTodaysScale(from rows: [(participant: SessionParticipant, profile: Profile)]) {
+        guard todaysScale == nil, let selfID,
+              let mine = rows.first(where: { $0.participant.userID == selfID }),
+              let stored = mine.participant.todaysScale else { return }
+        todaysScale = stored
     }
 
     /// Same flow as `LobbyView.initiateCheckIn()`: try the geofence, fall
@@ -429,6 +468,7 @@ struct SessionRunnerView: View {
             try await SessionRepository.checkIn(sessionID: session.id, method: method)
             if let fresh = try? await SessionRepository.participants(sessionID: session.id) {
                 liveParticipants = fresh
+                seedTodaysScale(from: fresh)
             }
         } catch let error as GymSyncError {
             errorText = error.errorDescription

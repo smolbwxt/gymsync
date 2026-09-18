@@ -203,6 +203,15 @@ struct SessionParticipant: Codable, Sendable {
     /// NEVER 0. An absence is not a reading of one, which is why the meter
     /// draws the words `not yet` rather than five empty pips (plan task S4).
     let energy: Int?
+    /// TODAY'S ACCEPTED SET REDUCTION (20260918, decision 3) —
+    /// `{"exercise_id": "<uuid>", "sets_instead": <int>}`, or NULL until
+    /// this lifter accepts one. MINE ALONE in practice though the row is
+    /// crew-readable: the warm-up's Accept is about my own dose, and no
+    /// surface shows a crewmate's (S7 adds none).
+    ///
+    /// Same safe-decode guard as `energy` above: a projected select, or a
+    /// client running behind the migration, must not fail the whole row.
+    let todaysScale: TodaysScale?
 
     enum CodingKeys: String, CodingKey {
         case sessionID = "session_id"
@@ -215,6 +224,7 @@ struct SessionParticipant: Codable, Sendable {
         case burpeesOwed = "burpees_owed"
         case warmupReady = "warmup_ready"
         case energy
+        case todaysScale = "todays_scale"
     }
 
     // Safe decode: warmup_ready has DB DEFAULT false so full-row selects
@@ -234,6 +244,7 @@ struct SessionParticipant: Codable, Sendable {
         burpeesOwed   = try c.decode(Int.self,    forKey: .burpeesOwed)
         warmupReady   = (try? c.decodeIfPresent(Bool.self, forKey: .warmupReady)) ?? false
         energy        = (try? c.decodeIfPresent(Int.self, forKey: .energy)) ?? nil
+        todaysScale   = (try? c.decodeIfPresent(TodaysScale.self, forKey: .todaysScale)) ?? nil
     }
 }
 

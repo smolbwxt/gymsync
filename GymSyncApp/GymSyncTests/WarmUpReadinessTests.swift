@@ -141,18 +141,20 @@ final class WarmUpReadinessTests: XCTestCase {
     /// Decision 5: Accept changes the prescription the plan card prints, and
     /// nothing else. The layered row goes through the one
     /// `SessionPlanRow.prescription(for:)` both screens print from.
-    func testTheScaledRowPrintsTheReducedPrescription() {
+    func testTheScaledRowPrintsTheReducedPrescription() throws {
         let exercise = RoutineExercise(
             id: UUID(), routineID: UUID(), exerciseID: benchID, position: 0,
             targetSets: 4, targetReps: "5", targetWeight: "225",
             restSeconds: nil, notes: nil)
         XCTAssertEqual(SessionPlanRow.prescription(for: exercise), "4 × 5 @ 225")
 
+        // THROUGH `RoutineLayering`, not a fourth hand-copy of the order
+        // (plan task S7): what this test pins is the PRESCRIPTION the card
+        // prints. The layering ORDER is asserted in exactly one place,
+        // `RoutineLayeringTests`, and nowhere else.
         let scale = TodaysScale(exerciseID: benchID, setsInstead: 3)
-        var scaled = exercise
-        if scale.exerciseID == exercise.exerciseID {
-            scaled.targetSets = scale.setsInstead
-        }
-        XCTAssertEqual(SessionPlanRow.prescription(for: scaled), "3 × 5 @ 225")
+        let scaled = RoutineLayering.apply([exercise], todaysScale: scale)
+        XCTAssertEqual(SessionPlanRow.prescription(for: try XCTUnwrap(scaled.first)),
+                       "3 × 5 @ 225")
     }
 }
