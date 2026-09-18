@@ -57,6 +57,12 @@ struct LobbyWorld {
     /// existing world (frames 129/130/131/135/136), so they render exactly
     /// what they render today.
     var rackAskClass: String? = nil
+    /// Opens the lobby scrolled to its END rather than its top. The style
+    /// card — and the rack question under it — sit below the fold on every
+    /// phone, so a catalog launch (which cannot scroll) photographed frame
+    /// 153 identically to frame 129 (release render 35400614237). `false`
+    /// for every other world, so their captures are untouched.
+    var startsAtBottom: Bool = false
 }
 
 enum LobbyFixtures {
@@ -209,7 +215,8 @@ enum LobbyFixtures {
         planRows: planRows,
         isOrganizer: true,
         crewWeek: crewWeek,
-        rackAskClass: "barbell")
+        rackAskClass: "barbell",
+        startsAtBottom: true)
 
     /// `session-lobby-ready` (frame 130): everyone checked in. The accent
     /// moves to the arrival widget and the foot's Start becomes the neutral

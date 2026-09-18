@@ -378,6 +378,17 @@ struct LobbyView: View {
     // arenaBase → arenaWithThrow → body layering). Each layer is a
     // separately-checked expression; behavior unchanged.
 
+    /// Where the scroll view opens. `nil` — SwiftUI's own default, the top —
+    /// for every real lobby and every catalog world but one: a world that
+    /// sets `LobbyWorld.startsAtBottom` opens at its end, because a catalog
+    /// launch cannot scroll and the style card lives below the fold.
+    private var catalogScrollAnchor: UnitPoint? {
+        #if DEBUG
+        if catalog?.startsAtBottom == true { return .bottom }
+        #endif
+        return nil
+    }
+
     /// Layer 1: scroll content + navigation chrome.
     private var lobbyScroll: some View {
         ScrollView {
@@ -507,6 +518,7 @@ struct LobbyView: View {
                 Spacer(minLength: 80)
             }
         }
+        .defaultScrollAnchor(catalogScrollAnchor)
         .background(theme.bg)
         .overlay(alignment: .top) {
             // "Voice connected" toast (Phase O Task 5 item 5) — transient,
