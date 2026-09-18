@@ -194,6 +194,15 @@ struct SessionLiveView: View {
     /// RecoveryBuffer so the HRR numbers are unit-tested.
     @State private var recoveryBuffer       = RecoveryBuffer()
     @State private var isEnding             = false
+    /// THE VERB YOU PRESSED THAT DID NOT HAPPEN — ending the session,
+    /// leaving it, the crew's skip, the penalty log, Coach's door.
+    ///
+    /// Twelve writers and, until plan task S3, no reader at all: plan task S4
+    /// deleted `legacyBottomChrome`, where its banner used to render, and the
+    /// state outlived the surface. `errorBannerOverlay` is that one reader
+    /// now — mounted once on the body root, so all five pages are covered.
+    /// Cleared on tap, and by `endSession()`'s own `errorText = nil` at the
+    /// start of the next attempt.
     @State private var errorText: String?
     // Phase O Task 5 item 5 — mirrors LobbyView's identical trio (this
     // view's own `voicePersistsOnPop` doc comment already notes it's not
@@ -1832,7 +1841,7 @@ struct SessionLiveView: View {
 
     var body: some View {
         arenaWithLifecycle
-        .overlay(alignment: .top) { swapConsentOverlay }
+        .overlay(alignment: .top) { topNotices }
         // Log Set sheet — penalty (burpee) logging only now; normal sets log inline.
         .scrollDismissesKeyboard(.interactively)
         .sheet(isPresented: $showLogSetSheet) { logSetSheetContent }
@@ -2350,6 +2359,83 @@ struct SessionLiveView: View {
         swapped.targetWeight = nil
         return (SessionPlanRow.prescription(for: re),
                 SessionPlanRow.prescription(for: swapped))
+    }
+
+    /// THE BODY'S ONE TOP SLOT (plan tasks S1 and S3).
+    ///
+    /// Both notices want the same place — under the 44 pt header rail, over
+    /// whichever of the five pages is up — and both are rare, so they share
+    /// one slot rather than stacking on each other or adding a second
+    /// `.overlay` link to `body`'s chain (the split above `body` exists
+    /// because that chain blew the type-checker's budget twice).
+    ///
+    /// AN OPEN PROPOSAL WINS. It is a question addressed to this lifter with
+    /// a deadline on it (`armProposalExpiry`, 120 s); the error is a
+    /// statement about something already over. Nothing is lost either way —
+    /// `errorText` holds until it is tapped or the next attempt succeeds.
+    @ViewBuilder
+    private var topNotices: some View {
+        if swapConsentModel != nil {
+            swapConsentOverlay
+        } else {
+            errorBannerOverlay
+        }
+    }
+
+    /// THE LIVE BODY'S ERROR LINE, SHOWN (plan task S3).
+    ///
+    /// `errorText` had twelve writers and no reader at all: plan task S4
+    /// deleted `legacyBottomChrome`, which was where its banner used to
+    /// render, so a failed "End for everyone", a failed Leave, a failed crew
+    /// skip and a failed penalty log all told the lifter nothing whatsoever.
+    /// Mounted ONCE here on the body root rather than per page, so all five
+    /// pages are covered by one mount.
+    ///
+    /// RED IS THE TEXT, NOT THE SURFACE (rule 2). This is deliberately not
+    /// `GSInlineErrorBanner`, whose whole face is the accent: the accent on
+    /// every one of these pages is already spent on the LOG control, and a
+    /// solid-accent banner would be the page's second shout. No retry button
+    /// either — each of these verbs has its own control still on screen, and
+    /// a second "Try again" would be a second way to press the same thing.
+    @ViewBuilder
+    private var errorBannerOverlay: some View {
+        if let text = errorText {
+            Button { errorText = nil } label: {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "exclamationmark.circle")
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundStyle(.red)
+                    VStack(alignment: .leading, spacing: 5) {
+                        (
+                            Text(SessionCopy.verbFailed)
+                                .font(GSFont.bold(13, relativeTo: .footnote))
+                            + Text(" \(text)")
+                                .font(GSFont.body(13, relativeTo: .footnote))
+                        )
+                        .foregroundStyle(.red)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        Text(SessionCopy.verbFailedDismiss)
+                            .font(GSFont.bold(10, relativeTo: .caption2))
+                            .tracking(0.9)
+                            .foregroundStyle(theme.neutral500)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 11)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(theme.surface)
+                .overlay(RoundedRectangle(cornerRadius: GSMetrics.radiusMd)
+                    .strokeBorder(theme.divider, lineWidth: 1))
+                .clipShape(RoundedRectangle(cornerRadius: GSMetrics.radiusMd))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 24)
+            .padding(.top, 52)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
     }
 
     /// The card, mounted where the banner was mounted, with the same

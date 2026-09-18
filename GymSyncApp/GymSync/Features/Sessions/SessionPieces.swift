@@ -65,6 +65,17 @@ enum SessionCopy {
     /// THE CREW'S WEEK (owner addition 2026-09-12, on trial in Phase A).
     static let theCrewsWeek = "THE CREW'S WEEK"
 
+    /// THE VERB THAT DID NOT HAPPEN (plan task S3). The live body's
+    /// `errorText` covers ending the session, leaving it, the burpee ledger,
+    /// the crew's skip and the re-mix — everything the lifter PRESSED that
+    /// failed. It is deliberately not the entry card's line: `logSetErrorText`
+    /// means "nothing was saved, try again" and holds the card up for the
+    /// retry, which is the one thing a persisted set must never invite.
+    static let verbFailed = "That didn't go through."
+    /// It clears on tap, and on the next successful attempt. Said out loud,
+    /// because a banner with no stated exit reads as a stuck warning.
+    static let verbFailedDismiss = "TAP TO DISMISS"
+
     /// First name only, for the places a full name would wrap a 40 pt column.
     static func firstName(_ full: String) -> String {
         String(full.split(separator: " ").first ?? "")
