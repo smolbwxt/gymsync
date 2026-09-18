@@ -106,38 +106,28 @@ final class CatalogScreenTests: XCTestCase {
             // congruence B2 T2.3: the block calendar's flag/trophy glyphs.
             "block-calendar",
             // The focused session design round (group-session-and-lobby spec
-            // §8 step 1, owner decision 10): Rounds' rest screen in two
-            // compositions plus the hold threshold and spotter mode, then
-            // Freestyle's shared rail and Together's one clock. The round's
-            // lobby and warm-up ids (frames 106-111) retired to production
-            // in the group-session Phase A plan (task S11) — see the
-            // "production session screens" block below.
-            "round-wait-a",
-            "round-wait-b",
-            "round-skip-offer",
-            "round-spotter",
-            "freestyle-rail",
-            "together-clock",
-            // The round's last two: the crew's consensus swap as a consent
-            // card, and the pump-check post re-composed.
+            // §8 step 1, owner decision 10) retired to production in plan
+            // task S13 (group-session Phase B1) — Rounds' rest screen in
+            // two compositions plus the hold threshold and spotter mode,
+            // and Freestyle's/Together's screens (frames 112-117, 123, 124,
+            // 126, 128), all ten superseded by the "session round,
+            // production" block below. The round's own lobby and warm-up
+            // ids (frames 106-111) retired earlier, to production in the
+            // group-session Phase A plan (task S11) — see the "production
+            // session screens" block below.
+            //
+            // The round's last two survive: the crew's consensus swap as a
+            // consent card, and the pump-check post re-composed.
             "swap-consensus-card",
             "pump-check-card-v2",
-            // The session round's SECOND PASS (frames 123-126 survive): the
-            // ids the owner's picks produced, beside the frozen v1 ids they
-            // answer. The pass's lobby and warm-up ids (120-122) retired
-            // alongside their v1 siblings (task S11).
-            "round-wait-v2",
-            "round-spotter-v2",
+            // Of the session round's SECOND PASS (frames 123-126 survived
+            // the first retirement), only the consensus swap card (125)
+            // survives task S13 too — its production twin has no catalog id
+            // of its own.
             "swap-consensus-card-v2",
-            "together-clock-v2",
-            // The THIRD and last pass (frame 128 survives): spotter mode
-            // with the zone colours put back. Frame 127
-            // (`lobby-crew-ready-v3`) retired with the rest of the round's
-            // lobby ids (task S11).
-            "round-spotter-v3",
             // The production session screens (group-session Phase A plan,
-            // task S11), frames 129-134 — what the ten retired ids above
-            // became once the owner picked.
+            // task S11), frames 129-134 — what the round's lobby and
+            // warm-up ids became once the owner picked.
             "session-lobby-waiting",
             "session-lobby-ready",
             "session-lobby-late",
@@ -147,6 +137,16 @@ final class CatalogScreenTests: XCTestCase {
             // Fix round 6, item 4: the lobby's own second screen (below the
             // fold on 129/130), so the owner can judge THE CREW'S WEEK trial.
             "session-lobby-week",
+            // The session round's production screens (group-session Phase
+            // B1 plan, task S13), frames 136-141 — what the focused design
+            // round became once the owner picked. The style card leads,
+            // then the four styles' live screens.
+            "session-style-choice",
+            "session-round-wait",
+            "session-round-skip",
+            "session-round-spotter",
+            "session-together-clock",
+            "session-freestyle-rail",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

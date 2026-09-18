@@ -11,9 +11,10 @@ import SwiftUI
 /// the Shop tab. The grid now reads: STATS hero (live lifetime volume — the
 /// "Get Stronger" pillar promoted) → ROUTINES & PROGRAMMING | COACH |
 /// DISCOVER (the community-workouts browse, resurrected from the orphaned
-/// LibraryTabView) → THE RACK (dock + weekly-rotation countdown, one
-/// soundboard home) → PRO → SETTINGS. The header avatar became
-/// tappable (→ Edit Profile). LOCKER was cut 2026-08-27 (owner call).
+/// LibraryTabView) → SHOP (PRO, Coaching — THE RACK, the soundboard's dock
+/// + weekly-rotation countdown, left the app in plan task S11) → SETTINGS.
+/// The header avatar became tappable (→ Edit Profile). LOCKER was cut
+/// 2026-08-27 (owner call).
 ///
 /// Widget card recipe (2026-08 3D pass, envelope fixed 2026-08-27): the
 /// theme's raised face on a 6pt darker lip (the RACK IT anatomy at card
@@ -51,13 +52,12 @@ struct YouTabView: View {
 
                         // Owner 2026-08-13: full-width widgets with real
                         // descriptions. Reorder 2026-08-16: SHOP leads (it
-                        // houses PRO, the Rack, Coaching, and every future
-                        // sellable); EXERCISES moved into the Routines hub;
-                        // Settings became a full widget.
+                        // houses PRO, Coaching, and every future sellable);
+                        // EXERCISES moved into the Routines hub; Settings
+                        // became a full widget.
                         shopWidget
                             .padding(.horizontal, 16)
                             .padding(.top, 12)
-                            .gsSpotlightTarget(key: "tour.you.rack")
 
                         routinesWidget
                             .padding(.horizontal, 16)
@@ -84,7 +84,7 @@ struct YouTabView: View {
             .scrollContentBackground(.hidden)
             .background(theme.bg)
             .toolbar(.hidden, for: .navigationBar)   // in-content title (tab-root idiom)
-            // Tour (owner 2026-08-14): stats → routines → the Rack.
+            // Tour (owner 2026-08-14): stats → routines. (The Rack's own step left with the soundboard, plan task S11.)
             .gsSpotlightTour(GuidanceTours.you)
             .task {
                 // Launch-readiness accounting (RootView's overlay hold).
@@ -323,15 +323,15 @@ struct YouTabView: View {
 
     // MARK: - Shop (owner 2026-08-16: the storefront leads the page)
 
-    /// SHOP houses every sellable: PRO, the Rack, Coaching, and whatever
-    /// comes later. The Rack's plate face and rotation moved into
-    /// ShopView with it.
+    /// SHOP houses every sellable: PRO, Coaching, and whatever comes
+    /// later. THE RACK — the soundboard's plate face and rotation — left
+    /// the app in plan task S11.
     private var shopWidget: some View {
         Button {
             showShop = true
         } label: {
             widgetCard(title: "SHOP") {
-                Text("Pro, this week's rack, and hiring a trainer.")
+                Text("Pro, and hiring a trainer.")
                     .font(GSFont.body(13, relativeTo: .subheadline))
                     .foregroundStyle(theme.neutral700)
                     // UI wave 2026-08-27: the one-line-shrink recipe

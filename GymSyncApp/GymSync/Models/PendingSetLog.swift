@@ -21,7 +21,7 @@ import SwiftData
 ///
 /// `id` doubles as the idempotency key: it's the SAME client-generated UUID
 /// `SetLog.id` already carries end-to-end (WorkoutSessionView.swift:675,
-/// GroupSessionLiveView.swift:1733/1826 all construct `SetLog(id: UUID(),
+/// SessionLiveView.swift:1733/1826 all construct `SetLog(id: UUID(),
 /// ...)` fresh per attempt) — `set_logs.id uuid PRIMARY KEY` is commented
 /// "client-generated for idempotent retry" in the migration
 /// (supabase/migrations/20260709000007_create_set_logs.sql:2). Replaying

@@ -17,7 +17,7 @@ struct LogSetSheet: View {
     /// are converted to canonical pounds at commit — without this, a kg
     /// user typing 100 stores a 100 lb set, silently corrupting volume,
     /// est-1RM and program baselines. Trailing-defaulted so pre-existing
-    /// call sites (GroupSessionLiveView's) compile unchanged as lbs until
+    /// call sites (SessionLiveView's) compile unchanged as lbs until
     /// they're swept.
     var unit: WeightUnit = .lbs
 
@@ -57,7 +57,7 @@ struct LogSetSheet: View {
     // properties (`exercise`/`setIndex`/`defaultReps`/`defaultWeight`/
     // `onLog`), so adding this does NOT change that init's signature — the
     // existing call sites (WorkoutSessionView.swift:224,
-    // GroupSessionLiveView.swift:1399) keep compiling unchanged. Adding a
+    // SessionLiveView.swift:1399) keep compiling unchanged. Adding a
     // plain (non-@State, non-private) stored property here instead would
     // have been the memberwise-init trap.
     @State private var showPlateStack = false
@@ -159,7 +159,7 @@ struct LogSetSheet: View {
                     // itself is now `PlateStackDisclosure`, a free-standing
                     // `internal` view (bottom of this file) — promoted out of
                     // this struct the same way `stepperCell` (line ~317
-                    // below) was, so GroupSessionLiveView's inline "LOG THIS
+                    // below) was, so SessionLiveView's inline "LOG THIS
                     // SET" card can reuse it instead of copy-pasting the
                     // ~60-line body. This call site's rendering is unchanged.
                     //
@@ -313,7 +313,7 @@ struct LogSetSheet: View {
     // Plate stack disclosure (Phase H Task 4) now lives as the free-standing
     // `PlateStackDisclosure` view + helpers at the bottom of this file (Fix
     // wave 1 — inline-card extension), same promotion `stepperCell` below
-    // already received, so GroupSessionLiveView's inline "LOG THIS SET" card
+    // already received, so SessionLiveView's inline "LOG THIS SET" card
     // can reuse it. See that section's doc comment for the full rationale.
 }
 
@@ -348,7 +348,7 @@ extension LogSetSheet {
 
 // MARK: - Shared stepper cell (Reps/Weight)
 // Canvas: stepper cell — label kicker / "−  value  +" row with borders. Shared (internal,
-// not file-private) so both LogSetSheet's own reps/weight row and GroupSessionLiveView's
+// not file-private) so both LogSetSheet's own reps/weight row and SessionLiveView's
 // inline "LOG THIS SET" card can use the same implementation instead of copy-pasting it.
 
 func stepperCell(
@@ -431,7 +431,7 @@ func stepperCell(
 }
 
 // MARK: - Shared stepper arithmetic (integers & decimals)
-// Shared (internal) so GroupSessionLiveView's inline log card doesn't need its own copies.
+// Shared (internal) so SessionLiveView's inline log card doesn't need its own copies.
 
 func decrementInt(_ s: inout String) {
     let v = max(0, (Int(s) ?? 0) - 1)
@@ -477,7 +477,7 @@ func incrementDecimal(_ s: inout String, step: Double = 2.5) {
 // MARK: - Shared plate stack disclosure (Phase H Task 4, Fix wave 1)
 // Promoted out of `LogSetSheet` the same way `stepperCell` (line 317 above) and
 // `RPESegmentBar` (line 340 above) were: shared (internal, not file-private) so
-// GroupSessionLiveView's inline "LOG THIS SET" card can reuse the exact "Plates"
+// SessionLiveView's inline "LOG THIS SET" card can reuse the exact "Plates"
 // disclosure instead of copy-pasting its ~60-line body — reviewer ruled the copy-paste
 // approach out explicitly for this fix.
 //
@@ -487,12 +487,15 @@ func incrementDecimal(_ s: inout String, step: Double = 2.5) {
 // plates — converting a kg entry into an lbs plate breakdown would describe a
 // rack the lifter isn't standing at. (`BarLoaderWidget` is the inventory-aware
 // tool; this stays the quick standard-set hint.)
-// Callers own the empty/invalid/non-positive-weight gate — both LogSetSheet
-// (LogSetSheet.swift:~130) and GroupSessionLiveView's `logThisSetCard` only
-// construct this behind `if let targetWeight = Decimal.parseUserInput(...),
-// targetWeight > 0` (Phase O Task 2 — was the bare `Decimal(string:...)`
-// initializer), so this view assumes `target` is already a valid, positive
-// weight.
+// The caller owns the empty/invalid/non-positive-weight gate — LogSetSheet
+// (LogSetSheet.swift:~130) only constructs this behind
+// `if let targetWeight = Decimal.parseUserInput(...), targetWeight > 0`
+// (Phase O Task 2 — was the bare `Decimal(string:...)` initializer), so
+// this view assumes `target` is already a valid, positive weight.
+// SessionLiveView's `logThisSetCard` used to be a second caller with the
+// identical gate; plan task S4 left it callerless and plan task S13's
+// dead-member sweep retired it, so this view is the only construction
+// site now.
 
 struct PlateStackDisclosure: View {
     let target: Decimal

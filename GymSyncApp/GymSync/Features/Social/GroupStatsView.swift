@@ -200,7 +200,7 @@ struct GroupStatsView: View {
     }
 
     /// Comma-grouped, zero-decimal volume — same `NumberFormatter` shape as
-    /// `StatsTabView.volumeString`/`GroupSessionLiveView.formatVolumeFull`
+    /// `StatsTabView.volumeString`/`SessionLiveView.formatVolumeFull`
     /// (documented duplication across this codebase; row-level volume
     /// mirrors GroupRecapView's leaderboard row, which also uses the "full"
     /// comma-grouped form rather than `StatMath.compactNumber`'s abbreviated

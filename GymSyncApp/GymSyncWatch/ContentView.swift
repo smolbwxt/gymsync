@@ -4,8 +4,9 @@ import SwiftUI
 //
 // Phase W Task 3 (watch-hr design §2) — replaces Task 1/2's single-screen
 // placeholder ("No live session" / minimal live summary, both folded into
-// `WhoseTurnView` now) with the real 4-surface companion: whose-turn
-// (root), tap-to-log-set, soundboard, ledger glance.
+// `WhoseTurnView` now) with the real companion: whose-turn (root),
+// tap-to-log-set, ledger glance. A fourth surface, the soundboard, left
+// the app in plan task S11.
 //
 // NAVIGATION (task brief's explicit judgment call — "TabView (vertical
 // paging) or NavigationStack, judge per watchOS 10 idiom"): `TabView` +
@@ -23,10 +24,10 @@ import SwiftUI
 // Per Apple's own guidance for `.verticalPage` (cited above): scrollable
 // content should live in the LAST tab if it must exist at all, since a
 // ScrollView inside a vertically-paging TabView competes with the page-
-// swipe gesture. None of these 4 surfaces scroll (each is deliberately kept
+// swipe gesture. None of these surfaces scroll (each is deliberately kept
 // to a handful of short lines — "tiny-screen honesty"), so this doesn't
-// bite here, but it's why `WhoseTurnView`/`LogSetView`/`SoundboardView`/
-// `LedgerView` all use plain `VStack`/`Group`, never `ScrollView`.
+// bite here, but it's why `WhoseTurnView`/`LogSetView`/`LedgerView` all use
+// plain `VStack`/`Group`, never `ScrollView`.
 //
 // `LogSetView`'s own Digital Crown usage (weight adjustment) is scoped to
 // its own `.focusable` control, not a page-level gesture — see that file's
@@ -40,7 +41,6 @@ struct ContentView: View {
         TabView {
             WhoseTurnView(store: store)
             LogSetView(store: store)
-            SoundboardView(store: store)
             LedgerView(store: store)
         }
         .tabViewStyle(.verticalPage)

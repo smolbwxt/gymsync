@@ -83,7 +83,10 @@ final class WatchDisplayFormattingTests: XCTestCase {
         // The stale-entry-window law: a lobby-era struct seeding the live
         // view must read as ACTIVE (not-ended), or the watch shows
         // "Session ended" at session start (T3 re-review NEW-Important).
-        for state in ["scheduled", "lobby_open", "editing", "voting", "locked", "in_progress"] {
+        // "editing"/"voting"/"locked" narrowed out (D7's five-state CHECK,
+        // mechanical cleanup decision 6, plan task S13): the states no
+        // longer exist.
+        for state in ["scheduled", "lobby_open", "in_progress"] {
             XCTAssertTrue(WatchDisplayFormatting.isSessionActive(state: state), state)
         }
     }

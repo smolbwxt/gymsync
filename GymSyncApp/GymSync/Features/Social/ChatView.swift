@@ -147,7 +147,7 @@ struct ChatView: View {
     /// ad-hoc session) — the sub-thread INSERT RLS binds it via `IS NOT
     /// DISTINCT FROM` against `sessions.group_id`
     /// (20260719000011_chat_subthread_lock_hardening.sql #5). Callers
-    /// (LobbyView, GroupSessionLiveView) pass `session.groupID` straight
+    /// (LobbyView, SessionLiveView) pass `session.groupID` straight
     /// from the `WorkoutSession` already in scope — see those files' chat
     /// sheet definitions.
     init(sessionID: UUID, groupID: UUID?) {
@@ -206,12 +206,6 @@ struct ChatView: View {
     @State private var isSendingVoice = false
 
     private static let reactionChoices = ["👍", "🔥", "💪", "😂"]
-
-    // Sound reactions (20260811000004): the user's rack = what they can
-    // ATTACH; the catalog names render every chip. Anyone taps to play.
-    @State private var ownedSoundSlugs: [String] = []
-    @State private var soundNames: [String: String] = [:]
-    private static let soundReactionPrefix = "snd:"
 
     // @Coach in crew chats (spec 2026-08-22 §3): a message starting
     // "@coach" runs the asker-scoped pipeline and posts the answer as a
@@ -275,7 +269,6 @@ struct ChatView: View {
         }
         .background(theme.bg)
         .task { await load() }
-        .task { await loadSoundReactionData() }
         .onChange(of: draft) {
             typingDebounce?.cancel()
             let isEmpty = draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -312,7 +305,7 @@ struct ChatView: View {
         }
         .onDisappear {
             // Only clear the suppression flag if it's still pointing at THIS
-            // chat's group — see GroupSessionLiveView's identical guard on
+            // chat's group — see SessionLiveView's identical guard on
             // activeSessionID for why an unconditional nil is unsafe.
             if let groupID = scope.groupIDForPushSuppression, appState.activeChatGroupID == groupID {
                 appState.activeChatGroupID = nil
@@ -620,25 +613,6 @@ struct ChatView: View {
                                 }
                             }
                         }
-                        // Sound reactions — only the sounds YOU own attach
-                        // (RLS enforces it server-side too); everyone can
-                        // tap the resulting chip to hear it.
-                        if !ownedSoundSlugs.isEmpty {
-                            Divider()
-                            ForEach(ownedSoundSlugs, id: \.self) { slug in
-                                Button {
-                                    Task {
-                                        try? await ChatRepository.react(
-                                            messageID: message.id,
-                                            emoji: Self.soundReactionPrefix + slug)
-                                        await refreshReactions()
-                                    }
-                                } label: {
-                                    Label(soundNames[slug] ?? slug,
-                                          systemImage: "speaker.wave.2")
-                                }
-                            }
-                        }
                         // Phase M Task 2: Report/Block, incoming messages
                         // only (can't report/block yourself; system/
                         // soundboard-echo messages never reach this branch —
@@ -658,23 +632,21 @@ struct ChatView: View {
                             }
                         }
                     }
-                // Reaction pills
+                // Reaction pills — emoji only (spec §5, §9.1). A `snd:`-
+                // prefixed row (there will be none after D5, but a client
+                // may still hold one in cache) is SKIPPED, never rendered as
+                // text — `visibleReactionCounts` is the law, tested.
                 if let messageReactions = reactions[message.id], !messageReactions.isEmpty {
-                    let counts = Dictionary(grouping: messageReactions, by: \.emoji)
-                        .mapValues(\.count)
-                        .sorted { $0.key < $1.key }
-                    HStack(spacing: 4) {
-                        ForEach(counts, id: \.key) { emoji, count in
-                            if emoji.hasPrefix(Self.soundReactionPrefix) {
-                                soundReactionChip(
-                                    slug: String(emoji.dropFirst(Self.soundReactionPrefix.count)),
-                                    count: count)
-                            } else {
-                                reactionPill(emoji: emoji, count: count)
+                    let counts = Dictionary(grouping: messageReactions, by: \.emoji).mapValues(\.count)
+                    let visible = Self.visibleReactionCounts(from: counts)
+                    if !visible.isEmpty {
+                        HStack(spacing: 4) {
+                            ForEach(visible, id: \.emoji) { row in
+                                reactionPill(emoji: row.emoji, count: row.count)
                             }
                         }
+                        .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
                     }
-                    .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
                 }
             }
             // Flush-left for incoming; flush-right for outgoing
@@ -733,32 +705,15 @@ struct ChatView: View {
             .background(Capsule().fill(theme.neutral300))
     }
 
-    /// A sound reaction chip: tap PLAYS the sound for anyone — ownership
-    /// only gates attaching (the contextMenu above / RLS below).
-    private func soundReactionChip(slug: String, count: Int) -> some View {
-        Button {
-            Task { await SoundboardPlayer.shared.play(slug: slug) }
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "speaker.wave.2.fill")
-                    .font(.system(size: 9, weight: .bold))
-                Text("\(soundNames[slug] ?? slug) \(count)")
-                    .font(GSFont.bold(11, relativeTo: .caption))
-            }
-            .foregroundStyle(theme.accent)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 2)
-            .background(Capsule().fill(theme.accent100))
-        }
-        .buttonStyle(.plain)
-    }
-
-    /// Rack (attachable set) + catalog names (chip labels) — one fetch each.
-    private func loadSoundReactionData() async {
-        ownedSoundSlugs = (try? await SoundboardFavoritesRepository.get()) ?? []
-        if let catalog = try? await SoundboardRepository.fetchCatalog() {
-            soundNames = Dictionary(uniqueKeysWithValues: catalog.map { ($0.slug, $0.displayName ?? $0.slug) })
-        }
+    /// The reaction vocabulary is emoji only (plan task S12, spec §5, §9.1).
+    /// A `snd:`-prefixed row — there will be none after D5's drop, but a
+    /// client may still hold one in a stale cache — is SKIPPED entirely,
+    /// never rendered as text: "renders `snd:airhorn` as a chip" is exactly
+    /// the defect a naive removal would ship.
+    static func visibleReactionCounts(from raw: [String: Int]) -> [(emoji: String, count: Int)] {
+        raw.filter { !$0.key.hasPrefix("snd:") }
+            .sorted { $0.key < $1.key }
+            .map { (emoji: $0.key, count: $0.value) }
     }
 
     // MARK: - Message Content
@@ -774,33 +729,6 @@ struct ChatView: View {
                 .padding(.vertical, 9)
                 .padding(.horizontal, 12)
                 .background(theme.surface)
-        } else if message.kind == .soundboardEcho {
-            // Canvas soundboard echo: centered inline block with dashed divider border.
-            // 🔊 icon + body text; tapping replays the sound from the payload slug.
-            let slug = message.payload?["sound_slug"]?.stringValue
-            Button {
-                guard let s = slug else { return }
-                Task { await SoundboardPlayer.shared.play(slug: s) }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "speaker.wave.2")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text(message.body ?? "Sound")
-                        .font(GSFont.bold(11, relativeTo: .caption2))
-                        .lineLimit(2)
-                }
-                .foregroundStyle(theme.neutral700.opacity(0.85))
-                .padding(.horizontal, 11)
-                .padding(.vertical, 4)
-                .overlay(
-                    Rectangle()
-                        .strokeBorder(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                        .foregroundStyle(theme.divider)
-                )
-            }
-            .buttonStyle(.plain)
-            .frame(maxWidth: .infinity, alignment: .center)
-            .disabled(slug == nil)
         } else if message.kind == .image {
             // Image bubble: surface bg wrapper, 5px inner padding per canvas
             VStack(alignment: .leading, spacing: 0) {

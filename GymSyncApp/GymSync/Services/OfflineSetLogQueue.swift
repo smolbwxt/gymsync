@@ -131,10 +131,12 @@ final class OfflineSetLogQueue {
     /// comment: a shared-device second user must never see a "syncing" chip
     /// on rows that are actually the FIRST user's still-queued sets). Views
     /// check membership to render the "syncing" indicator — e.g.
-    /// `WorkoutSessionView.loggedSetsTable`'s row icon,
-    /// `GroupSessionLiveView.feedRow`'s tag row (both wired in Phase O
-    /// Task 3). Read directly like `ConnectivityMonitor.shared.isOnline` —
-    /// no environment plumbing needed, `@Observable` tracks the read.
+    /// `WorkoutSessionView.loggedSetsTable`'s row icon (wired in Phase O
+    /// Task 3). `SessionLiveView.feedRow`'s identical tag row was a second
+    /// reader until plan task S13's dead-member sweep retired the
+    /// callerless view it belonged to. Read directly like
+    /// `ConnectivityMonitor.shared.isOnline` — no environment plumbing
+    /// needed, `@Observable` tracks the read.
     private(set) var pendingSetLogIDs: Set<UUID> = []
 
     /// Best-effort surface for a PERMANENT (non-retryable) replay-time

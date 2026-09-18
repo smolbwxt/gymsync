@@ -77,8 +77,11 @@ final class EventKitBridgeTests: XCTestCase {
     }
 
     func testEveryOtherActiveStateIsKept() {
-        let ids = (0..<5).map { _ in UUID() }
-        let states = ["lobby_open", "editing", "voting", "locked", "in_progress"]
+        // "editing"/"voting"/"locked" narrowed out (D7's five-state CHECK,
+        // mechanical cleanup decision 6, plan task S13): the states no
+        // longer exist.
+        let ids = (0..<2).map { _ in UUID() }
+        let states = ["lobby_open", "in_progress"]
         let liveStates = Dictionary(uniqueKeysWithValues: zip(ids, states))
         let staleIDs = EventKitBridge.staleSessionIDs(mappedIDs: ids, liveStates: liveStates)
         XCTAssertTrue(staleIDs.isEmpty)

@@ -156,7 +156,7 @@ public final class ThemeStore {
     /// `@Observable` cache of the current `user_settings` row, updated by
     /// both `load()` (below) and `noteExternalSettingsWrite(_:)`
     /// (`YouTabView.setShareHeartRate`'s own success-path call, already
-    /// existing since Task 4). `GroupSessionLiveView.pushWatchSessionState()`
+    /// existing since Task 4). `SessionLiveView.pushWatchSessionState()`
     /// reads this DIRECTLY instead of caching its own copy once at
     /// `openAndSubscribe()` time — the fix for the carried-in T4 review
     /// finding ("shareHeartRate is cached once... a mid-session toggle flip
@@ -164,14 +164,14 @@ public final class ThemeStore {
     /// .defaults`' own safe opt-out default.
     public private(set) var shareHeartRate: Bool = false
 
-    /// Fix wave 1 (reviewer finding, CRITICAL) — the trigger `GroupSessionLiveView
+    /// Fix wave 1 (reviewer finding, CRITICAL) — the trigger `SessionLiveView
     /// .pushWatchSessionState()` was missing. That function already reads
     /// `shareHeartRate` above LIVE on every call (this property's own doc
     /// comment), but nothing ever fired a re-push when the value actually
     /// changed mid-session — a toggle flip in `YouTabView` (this app's tabs
     /// stay mounted across switches, so no re-`.task` fires) sat unseen by
     /// the Watch until an unrelated turn-change/session-end push happened
-    /// to carry it along. `GroupSessionLiveView` sets this to a closure that
+    /// to carry it along. `SessionLiveView` sets this to a closure that
     /// calls its own `pushWatchSessionState()` on `.onAppear` (while a live
     /// session is genuinely on screen) and clears it back to `nil` on
     /// `.onDisappear` — same "owner sets one closure per event" convention
@@ -182,7 +182,7 @@ public final class ThemeStore {
     ///
     /// ISOLATION: both sides are `@MainActor`. This class is declared
     /// `@MainActor` (isolating every stored-property access, including this
-    /// one), and `GroupSessionLiveView` — a SwiftUI `View` — inherits
+    /// one), and `SessionLiveView` — a SwiftUI `View` — inherits
     /// `@MainActor` isolation from the `View` protocol itself for its
     /// `body`/lifecycle-modifier closures (`.onAppear`/`.onDisappear`), the
     /// same reasoning already documented at several existing `@MainActor`
@@ -214,14 +214,14 @@ public final class ThemeStore {
 
     /// Bar + plate inventory off the same cached row, so a view that already
     /// reads `weightUnit` from here can draw a correct bar-loader preview
-    /// without its own `user_settings` fetch (GroupSessionLiveView's inline
+    /// without its own `user_settings` fetch (SessionLiveView's inline
     /// loader card). Canonical POUNDS for the bar; inventory is denominated
     /// in the user's own unit, `nil` meaning "the standard set".
     var barWeightLbs: Decimal { lastKnownSettings?.barWeightLbs ?? 45 }
     var plateInventory: [Decimal]? { lastKnownSettings?.plateInventory }
 
     /// Getting-started lift anchors off the same cached row (20260812000002)
-    /// — read LIVE at prefill sites (GroupSessionLiveView), never cached
+    /// — read LIVE at prefill sites (SessionLiveView), never cached
     /// locally, per the shareHeartRate bug class documented there.
     var liftAnchors: [String: Decimal]? { lastKnownSettings?.liftAnchors }
 

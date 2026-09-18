@@ -65,7 +65,7 @@ enum SessionKudosRepository {
     /// this mirrors that rather than risking an unverified SDK code path.
     ///
     /// Best-effort per recipient (fire-and-forget, matches `tapReaction`/
-    /// `tapSound`'s discipline in GroupSessionLiveView): one rejected row
+    /// `tapSound`'s discipline in SessionLiveView): one rejected row
     /// (e.g. a participant who somehow no longer satisfies the RLS
     /// recipient check) must not block the rest of the crew from getting
     /// theirs, and a failure here must never surface an error to the user

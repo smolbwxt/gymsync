@@ -16,9 +16,10 @@ import SwiftUI
 //
 // Deliberately NOT ported: the full accent ramp (100/200/300/600/700/
 // 800), the neutral ramp, and `isDark`. No theme picker or dark/light
-// chrome switching exists on the Watch — none of the 4 Watch surfaces the
-// design doc lists (whose-turn indicator, tap-to-log-set, soundboard,
-// ledger glance) is a settings/appearance screen, and "Watch UI polish
+// chrome switching exists on the Watch — none of the Watch surfaces (
+// whose-turn indicator, tap-to-log-set, ledger glance — the soundboard
+// left the app in plan task S11) is a settings/appearance screen, and
+// "Watch UI polish
 // beyond system idioms" is explicitly deferred to Phase D. If/when a
 // palette choice syncs from the phone (design §3, WatchConnectivity
 // applicationContext), re-port GSPalettes' id->theme lookup from

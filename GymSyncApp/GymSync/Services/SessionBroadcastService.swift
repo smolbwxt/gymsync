@@ -6,7 +6,6 @@ import Supabase
 // Manages ephemeral broadcast messaging on the `session:{id}` realtime channel.
 //
 // Wire shapes (spec §5):
-//   soundboard event: { "user_id": uuid-string, "sound_slug": slug, "ts": ms }
 //   reaction  event:  { "user_id": uuid-string, "emoji": string,    "ts": ms }
 //
 // Broadcast is a DIFFERENT primitive from postgres_changes:
@@ -27,9 +26,10 @@ import Supabase
 // Rate limit: 1 send per second shared across all sends from this instance.
 // Drops silently (spec: "drop, don't queue").
 //
-// Sound echo (removed 2026-08-11): sendSound no longer inserts chat rows —
-// sounds are durable as message REACTIONS ('snd:{slug}' in
-// chat_message_reactions); the broadcast here stays ephemeral by design.
+// The soundboard broadcast and sendSound left the app in plan task S11
+// (owner decision 8) — reactions were already the durable half of that
+// story (spec §5, §9.1: the vocabulary is emoji only) and this channel's
+// remaining traffic (reaction, swap) stays ephemeral by design.
 
 @MainActor
 final class SessionBroadcastService {
@@ -61,15 +61,13 @@ final class SessionBroadcastService {
 
     // MARK: - Subscribe
 
-    /// Subscribe to soundboard + reaction broadcast events for a session.
+    /// Subscribe to reaction + swap broadcast events for a session.
     ///
     /// - Parameters:
     ///   - sessionID:     The session to subscribe to (channel: `session:{id}`).
-    ///   - onSoundboard:  Called on MainActor with (userID, soundSlug) when a soundboard broadcast arrives.
     ///   - onReaction:    Called on MainActor with (userID, emoji) when a reaction broadcast arrives.
     func subscribe(
         sessionID: UUID,
-        onSoundboard: @escaping @MainActor (UUID, String) -> Void,
         onReaction:   @escaping @MainActor (UUID, String) -> Void,
         onSwap:       @escaping @MainActor (SwapEvent) -> Void = { _ in }
     ) async {
@@ -80,7 +78,6 @@ final class SessionBroadcastService {
 
         // Register broadcast stream iterators BEFORE subscribing.
         // (Same ordering rule as postgres_changes — SDK wires filters during subscribe.)
-        let soundboardStream = ch.broadcastStream(event: "soundboard")
         let reactionStream   = ch.broadcastStream(event: "reaction")
         let swapStream       = ch.broadcastStream(event: "swap")
 
@@ -89,22 +86,6 @@ final class SessionBroadcastService {
 
         broadcastTask = Task { @MainActor in
             await withTaskGroup(of: Void.self) { group in
-
-                // ── soundboard ────────────────────────────────────────────
-                group.addTask { @MainActor in
-                    for await payload in soundboardStream {
-                        guard
-                            let rawUID = payload["user_id"]?.stringValue,
-                            let uid    = UUID(uuidString: rawUID),
-                            let slug   = payload["sound_slug"]?.stringValue
-                        else {
-                            AppLogger.soundboard.error(
-                                "broadcast: malformed soundboard payload")
-                            continue
-                        }
-                        onSoundboard(uid, slug)
-                    }
-                }
 
                 // ── swap (hot-swap wire) ──────────────────────────────────
                 group.addTask { @MainActor in
@@ -119,7 +100,7 @@ final class SessionBroadcastService {
                             let repID  = UUID(uuidString: rawRep),
                             let repName = payload["replacement_name"]?.stringValue
                         else {
-                            AppLogger.soundboard.error("broadcast: malformed swap payload")
+                            AppLogger.sessionBroadcast.error("broadcast: malformed swap payload")
                             continue
                         }
                         let proposalID = payload["proposal_id"]?.stringValue.flatMap(UUID.init)
@@ -139,7 +120,7 @@ final class SessionBroadcastService {
                             let uid    = UUID(uuidString: rawUID),
                             let emoji  = payload["emoji"]?.stringValue
                         else {
-                            AppLogger.soundboard.error(
+                            AppLogger.sessionBroadcast.error(
                                 "broadcast: malformed reaction payload")
                             continue
                         }
@@ -162,33 +143,6 @@ final class SessionBroadcastService {
     }
 
     // MARK: - Send (with shared rate limit)
-
-    /// Broadcast a soundboard event and (if groupID provided) insert a chat echo.
-    ///
-    /// - Parameters:
-    ///   - sessionID:   The active session.
-    ///   - groupID:     The session's group chat; echo inserted only when non-nil.
-    ///   - slug:        Sound slug (e.g. "airhorn").
-    func sendSound(sessionID: UUID, groupID: UUID?, slug: String) async {
-        guard rateAllowed() else { return }
-        guard let me = await SupabaseService.shared.currentUserID() else { return }
-
-        await broadcastRaw(
-            sessionID: sessionID,
-            event: "soundboard",
-            message: [
-                "user_id":    .string(me.uuidString),
-                "sound_slug": .string(slug),
-                "ts":         .double(Date().timeIntervalSince1970 * 1000)
-            ]
-        )
-
-        // Owner decision 2026-08-11: no more per-play chat echoes — sounds
-        // live as message REACTIONS now (ChatView sound chips). The ephemeral
-        // broadcast above is the whole in-session story; groupID is kept in
-        // the signature for call-site stability.
-        _ = groupID
-    }
 
     /// Broadcast a reaction event (no chat echo per spec).
     ///
@@ -246,14 +200,15 @@ final class SessionBroadcastService {
     /// topic registry shows nobody else already holds this exact topic.
     ///
     /// CHANNEL-COLLISION GUARD (debt-zero sprint, gate finding I-1 sibling
-    /// path): `WatchConnectivityBridge` owns a SEPARATE, send-only
-    /// `SessionBroadcastService` instance for the watch `soundboardTap`
-    /// relay (`Services/WatchConnectivityBridge.swift:129`,
-    /// `LiveSoundboardBroadcasting(broadcastService: SessionBroadcastService())`)
-    /// whose `channel` stays `nil` forever — every one of ITS sends used
-    /// to take the `else` branch below unconditionally, on the SAME
-    /// `session:{id}` topic `GroupSessionLiveView`'s own subscribed
-    /// instance already holds for the whole session. See
+    /// path): before plan task S11, `WatchConnectivityBridge` owned a
+    /// SEPARATE, send-only `SessionBroadcastService` instance for the watch
+    /// soundboard-tap relay, whose `channel` stayed `nil` forever — every
+    /// one of ITS sends used to take the `else` branch below
+    /// unconditionally, on the SAME `session:{id}` topic `SessionLiveView`'s
+    /// own subscribed instance already holds for the whole session. The
+    /// relay is gone with the soundboard, but the guard stays: any future
+    /// send-only instance on this same topic would hit the identical hazard.
+    /// See
     /// `BroadcastChannelDecision`'s doc comment
     /// (`Services/BroadcastChannelDecision.swift`) for the full SDK-quote
     /// writeup (hazard, fix, and residual-risk note) —
@@ -291,7 +246,7 @@ final class SessionBroadcastService {
         do {
             try await ch.broadcast(event: event, message: message)
         } catch {
-            AppLogger.soundboard.error(
+            AppLogger.sessionBroadcast.error(
                 "broadcast send failed (\(event, privacy: .public)): \(error, privacy: .public)")
         }
 

@@ -99,9 +99,9 @@ final class SentryContextTests: XCTestCase {
         XCTAssertEqual(SentryContext.SessionPhase(rawState: nil), .none)
         XCTAssertEqual(SentryContext.SessionPhase(rawState: "scheduled"), .scheduled)
         XCTAssertEqual(SentryContext.SessionPhase(rawState: "lobby_open"), .scheduled)
-        XCTAssertEqual(SentryContext.SessionPhase(rawState: "editing"), .scheduled)
-        XCTAssertEqual(SentryContext.SessionPhase(rawState: "voting"), .scheduled)
-        XCTAssertEqual(SentryContext.SessionPhase(rawState: "locked"), .scheduled)
+        // "editing"/"voting"/"locked" narrowed out (D7's five-state CHECK,
+        // mechanical cleanup decision 6, plan task S13): the states no
+        // longer exist.
         XCTAssertEqual(SentryContext.SessionPhase(rawState: "in_progress"), .live)
         XCTAssertEqual(SentryContext.SessionPhase(rawState: "completed"), .completed)
         XCTAssertEqual(SentryContext.SessionPhase(rawState: "abandoned"), .abandoned)

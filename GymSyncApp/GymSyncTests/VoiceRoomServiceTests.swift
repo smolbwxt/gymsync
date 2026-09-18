@@ -312,7 +312,7 @@ final class VoiceRoomServiceTests: XCTestCase {
     /// session that connection was for — this test used to lock exactly
     /// that (two different `UUID()`s, still asserting `connectCallCount ==
     /// 1`). The NEW contract only no-ops on a SAME-session re-entrant call
-    /// (LobbyView -> GroupSessionLiveView's deliberate re-call across that
+    /// (LobbyView -> SessionLiveView's deliberate re-call across that
     /// push, letting the room persist); a DIFFERENT-session call now
     /// re-joins instead — covered separately by
     /// `testJoinForDifferentSessionWhileConnectedLeavesThenReconnects` below.

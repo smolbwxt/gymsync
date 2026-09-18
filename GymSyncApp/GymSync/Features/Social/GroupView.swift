@@ -403,8 +403,11 @@ struct GroupView: View {
 
     // MARK: - Sessions List
 
+    // `editing`/`voting`/`locked` narrowed out (D7's five-state CHECK,
+    // mechanical cleanup decision 6, plan task S13): the states no longer
+    // exist.
     private static let upcomingStates: Set<String> = [
-        "scheduled", "lobby_open", "editing", "voting", "locked", "in_progress"
+        "scheduled", "lobby_open", "in_progress"
     ]
     private static let pastStates: Set<String> = ["completed", "abandoned"]
 

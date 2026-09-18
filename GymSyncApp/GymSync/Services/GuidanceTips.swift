@@ -137,9 +137,8 @@ enum GuidanceTours {
         .init(anchorKey: "tour.you.routines",
               title: "Your routines, your Coach",
               message: "Five slots to build in, Discover for ready-made plans, and Coach — your generated program — coming soon."),
-        .init(anchorKey: "tour.you.rack",
-              title: "The Shop",
-              message: "Pro, the Rack — your live-session soundboard — and coaching all live here."),
+        // `tour.you.rack` step left with the soundboard (plan task S11):
+        // it taught THE RACK, which no longer exists.
     ])
 
     /// QA reset rides along with the tips reset.

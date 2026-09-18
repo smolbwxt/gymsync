@@ -3,7 +3,7 @@ import SwiftUI
 // MARK: - PRCelebrationOverlay
 //
 // Full-screen, USER-DISMISSED PR celebration (canvas frame p29) — lifted out of
-// `GroupSessionLiveView` (Phase P Task 1) so solo sessions and the debug catalog can
+// `SessionLiveView` (Phase P Task 1) so solo sessions and the debug catalog can
 // reuse the identical visual + dismiss behavior. Every color/font/layout token below
 // is copied verbatim from the original `prCelebrationOverlay` computed property —
 // this is a behavior-preserving extraction, not a redesign.
@@ -20,7 +20,7 @@ struct PRCelebrationOverlay: View {
     let priorBest: Decimal
     let monthlyCount: Int?
     /// Units sweep — display unit; stored weights arrive as pounds.
-    /// Trailing-defaulted so GroupSessionLiveView's call site compiles
+    /// Trailing-defaulted so SessionLiveView's call site compiles
     /// unchanged (lbs) until its own sweep.
     var unit: WeightUnit = .lbs
     let onDismiss: () -> Void
@@ -187,7 +187,7 @@ struct PRCelebrationOverlay: View {
             : "New PR! \(exerciseName) — \(Units.format(pounds: weight, unit: unit, rounded: false, includeUnit: false)) \(unit.label) × \(reps) on GymSync."
     }
 
-    // `decimalString`/`ordinal` are copied verbatim from `GroupSessionLiveView` (which
+    // `decimalString`/`ordinal` are copied verbatim from `SessionLiveView` (which
     // keeps its own private copies — they're still used there by unrelated elements:
     // the roster grid's weight formatting and the rotation strip's ordinal labels — so
     // this is a duplicate for isolation, not a shared extraction of those helpers).

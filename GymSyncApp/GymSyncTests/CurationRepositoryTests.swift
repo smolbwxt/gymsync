@@ -10,21 +10,9 @@ final class CurationRepositoryTests: XCTestCase {
         try await TestAuth.signInIfConfigured()
     }
 
-    func testCatalogDecodesWithIconAndCategory() async throws {
-        let catalog = try await SoundboardRepository.fetchCatalog()
-        XCTAssertGreaterThanOrEqual(catalog.count, 4)
-        let airhorn = try XCTUnwrap(catalog.first { $0.slug == "airhorn" })
-        XCTAssertEqual(airhorn.icon, "📯")
-        XCTAssertEqual(airhorn.category, "hype")
-    }
-
-    func testFavoritesRoundTrip() async throws {
-        let original = try await SoundboardFavoritesRepository.get()
-        defer { Task { try? await SoundboardFavoritesRepository.set(original) } }
-        try await SoundboardFavoritesRepository.set(["boo", "ding"])
-        let fetched = try await SoundboardFavoritesRepository.get()
-        XCTAssertEqual(fetched, ["boo", "ding"])
-    }
+    // testCatalogDecodesWithIconAndCategory / testFavoritesRoundTrip left
+    // with the soundboard (plan task S11) — SoundboardRepository and
+    // SoundboardFavoritesRepository no longer exist.
 
     /// Open publishing (20260728000008): any owner can publish public now —
     /// it's the FEATURED spotlight that stays curator-managed. The CI user is

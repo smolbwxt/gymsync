@@ -42,7 +42,10 @@ enum SentryContext {
 
         init(rawState: String?) {
             switch rawState {
-            case "scheduled", "lobby_open", "editing", "voting", "locked":
+            // `editing`/`voting`/`locked` narrowed out (D7's five-state
+            // CHECK, mechanical cleanup decision 6, plan task S13): the
+            // states no longer exist.
+            case "scheduled", "lobby_open":
                 self = .scheduled
             case "in_progress":
                 self = .live
@@ -92,7 +95,7 @@ enum SentryContext {
 
     /// App-wide refresh — App/RootView.swift's foreground hook. No
     /// live-session-specific data is observable from RootView (that's
-    /// `GroupSessionLiveView`'s job, below), so this always reports
+    /// `SessionLiveView`'s job, below), so this always reports
     /// `sessionPhase: .none` / `liveParticipantCount: nil` even if a live
     /// session happens to be open — self-corrects the moment
     /// `refreshLiveSession` next runs (its own foreground hook, or the
@@ -111,7 +114,7 @@ enum SentryContext {
         ))
     }
 
-    /// Live-session refresh — Features/Sessions/GroupSessionLiveView.swift's
+    /// Live-session refresh — Features/Sessions/SessionLiveView.swift's
     /// join (`.onAppear`), leave (`.onDisappear`), and in-session foreground
     /// (`.onChange(of: scenePhase)`) hooks, which have the real session state
     /// + roster count this call site can't see.

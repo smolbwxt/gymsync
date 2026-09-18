@@ -13,7 +13,7 @@ import SwiftUI
 /// `internal`, not `private`, specifically so other files can reuse them)
 /// rather than a bespoke TextField, so weight entry here looks and behaves
 /// identically to every other weight input already in the app
-/// (RoutineBuilderView, LogSetSheet, GroupSessionLiveView).
+/// (RoutineBuilderView, LogSetSheet, SessionLiveView).
 struct BodyWeightLogSheet: View {
     var onLogged: (() -> Void)?
 

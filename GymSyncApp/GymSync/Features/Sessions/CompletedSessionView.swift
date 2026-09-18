@@ -49,7 +49,7 @@ struct CompletedSessionView: View {
     /// latent RLS bug, flagged not fixed)"). See
     /// `PersonalRecordRepository.countsBySession`'s doc comment for the full
     /// history (Fix round 1 fixed the equivalent bug in
-    /// `GroupSessionLiveView.buildGroupRecapPayload`).
+    /// `SessionLiveView.buildGroupRecapPayload`).
     @State private var prCountByUser: [UUID: Int] = [:]
 
     // MARK: - Duration edit sheet

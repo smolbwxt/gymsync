@@ -32,7 +32,7 @@ final class BroadcastChannelDecisionTests: XCTestCase {
 
     /// No held channel, but the client-wide registry already has an entry
     /// for this topic (the I-1 cross-instance collision case: some OTHER
-    /// holder — e.g. `GroupSessionLiveView`'s subscribed instance —
+    /// holder — e.g. `SessionLiveView`'s subscribed instance —
     /// registered this exact topic) — reuse it, don't create a disposable
     /// one.
     func testNoHeldChannelButTopicRegisteredReusesRegistry() {
