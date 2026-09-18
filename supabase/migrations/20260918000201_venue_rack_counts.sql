@@ -4,6 +4,11 @@
 -- same story below, but its function ships in the next migration -- see
 -- the comment block after this one.
 --
+-- APPLIED: 2026-09-18 19:08:11 UTC (schema_migrations version
+-- 20260918190811). Verified live: set_venue_rack_count/3 SECURITY
+-- DEFINER; venues.rack_counts jsonb, rack_counts_updated_by uuid,
+-- rack_counts_updated_at timestamptz.
+--
 -- THE NUMBER BELONGS TO THE BUILDING, NOT TO A SESSION. A venue that hosts
 -- four squat racks hosts them for every crew that trains there, on every
 -- day. Asking a session's organizer at scheduling time asks the one person
