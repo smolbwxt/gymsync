@@ -29,3 +29,77 @@ final class LogControlGateTests: XCTestCase {
         }
     }
 }
+
+/// `LogFollowUp.calls(for:)` — which RPCs a PERSISTED set runs, by style
+/// (ruling R-B22, fix round 5). The final whole-branch review found the log
+/// path calling `advance_turn` in all three styles: in Together and Freestyle
+/// every lifter who was neither the current turn holder nor the organizer got
+/// a P0001 raise on a set that was already in the database, an entry card that
+/// stayed up, and a second tap's worth of duplicate. The style rule lives here
+/// so the log path cannot quietly regrow a condition of its own.
+final class LogFollowUpTests: XCTestCase {
+
+    /// Rounds runs both, in this order: the turn moves first, so the round
+    /// that may close behind it already points at the next lifter.
+    func testRoundsAdvancesTheTurnThenOffersTheRound() {
+        XCTAssertEqual(LogFollowUp.calls(for: .rounds), [.advanceTurn, .advanceRound])
+    }
+
+    /// Together and Freestyle have no turns and no rounds (spec §3.3) — the
+    /// insert is the whole transaction, and there is nothing to call after it.
+    func testTogetherAndFreestyleRunNothingAfterTheInsert() {
+        XCTAssertEqual(LogFollowUp.calls(for: .together), [])
+        XCTAssertEqual(LogFollowUp.calls(for: .freestyle), [])
+    }
+
+    /// The offline path records a DEFERRED `advance_turn`, so it asks this
+    /// same question rather than carrying a second copy of the rule — a
+    /// Together lifter's queued set must not fire a rotation call on
+    /// reconnect.
+    func testOnlyRoundsEverRecordsADeferredTurnAdvance() {
+        XCTAssertTrue(LogFollowUp.calls(for: .rounds).contains(.advanceTurn))
+        for style: SessionStyle in [.together, .freestyle] {
+            XCTAssertFalse(LogFollowUp.calls(for: style).contains(.advanceTurn))
+        }
+    }
+
+    /// Every style is answered — a fourth one added later fails here rather
+    /// than silently inheriting the rotation's calls.
+    func testEveryStyleHasAnAnswer() {
+        for style in SessionStyle.allCases {
+            let calls = LogFollowUp.calls(for: style)
+            XCTAssertEqual(calls.isEmpty, style != .rounds,
+                           "\(style.rawValue) needs its own ruling before it can log")
+        }
+    }
+}
+
+/// `RoundWindow.openedAt(roundStartedAt:liftingStartedAt:)` — the client's
+/// mirror of `public.advance_round`'s own `COALESCE(round_started_at,
+/// lifting_started_at, '-infinity')` (ruling R-B23). Fix-forward
+/// `20260913000105` exists precisely so a warm-up set does not count toward
+/// round 1; a client that fell back to "logged this exercise at all" instead
+/// would tick a station card the server has not counted.
+final class RoundWindowTests: XCTestCase {
+
+    private let lifting = Date(timeIntervalSince1970: 1_000)
+    private let round2 = Date(timeIntervalSince1970: 2_000)
+
+    /// Once a round has closed, its own stamp is the window — the live server
+    /// value, not the session's start.
+    func testTheLiveRoundStampWins() {
+        XCTAssertEqual(RoundWindow.openedAt(roundStartedAt: round2, liftingStartedAt: lifting), round2)
+    }
+
+    /// Round 1 has no stamp of its own: the window opens when the crew began
+    /// lifting, which is the server's own second choice.
+    func testRoundOneFallsBackToLiftingStart() {
+        XCTAssertEqual(RoundWindow.openedAt(roundStartedAt: nil, liftingStartedAt: lifting), lifting)
+    }
+
+    /// Before lifting starts there is no round to be in, and the caller —
+    /// not this function — decides what to do with that.
+    func testNoWindowBeforeLifting() {
+        XCTAssertNil(RoundWindow.openedAt(roundStartedAt: nil, liftingStartedAt: nil))
+    }
+}

@@ -39,9 +39,12 @@ import UIKit
 //     `logControlIsMine`, not `isMyTurn`, is what every prefill call site
 //     gates on now, so the same fix reaches all three styles at once.
 //   • Chess clock: Text(_, style: .timer), state-driven from currentTurnStartedAt — never
-//     a Swift Timer. Advance-turn flow (priorMax-before-logSet ordering, fire-and-forget
-//     PR record, advanceTurn call) is UNCHANGED — only the caller moved from a sheet's
-//     onLog closure to the inline card's commit action.
+//     a Swift Timer. The log flow keeps its priorMax-before-logSet ordering
+//     and its fire-and-forget PR record; what follows the insert is now the
+//     STYLE'S answer, not one fixed call (`LogFollowUp.calls(for:)`, ruling
+//     R-B22): Rounds advances the turn and then offers to close the round,
+//     Together and Freestyle run neither, and a follow-up that fails never
+//     takes the saved set's entry card back down.
 //   • Burpee debt: `burpeeDebtStrip`, a compact accent-fill strip above
 //     `turnChrome`'s CTA — "YOU OWE N BURPEES" + LOG THEM, opens
 //     `LogSetSheet` for penalty-only logging. The full-page penalty banner
@@ -51,8 +54,11 @@ import UIKit
 //     dead code (plan task S13) — no reverse-chron feed exists on this page
 //     anymore.
 //   • Reaction pills (🔥💪😂👏): moved to `RoundPieces.ReactionStrip` (plan task S6) —
-//     the round wait and spotter mode mount it now; tap to broadcast, incoming
-//     reactions float up as emoji pills (2s, opacity + offset) via `reactionOverlayLayer`.
+//     mounted on every page that shows a dock, which is all five (fix round 5,
+//     final review finding 6): the round wait's and spotter's own feet,
+//     `turnChrome` for Rounds-my-turn and Freestyle, and Together's foot. Tap
+//     to broadcast, incoming reactions float up as emoji pills (2s, opacity +
+//     offset) via `reactionOverlayLayer`.
 //   • PR Celebration: full-screen, USER-DISMISSED moment (p29) — replaces the old
 //     auto-dismissing toast. Share (ShareLink) + "Keep Lifting" dismiss. Its
 //     sound left with the soundboard (ruling R-B8, plan task S11); the haptic stays.
@@ -205,7 +211,9 @@ struct SessionLiveView: View {
     /// Canvas Completion Task 4 fix round 1 (proof p31-errors, "Set didn't
     /// save"): dedicated to `logSetAndAdvance`'s failure only — deliberately
     /// separate from the generic `errorText` above (which stays the small
-    /// red caption for skipTurn/endSession/penalty-log failures, unchanged).
+    /// red caption for the crew skip / endSession / penalty-log failures —
+    /// `skipTurn()`, the organizer's old one-lifter skip, was swept in fix
+    /// round 5 with the rest of finding 4's orphans).
     /// Cleared optimistically at the start of every `logSetAndAdvance` call.
     @State private var logSetErrorText: String?
     /// Phase O Task 3 fix wave 1 (reviewer Finding 1): set when the most
@@ -218,6 +226,15 @@ struct SessionLiveView: View {
     /// two different meanings. Cleared optimistically at the start of every
     /// `logSetAndAdvance` call, same convention as `logSetErrorText`.
     @State private var didQueueSetOffline = false
+    /// A FOLLOW-UP THAT FAILED ON AN ALREADY-SAVED SET (ruling R-B22) —
+    /// `advance_turn` / `advance_round` after the insert landed. Deliberately
+    /// NOT `logSetErrorText`: that one means "nothing was saved, try again"
+    /// and holds the entry card up for the retry, which is the one thing a
+    /// persisted set must never invite. This is a one-line note, it never
+    /// blocks anything, and it clears itself (`noteLogFollowUpFailure`) — the
+    /// set is safe, the rotation or the round will be nudged on by the next
+    /// lifter's own call, and there is nothing for this lifter to do.
+    @State private var logFollowUpNote: String?
     /// THE CREW'S READINGS PER INTERVAL (plan task S9). Session-local,
     /// bounded and it dies with this view -- `RecoveryBuffer`'s own category,
     /// which is what spec §6's "no new store" blesses. Filled by
@@ -514,34 +531,14 @@ struct SessionLiveView: View {
         return effectiveRoutineExercises.first(where: { $0.exerciseID == ex.id })
     }
 
-    private var targetSetsPerLifter: Int { currentRoutineExercise?.targetSets ?? 1 }
-
-    /// The set number about to be logged by whoever currently holds the turn — doubles as
-    /// the "Round N" figure on the roster header (one set per lifter per round).
-    private var currentTurnSetNumber: Int {
-        guard let turnID = liveSession.currentTurnUserID, let ex = currentExerciseForSheet else { return 1 }
-        return setCount(userID: turnID, exerciseID: ex.id) + 1
-    }
-
-    // Units sweep: stored weights (and the routine's free-text target, which
-    // carries canonical-lbs digits) render in the user's unit. Exact
+    // Units sweep: stored weights render in the user's unit. Exact
     // conversion, no plate snapping — these echo what was/should be lifted.
+    // (`targetWeightText`, the free-text-target sibling this block used to
+    // carry, went with `currentExerciseTargetText` in the fix-round-5 sweep
+    // below — it had no other caller.)
     private func weightText(_ pounds: Decimal) -> String {
         Units.format(pounds: pounds, unit: ThemeStore.shared.weightUnit,
                      rounded: false, includeUnit: false)
-    }
-
-    /// "185" → "84.09" for a kg user; non-numeric target strings pass
-    /// through untouched (they were never weights to begin with).
-    private func targetWeightText(_ target: String?) -> String {
-        guard let target else { return "—" }
-        guard let parsed = Decimal(string: target) else { return target }
-        return weightText(parsed)
-    }
-
-    private var currentExerciseTargetText: String? {
-        guard let re = currentRoutineExercise, re.targetReps != nil || re.targetWeight != nil else { return nil }
-        return "target \(targetWeightText(re.targetWeight)) × \(re.targetReps ?? "—")"
     }
 
     private func hasLoggedCurrentExercise(_ userID: UUID) -> Bool {
@@ -549,12 +546,17 @@ struct SessionLiveView: View {
         return allSessionSets.contains { $0.userID == userID && $0.exerciseID == ex.id && !$0.isPenalty }
     }
 
-    private func lastSetForCurrentExercise(_ userID: UUID) -> SetLog? {
-        guard let ex = currentExerciseForSheet else { return nil }
-        return allSessionSets
-            .filter { $0.userID == userID && $0.exerciseID == ex.id && !$0.isPenalty }
-            .max(by: { $0.loggedAt < $1.loggedAt })
-    }
+    // Retired by the fix-round-5 sweep (final review, finding 4): the pages
+    // that read them left with plan task S4's spectate/roster strip, and plan
+    // task S13's own sweep inherited an incomplete list. All had exactly one
+    // occurrence left in the app — their own declaration — and Swift does not
+    // warn on an unused private member, so nothing but a grep would have said
+    // so. `targetSetsPerLifter`, `currentTurnSetNumber` (the old roster
+    // header's "Round N"), `currentExerciseTargetText` + `targetWeightText`,
+    // `lastSetForCurrentExercise`, `turnTunerStep` and `skipTurn()` — the
+    // organizer's old skip, superseded by `skipHeldLifter()` and the crew's
+    // own line (R-B13). The round's figure now comes from `liveSession.round`,
+    // the server's own count.
 
     private func lastSetAnyExercise(_ userID: UUID) -> SetLog? {
         allSessionSets
@@ -658,13 +660,6 @@ struct SessionLiveView: View {
     /// Owner item 7: latest logged body weight (canonical lbs), stamped
     /// onto bodyweight-exercise sets. Fetched once in reload's task.
     @State private var turnLatestBodyWeightLbs: Decimal?
-
-    /// Equipment-aware tuner step for the inline log card (owner
-    /// 2026-08-14: machines move a whole peg).
-    private var turnTunerStep: Double {
-        NSDecimalNumber(decimal: Units.tunerStep(
-            unit: .lbs, equipment: currentExerciseForSheet?.equipment)).doubleValue
-    }
 
     /// Mirror of the solo captureRestDrop — called before every path that
     /// clears `selfRotationRestUntil`; no-op without a window or HR data.
@@ -1613,7 +1608,36 @@ struct SessionLiveView: View {
                 .frame(height: 20)
 
             Color.clear.frame(height: 6)
-            RPESwipeTrack(value: $logRPE, isFailed: $logIsFailed, theme: theme)
+            // The track and the log path's line share one child: this VStack
+            // already sits at ViewBuilder's ten-child ceiling.
+            VStack(alignment: .leading, spacing: 0) {
+                RPESwipeTrack(value: $logRPE, isFailed: $logIsFailed, theme: theme)
+
+                // THE LOG PATH'S ONE LINE (ruling R-B22). Two states, one
+                // line, because they are mutually exclusive by construction: a
+                // failed INSERT sets `logSetErrorText` and holds this card up
+                // for the retry; a failed FOLLOW-UP on an already-saved set
+                // sets `logFollowUpNote`, which clears itself and blocks
+                // nothing. Both were write-only until now — plan task S4
+                // deleted `legacyBottomChrome`, which was where the banner
+                // used to render, so a lifter whose set genuinely failed to
+                // save was told nothing at all. This card is the one surface
+                // every style's log path mounts (`myTurnFixedPage`, and
+                // Together/Freestyle through `entryCard:`), so it is where
+                // the line belongs.
+                if let line = logSetErrorText ?? logFollowUpNote {
+                    Color.clear.frame(height: 6)
+                    Text(line.uppercased())
+                        .font(GSFont.bold(11, relativeTo: .caption2))
+                        .tracking(0.6)
+                        .foregroundStyle(logSetErrorText == nil
+                                         ? theme.neutral700 : theme.text.opacity(0.82))
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
         .padding(.horizontal, 14)
         .padding(.top, 12)
@@ -1640,6 +1664,22 @@ struct SessionLiveView: View {
             }
             needAMinuteRow
             voiceNotices
+            // THE STRIP RIDES WITH THE DOCK (final review, finding 6). On
+            // master the reaction pills lived INSIDE `soundboardDock`, so
+            // every page that showed a dock could send one; plan task S4
+            // deleted that dock and S6/S8 re-hosted the strip on the round
+            // wait and spotter pages only, which left a lifter in Together or
+            // Freestyle — and a Rounds lifter on their own turn — with no way
+            // to react at all, though `tapReaction` and the broadcast path
+            // stayed wired the whole time. `turnChrome` is the foot Rounds'
+            // my-turn page and Freestyle share, so this mount is two of the
+            // three missing pages; Together's own foot carries the third.
+            // Same order as the round wait's foot: notices, strip, dock.
+            if !reactionEmojis.isEmpty {
+                ReactionStrip(emojis: reactionEmojis,
+                              onTap: { emoji in Task { await tapReaction(emoji: emoji) } })
+                Color.clear.frame(height: 6)
+            }
             turnMicRail
             Color.clear.frame(height: 6)
 
@@ -1917,6 +1957,12 @@ struct SessionLiveView: View {
         // in round 3 must not still be holding the crew off in round 4; the
         // once-per-exercise gate is deliberately NOT reset here, because a
         // minute is once per exercise and an exercise outlives a round.
+        // `liveSession.round` is the SERVER's round, arriving on the
+        // `sessions` UPDATE the realtime channel carries (or led by the log
+        // path's own `advance_round` return — ruling R-B22, which is what
+        // finally gives this handler something to fire on outside a crew
+        // skip). Ruling R-B23: the round wait reads that live value and
+        // nothing cached.
         .onChange(of: liveSession.round) { _, _ in
             minuteExtensionsThisRound = 0
         }
@@ -2348,9 +2394,13 @@ struct SessionLiveView: View {
     //
     // MOVED TO `Live/RoundPieces.swift` as the value-in `ReactionStrip` (plan
     // task S6, fix round 1 / F3). It sat here with no call site from S4 until
-    // now, which meant the crew could not react from the live view at all;
-    // the round wait's foot is its caller, and `reactionEmojis` above is
-    // still the one list. Nothing about the pills' drawing changed.
+    // then, which meant the crew could not react from the live view at all.
+    // Fix round 5 (final review, finding 6) finished the job: on master the
+    // pills lived INSIDE the dock, so the strip belongs on every page that
+    // shows one — the round wait's and spotter's feet, `turnChrome`
+    // (Rounds-my-turn and Freestyle) and Together's foot, five of five.
+    // `reactionEmojis` above is still the one list. Nothing about the pills'
+    // drawing changed.
 
     // Reps/weight stepper cell and its arithmetic helpers now live in LogSetSheet.swift
     // (shared, internal — see `stepperCell`, `decrementInt`/`incrementInt`/
@@ -2559,9 +2609,20 @@ struct SessionLiveView: View {
         showPlateStack = false
     }
 
-    /// Commit the inline "LOG THIS SET" card — delegates to `logSetAndAdvance` UNCHANGED
-    /// (same priorMax-before-insert ordering, same PR pipeline, same advanceTurn call).
-    /// Only the caller changed (was a sheet's onLog closure).
+    /// Commit the inline "LOG THIS SET" card — delegates to `logSetAndAdvance`
+    /// (same priorMax-before-insert ordering, same PR pipeline). Only the
+    /// caller changed (was a sheet's onLog closure).
+    ///
+    /// THE INSERT IS THE TRANSACTION (ruling R-B22): `logSetAndAdvance`
+    /// answers `true` the moment the set is durably recorded, so everything
+    /// below — closing the loader, dismissing the keyboard, re-prefilling —
+    /// runs on every saved set in every style, whatever the follow-up RPCs
+    /// went on to return. `false` now means one thing only: nothing was
+    /// saved. That is what makes the retry this card offers honest, and it is
+    /// what closes the duplicate hazard the final review found (finding 1),
+    /// where a P0001 from `advance_turn` — raised at every Together and
+    /// Freestyle lifter who was not the turn holder — kept the card up over a
+    /// set that was already in the database.
     ///
     /// `isLoggingSet` guards against re-entrancy: the CTA stays tappable for the whole
     /// async round-trip otherwise, and a double-tap would double-insert the set and
@@ -2603,8 +2664,9 @@ struct SessionLiveView: View {
             // logging over the open loader looked like nothing happened) —
             // close the loader and keyboard so the my-turn page is reset when
             // the rotation returns, and let the turn advance flip the body to
-            // the round wait (plan task S6). Failure keeps everything up for a retry —
-            // it also must NOT enter the rest interlude below.
+            // the round wait (plan task S6). A set that never saved keeps
+            // everything up for a retry — it also must NOT enter the rest
+            // interlude below.
             withAnimation(.easeInOut(duration: 0.18)) { showBarLoader = false }
             UIApplication.shared.sendAction(
                 #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -3308,12 +3370,24 @@ struct SessionLiveView: View {
     /// D3): a non-penalty `set_logs` row at or after `round_started_at`.
     ///
     /// Spelled the same way here as there so the tick on a station card and
-    /// the server's decision to close the round cannot disagree. Before the
-    /// first round closes `round_started_at` is NULL, and the honest stand-in
-    /// is "has logged this exercise at all" -- the same question, over the
-    /// only window that exists yet.
+    /// the server's decision to close the round cannot disagree. THE WINDOW
+    /// IS `RoundWindow.openedAt(...)` (ruling R-B23), the same
+    /// `COALESCE(round_started_at, lifting_started_at, ...)` the RPC itself
+    /// evaluates: `round_started_at` is NULL until the first round closes, and
+    /// round 1 opens when the crew started LIFTING — fix-forward
+    /// `20260913000105` was written precisely so a warm-up set does not count
+    /// toward it. Both values ride the `sessions` UPDATE the realtime channel
+    /// already delivers, so this reads the live server round.
+    ///
+    /// The old round-1 stand-in, "has logged this exercise at all", survives
+    /// as the LAST resort only — the server's own `'-infinity'` arm, reachable
+    /// only in a session with no lifting stamp, which is a session with no
+    /// round wait on screen. Until this fix it was the round-1 answer itself,
+    /// and it counted a warm-up set the server does not (final review,
+    /// finding 3).
     private func hasLoggedThisRound(_ userID: UUID) -> Bool {
-        guard let since = liveSession.roundStartedAt else {
+        guard let since = RoundWindow.openedAt(roundStartedAt: liveSession.roundStartedAt,
+                                               liftingStartedAt: liveSession.liftingStartedAt) else {
             return hasLoggedCurrentExercise(userID)
         }
         return allSessionSets.contains {
@@ -3621,6 +3695,7 @@ struct SessionLiveView: View {
             axisEnd: RoundCopy.intervalKicker(index: max(intervals.count - 1, 0),
                                               count: intervals.count),
             dockNames: otherParticipantNames,
+            reactionEmojis: reactionEmojis,
             voice: voiceFoot,
             // The IDENTICAL entry card the my-turn page mounts (fix round 4
             // / finding 1, ruling R-B21) — Together has no turn to render
@@ -3630,6 +3705,7 @@ struct SessionLiveView: View {
             // regardless of which of the three styles is on screen.
             entryCard: AnyView(turnEntryCard),
             logControl: logControlFoot,
+            onReaction: { emoji in Task { await tapReaction(emoji: emoji) } },
             onEnd: { showEndConfirmation = true })
     }
 
@@ -3805,8 +3881,14 @@ struct SessionLiveView: View {
 
     /// When the crew began waiting: the SECOND-TO-LAST log of the round, from
     /// `allSessionSets` and never from a view timer (`RoundHold`'s own law).
+    ///
+    /// The round's window is `RoundWindow.openedAt(...)` — the same live
+    /// server values `hasLoggedThisRound` reads (ruling R-B23), so the lifter
+    /// the crew is held on and the clock they are held by are measured over
+    /// one window, not two.
     private var holdStartedAt: Date? {
-        let since = liveSession.roundStartedAt
+        let since = RoundWindow.openedAt(roundStartedAt: liveSession.roundStartedAt,
+                                         liftingStartedAt: liveSession.liftingStartedAt)
         let times = presentRotation.compactMap { row -> Date? in
             allSessionSets
                 .filter { log in
@@ -4034,6 +4116,9 @@ struct SessionLiveView: View {
         // convention) so a retry that succeeds drops the banner immediately,
         // and a retry that fails re-sets it fresh below.
         logSetErrorText = nil
+        // Same convention for the follow-up note (ruling R-B22): a fresh
+        // attempt never shows the previous set's leftover.
+        logFollowUpNote = nil
         // Field report #20 instrumentation: failed-set sends reportedly
         // hang for seconds with no obvious synchronous culprit. Every
         // await on the critical path gets a millisecond stamp, tagged by
@@ -4158,9 +4243,18 @@ struct SessionLiveView: View {
                 // manually in the meantime, or a no-show is marked, the
                 // queued advance quietly does nothing instead of shoving the
                 // rotation forward a second time.
-                PendingTurnAdvanceStore.shared.record(
-                    sessionID: session.id,
-                    observedVersion: liveSession.turnVersion)
+                //
+                // ONLY IN A STYLE THAT HAS TURNS (ruling R-B22): a recorded
+                // advance is an `advance_turn` deferred, not a different call,
+                // so it answers to the same law as the online path below. A
+                // Together or Freestyle lifter who logged offline would
+                // otherwise have that replay fire on reconnect and raise
+                // P0001 against a rotation their style does not run.
+                if LogFollowUp.calls(for: style).contains(.advanceTurn) {
+                    PendingTurnAdvanceStore.shared.record(
+                        sessionID: session.id,
+                        observedVersion: liveSession.turnVersion)
+                }
                 didQueueSetOffline = true
             }
             // The set is durably recorded either way (server insert or offline
@@ -4213,24 +4307,65 @@ struct SessionLiveView: View {
                 }
             }
 
-            // Phase O Task 3 fix wave 1 (reviewer Finding 1) — skip advanceTurn
-            // entirely when this attempt queued offline; see the queuing
-            // branch's comment above for the full rationale. The normal
-            // ONLINE path is unaffected: `didQueueSetOffline` stays false, so
-            // advanceTurn still runs, and a genuine failure here (e.g. a real
-            // permanent error, or connectivity dropping between logSet and
-            // advanceTurn) still falls into the catch below and shows the
-            // existing retry banner exactly as before.
+            // Phase O Task 3 fix wave 1 (reviewer Finding 1) — skip the
+            // follow-ups entirely when this attempt queued offline; see the
+            // queuing branch's comment above for the full rationale. The
+            // normal ONLINE path is unaffected: `didQueueSetOffline` stays
+            // false, so the follow-ups below still run.
             guard !didQueueSetOffline else { stamp("TOTAL (offline)", tTotal); return true }
-            let tAdvance = Date()
-            try await SessionRepository.advanceTurn(sessionID: session.id)
-            stamp("advanceTurn", tAdvance)
+            // THE INSERT WAS THE TRANSACTION (ruling R-B22). Everything past
+            // this line is a follow-up on a set that is ALREADY IN THE
+            // DATABASE, so it gets its own `do` and can never reach the outer
+            // `catch` — which returns `false`, which `commitInlineLog` reads
+            // as "nothing was saved, keep the card up for a retry". That read
+            // was true when the only follow-up was `advance_turn` on a turn
+            // this lifter necessarily held; it became a duplicate-set factory
+            // the moment Together and Freestyle started logging (final review,
+            // finding 1), because `advance_turn` raises P0001 for every lifter
+            // who is neither the current turn holder nor the organizer.
+            // WHICH calls run is `LogFollowUp.calls(for:)`'s answer, not a
+            // condition spelled here (RoundPieces.swift, unit-tested).
+            do {
+                for call in LogFollowUp.calls(for: style) {
+                    switch call {
+                    case .advanceTurn:
+                        let tAdvance = Date()
+                        try await SessionRepository.advanceTurn(sessionID: session.id)
+                        stamp("advanceTurn", tAdvance)
+                        // A live advance settles any advance this device still
+                        // owed from an earlier offline set — the queued one
+                        // would no-op anyway (version guard), but dropping it
+                        // keeps the store honest rather than accumulating
+                        // entries that only ever fizzle.
+                        PendingTurnAdvanceStore.shared.clear(sessionID: session.id)
+                    case .advanceRound:
+                        // NEVER FORCED: `p_force` is the crew's skip line's own
+                        // escape (R-B13) and nothing else. Unforced, the server
+                        // returns the round unchanged unless every present
+                        // lifter has logged since the round opened — so this
+                        // call is a cheap OFFER to close, safe to repeat and
+                        // safe to lose, made by whoever happens to log last.
+                        let tRound = Date()
+                        let round = try await SessionRepository.advanceRound(
+                            sessionID: session.id, expectedRound: liveSession.round)
+                        stamp("advanceRound", tRound)
+                        // Lead the realtime echo with the round the server just
+                        // told us (`endSession`'s own idiom — see
+                        // `pushWatchSessionState`'s doc comment). ONLY the
+                        // round: `round_started_at` belongs to the same UPDATE
+                        // and arrives with it, and stamping a client `Date()`
+                        // in its place would hand every round-wait derivation a
+                        // window this device invented — exactly what
+                        // `RoundHold`'s "never from a view timer" law forbids.
+                        if round != liveSession.round { liveSession.round = round }
+                    }
+                }
+            } catch let error as GymSyncError {
+                noteLogFollowUpFailure(error.errorDescription)
+            } catch {
+                noteLogFollowUpFailure(error.localizedDescription)
+            }
             stamp("TOTAL", tTotal)
-            // A live advance settles any advance this device still owed from
-            // an earlier offline set — the queued one would no-op anyway
-            // (version guard), but dropping it keeps the store honest rather
-            // than accumulating entries that only ever fizzle.
-            PendingTurnAdvanceStore.shared.clear(sessionID: session.id)
             return true
         } catch let error as GymSyncError {
             // Upgraded treatment (Canvas Completion Task 4 fix round 1, proof
@@ -4242,6 +4377,28 @@ struct SessionLiveView: View {
         } catch {
             logSetErrorText = error.localizedDescription
             return false
+        }
+    }
+
+    /// Say once, quietly, that a follow-up on an already-saved set did not go
+    /// through (ruling R-B22), then take it back down.
+    ///
+    /// Auto-clearing because there is no action attached: the set is in the
+    /// database, and the turn or the round is moved on by the next lifter's
+    /// own call — a note that outlived its moment would just be a stuck
+    /// warning about something already fixed. The `==` re-check before
+    /// clearing is `selfRotationRestUntil`'s own idiom in this file: only the
+    /// note still on screen clears itself, so a newer one is never wiped by an
+    /// older one's timer.
+    @MainActor
+    private func noteLogFollowUpFailure(_ text: String?) {
+        guard let text else { return }
+        AppLogger.workout.warning(
+            "logSet follow-up failed on a persisted set (style \(style.rawValue, privacy: .public)): \(text, privacy: .public)")
+        logFollowUpNote = text
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(6))
+            if logFollowUpNote == text { logFollowUpNote = nil }
         }
     }
 
@@ -4436,17 +4593,6 @@ struct SessionLiveView: View {
             if feedSets.count > 30 { feedSets = Array(feedSets.prefix(30)) }
             allSessionSets.append(log)
             if isPenalty && !isFailed { penaltyLogged += reps ?? 0 }
-        } catch {
-            errorText = error.localizedDescription
-        }
-    }
-
-    @MainActor
-    private func skipTurn() async {
-        do {
-            try await SessionRepository.advanceTurn(sessionID: session.id)
-        } catch let error as GymSyncError {
-            errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription
         }

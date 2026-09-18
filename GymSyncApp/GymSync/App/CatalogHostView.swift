@@ -2743,7 +2743,8 @@ struct CatalogHostView: View {
                                  phaseDetail: world.phaseDetail, readout: world.readout,
                                  progress: world.progress, nextLine: world.nextLine,
                                  lanes: world.lanes, axisStart: world.axisStart,
-                                 axisEnd: world.axisEnd, dockNames: world.dockNames)
+                                 axisEnd: world.axisEnd, dockNames: world.dockNames,
+                                 reactionEmojis: world.reactionEmojis)
     }
 
     /// `session-freestyle-rail` (frame 141): the production

@@ -414,8 +414,12 @@ struct VoiceNotices: View {
 /// it out of the dock and left it WITH NO CALL SITE — correctly, since adding
 /// a strip to the my-turn page's approved chrome is a composition change and
 /// not a deletion's cost — which meant a crewmate could not react at all from
-/// the live view. The round wait and spotter mode are where the crew reaches
-/// them again, and they are the screens the reference frames put a dock on.
+/// the live view. THE STRIP RIDES WITH THE DOCK (fix round 5, final review
+/// finding 6): every page that mounts a `PTTDockRow` mounts this above it —
+/// the round wait's and spotter's feet, `SessionLiveView.turnChrome`
+/// (Rounds-my-turn and Freestyle) and `TogetherClockView`'s foot, five of
+/// five — because riding with the dock is exactly what the dock it was cut
+/// out of used to guarantee.
 ///
 /// The emoji ARE content here, which is the one exception design rule 9's
 /// no-decorative-emoji clause names.
@@ -496,11 +500,20 @@ struct SkipOffer: Equatable {
 
 /// ONE QUIET LINE, NEVER A DIALOG (spec §9a). Nothing happens on its own.
 ///
-/// Accent INK on a `surface` strip with an accent hairline — an invitation,
-/// not a filled slab, which would read as the crew's next step rather than as
-/// an option. It is the round wait's second accent-bearing element and the
-/// only one on screen when it shows, because at the threshold the ring on the
-/// held lifter and this line are the same fact.
+/// INK on a `surface` strip with a `neutral700` hairline — an invitation, not
+/// a filled slab, which would read as the crew's next step rather than as an
+/// option.
+///
+/// NO ACCENT (fix round 5, final review finding 7; design rule 2). This line
+/// used to paint an accent hairline AND accent ink, which made it the round
+/// wait's SECOND accent-bearing element beside `StationCard`'s turn ring —
+/// and the old justification, that at the threshold the ring and this line
+/// are the same fact, is false with two racks: the global turn can sit on a
+/// lifter this line does not name, which is exactly the configuration plan
+/// task S3 exists to create. The ring keeps the accent because the turn is
+/// the round wait's primary; the skip is an option about it, drawn in ink,
+/// and it still leads with the glyph and the largest type in the strip so
+/// nothing about its weight on the page changes.
 ///
 /// ALWAYS TAPPABLE, BY ANY CREWMATE (ruling R-B13, fix-forward
 /// `20260913000107`, applied live). Spec §9a's own rule, finally true:
@@ -520,7 +533,7 @@ struct SkipOfferLine: View {
             lines
                 .roundStrip()
                 .overlay(RoundedRectangle(cornerRadius: 14)
-                    .strokeBorder(theme.accent, lineWidth: 1))
+                    .strokeBorder(theme.neutral700, lineWidth: 1))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -537,7 +550,7 @@ struct SkipOfferLine: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
-            .foregroundStyle(theme.accent)
+            .foregroundStyle(theme.text)
 
             Text(RoundCopy.skipWaited(waited: offer.waited, threshold: offer.threshold))
                 .font(GSFont.body(11.5, relativeTo: .caption2))
@@ -970,6 +983,58 @@ struct LogControlFoot {
 enum LogControlGate {
     static func isMine(style: SessionStyle, isMyTurn: Bool) -> Bool {
         style == .rounds ? isMyTurn : true
+    }
+}
+
+/// WHAT RUNS AFTER A SET IS PERSISTED, BY STYLE (ruling R-B22) — the second
+/// half of `LogControlGate`'s law, pulled out for the same reason: the log
+/// path's style rule is a pure question and belongs where it can be tested
+/// without a live view.
+///
+/// `.rounds` is a rotation over a round: the set hands the turn on
+/// (`advance_turn`) and then offers to close the round (`advance_round`,
+/// never forced — the server closes it only once every present lifter has
+/// logged, and returns the current round unchanged otherwise). Order matters:
+/// the turn moves first, so the round that closes behind it already points at
+/// the next lifter.
+///
+/// `.together` and `.freestyle` have NO turns and NO rounds (spec §3.3), so
+/// they run NEITHER. That is not an optimisation — `advance_turn` is
+/// current-lifter-or-organizer gated (`20260801000001`) and raises P0001
+/// `'not your turn'` for everyone else, which is exactly what made every
+/// non-turn-holder's perfectly good set report failure (final review,
+/// finding 1). In those two styles the insert IS the whole transaction.
+enum LogFollowUp {
+    /// One server call, named rather than spelled, so the decision below is a
+    /// value a test can read.
+    enum Call: Equatable {
+        case advanceTurn
+        case advanceRound
+    }
+
+    /// In call order. Empty means the persisted set is the end of it.
+    static func calls(for style: SessionStyle) -> [Call] {
+        style == .rounds ? [.advanceTurn, .advanceRound] : []
+    }
+}
+
+/// WHEN THE CURRENT ROUND OPENED (ruling R-B23) — the client's mirror of the
+/// server's own window, `COALESCE(round_started_at, lifting_started_at,
+/// '-infinity')` (`public.advance_round`, fix-forward `20260913000105`).
+///
+/// `sessions.round_started_at` is NULL until the FIRST round closes, and the
+/// round-1 window is not "whatever this lifter has done today" — it opens
+/// when the crew started lifting, which is precisely why `000105` exists: a
+/// warm-up set must not count toward the first round. Reading
+/// `lifting_started_at` second keeps the round-1 answer a FALLBACK to the
+/// server's own rule rather than a second rule of the client's own invention.
+///
+/// Both values arrive on the `sessions` UPDATE the realtime channel already
+/// carries (`SessionLiveService.onSessionChange` → `liveSession = updated`),
+/// so every caller reads the live server round, never a cached one.
+enum RoundWindow {
+    static func openedAt(roundStartedAt: Date?, liftingStartedAt: Date?) -> Date? {
+        roundStartedAt ?? liftingStartedAt
     }
 }
 
