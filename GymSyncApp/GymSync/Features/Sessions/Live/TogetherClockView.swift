@@ -225,6 +225,12 @@ struct TogetherClockView: View {
     let axisEnd: String
 
     var dockNames: [String] = []
+    /// The reaction pills, which ride WITH the dock (final review, finding
+    /// 6): on master they lived inside the dock plan task S4 deleted, so
+    /// every page that showed one could send a reaction. Together showed the
+    /// dock and nothing else, leaving its lifters unable to react at all.
+    /// Empty in a catalog frame that wants the clock alone.
+    var reactionEmojis: [String] = []
     var voice: VoiceFoot = VoiceFoot()
     /// The reps/weight/RPE entry, mounted directly above the LOG button
     /// below (fix round 4 / finding 1, ruling R-B21). Fix round 3 gave
@@ -244,6 +250,7 @@ struct TogetherClockView: View {
     /// `turnChrome` for `.together`).
     var logControl: LogControlFoot = LogControlFoot()
 
+    var onReaction: (String) -> Void = { _ in }
     var onEnd: () -> Void = {}
 
     var body: some View {
@@ -261,6 +268,10 @@ struct TogetherClockView: View {
                 isFailed: logControl.isFailed,
                 isDisabled: logControl.isDisabled,
                 onTap: logControl.onTap)
+            // Strip above dock, the round wait's own foot order.
+            if !reactionEmojis.isEmpty {
+                ReactionStrip(emojis: reactionEmojis, onTap: onReaction)
+            }
             PTTDockRow(otherParticipantNames: dockNames, compact: false)
             // The SHIPPED End control — the same confirmation the header's X
             // raises, reached from the foot because Together's page has no

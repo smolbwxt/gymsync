@@ -56,6 +56,9 @@ struct TogetherWorld {
     let axisStart: String
     let axisEnd: String
     let dockNames: [String]
+    /// The pills ride with the dock (final review, finding 6), so the frame
+    /// that proves Together's foot has to carry them too.
+    let reactionEmojis: [String]
 }
 
 /// One catalog world for `FreestyleRailView` (plan task S10).
@@ -362,7 +365,8 @@ enum LiveFixtures {
             axisStart: RoundCopy.intervalKicker(index: 0, count: togetherIntervalPlan.count),
             axisEnd: RoundCopy.intervalKicker(index: togetherIntervalPlan.count - 1,
                                               count: togetherIntervalPlan.count),
-            dockNames: dockNames)
+            dockNames: dockNames,
+            reactionEmojis: reactionEmojis)
     }()
 
     static let roundHold = RoundWaitWorld(

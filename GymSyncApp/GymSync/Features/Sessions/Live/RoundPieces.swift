@@ -414,8 +414,12 @@ struct VoiceNotices: View {
 /// it out of the dock and left it WITH NO CALL SITE — correctly, since adding
 /// a strip to the my-turn page's approved chrome is a composition change and
 /// not a deletion's cost — which meant a crewmate could not react at all from
-/// the live view. The round wait and spotter mode are where the crew reaches
-/// them again, and they are the screens the reference frames put a dock on.
+/// the live view. THE STRIP RIDES WITH THE DOCK (fix round 5, final review
+/// finding 6): every page that mounts a `PTTDockRow` mounts this above it —
+/// the round wait's and spotter's feet, `SessionLiveView.turnChrome`
+/// (Rounds-my-turn and Freestyle) and `TogetherClockView`'s foot, five of
+/// five — because riding with the dock is exactly what the dock it was cut
+/// out of used to guarantee.
 ///
 /// The emoji ARE content here, which is the one exception design rule 9's
 /// no-decorative-emoji clause names.

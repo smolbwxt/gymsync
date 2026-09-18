@@ -54,8 +54,11 @@ import UIKit
 //     dead code (plan task S13) — no reverse-chron feed exists on this page
 //     anymore.
 //   • Reaction pills (🔥💪😂👏): moved to `RoundPieces.ReactionStrip` (plan task S6) —
-//     the round wait and spotter mode mount it now; tap to broadcast, incoming
-//     reactions float up as emoji pills (2s, opacity + offset) via `reactionOverlayLayer`.
+//     mounted on every page that shows a dock, which is all five (fix round 5,
+//     final review finding 6): the round wait's and spotter's own feet,
+//     `turnChrome` for Rounds-my-turn and Freestyle, and Together's foot. Tap
+//     to broadcast, incoming reactions float up as emoji pills (2s, opacity +
+//     offset) via `reactionOverlayLayer`.
 //   • PR Celebration: full-screen, USER-DISMISSED moment (p29) — replaces the old
 //     auto-dismissing toast. Share (ShareLink) + "Keep Lifting" dismiss. Its
 //     sound left with the soundboard (ruling R-B8, plan task S11); the haptic stays.
@@ -1655,6 +1658,22 @@ struct SessionLiveView: View {
             }
             needAMinuteRow
             voiceNotices
+            // THE STRIP RIDES WITH THE DOCK (final review, finding 6). On
+            // master the reaction pills lived INSIDE `soundboardDock`, so
+            // every page that showed a dock could send one; plan task S4
+            // deleted that dock and S6/S8 re-hosted the strip on the round
+            // wait and spotter pages only, which left a lifter in Together or
+            // Freestyle — and a Rounds lifter on their own turn — with no way
+            // to react at all, though `tapReaction` and the broadcast path
+            // stayed wired the whole time. `turnChrome` is the foot Rounds'
+            // my-turn page and Freestyle share, so this mount is two of the
+            // three missing pages; Together's own foot carries the third.
+            // Same order as the round wait's foot: notices, strip, dock.
+            if !reactionEmojis.isEmpty {
+                ReactionStrip(emojis: reactionEmojis,
+                              onTap: { emoji in Task { await tapReaction(emoji: emoji) } })
+                Color.clear.frame(height: 6)
+            }
             turnMicRail
             Color.clear.frame(height: 6)
 
@@ -2369,9 +2388,13 @@ struct SessionLiveView: View {
     //
     // MOVED TO `Live/RoundPieces.swift` as the value-in `ReactionStrip` (plan
     // task S6, fix round 1 / F3). It sat here with no call site from S4 until
-    // now, which meant the crew could not react from the live view at all;
-    // the round wait's foot is its caller, and `reactionEmojis` above is
-    // still the one list. Nothing about the pills' drawing changed.
+    // then, which meant the crew could not react from the live view at all.
+    // Fix round 5 (final review, finding 6) finished the job: on master the
+    // pills lived INSIDE the dock, so the strip belongs on every page that
+    // shows one — the round wait's and spotter's feet, `turnChrome`
+    // (Rounds-my-turn and Freestyle) and Together's foot, five of five.
+    // `reactionEmojis` above is still the one list. Nothing about the pills'
+    // drawing changed.
 
     // Reps/weight stepper cell and its arithmetic helpers now live in LogSetSheet.swift
     // (shared, internal — see `stepperCell`, `decrementInt`/`incrementInt`/
@@ -3666,6 +3689,7 @@ struct SessionLiveView: View {
             axisEnd: RoundCopy.intervalKicker(index: max(intervals.count - 1, 0),
                                               count: intervals.count),
             dockNames: otherParticipantNames,
+            reactionEmojis: reactionEmojis,
             voice: voiceFoot,
             // The IDENTICAL entry card the my-turn page mounts (fix round 4
             // / finding 1, ruling R-B21) — Together has no turn to render
@@ -3675,6 +3699,7 @@ struct SessionLiveView: View {
             // regardless of which of the three styles is on screen.
             entryCard: AnyView(turnEntryCard),
             logControl: logControlFoot,
+            onReaction: { emoji in Task { await tapReaction(emoji: emoji) } },
             onEnd: { showEndConfirmation = true })
     }
 
