@@ -59,6 +59,27 @@ enum CrewWeekMath {
         min(max(0, week.todayIndex), daysInWeek - 1)
     }
 
+    /// Where today sits in the window the strip is drawing — days since the
+    /// start of the week, clamped (plan task S7).
+    ///
+    /// ANCHORED ON `WeekMath.startOfWeek`, not on a hard-coded Monday, because
+    /// that is the same boundary `WeekMath.weekStartString()` produces and
+    /// therefore the same week the RPC is asked for. A device whose calendar
+    /// starts its week on Sunday gets a Sunday-anchored chart over a
+    /// Sunday-anchored count, rather than a Monday-anchored chart over
+    /// somebody else's seven days.
+    ///
+    /// Production only. A catalog frame passes a FIXED integer
+    /// (`LobbyFixtures`' Thursday, `todayIndex: 3`), because a frame must
+    /// render the same chart on every run (constraint 11).
+    static func todayIndex(_ date: Date = .now, calendar: Calendar = .current) -> Int {
+        let start = WeekMath.startOfWeek(date, calendar: calendar)
+        let days = calendar.dateComponents([.day],
+                                           from: start,
+                                           to: calendar.startOfDay(for: date)).day ?? 0
+        return min(max(0, days), daysInWeek - 1)
+    }
+
     /// Where the plan says the crew should be by the end of today — the
     /// dotted line's height at today's x. Linear from 0 to `planTotal` across
     /// the seven days, rounded to whole sessions because half a session is

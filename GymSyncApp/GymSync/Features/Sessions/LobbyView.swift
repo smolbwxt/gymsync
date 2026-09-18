@@ -63,6 +63,9 @@ struct LobbyView: View {
     /// before the rung reached it.
     @State private var rungPage: LadderPageModel?
     private let blockGoalRepository: any BlockGoalRepository = LiveBlockGoalRepository()
+    /// THE CREW'S WEEK (owner decision 21, plan task S7). Empty is nil is no
+    /// strip — see `crewWeek` below.
+    @State private var crewWeekRows: [CrewWeekRow] = []
 
     @State private var errorText: String?
     @State private var isCheckingIn = false
@@ -564,6 +567,10 @@ struct LobbyView: View {
         // change while a lobby is open, so this is a `.task`, not a poll —
         // the same reasoning `SessionRunnerView.loadBlock()` carries.
         .task { await loadRung() }
+        // The crew's week, once. The window is a whole week and the counts move
+        // only when somebody finishes a session, which nobody in this lobby has
+        // yet — so a poll would re-read the same seven days every five seconds.
+        .task { await loadCrewWeek() }
         .onChange(of: isVoiceConnected) { wasConnected, nowConnected in
             guard nowConnected, !wasConnected else { return }
             // Phase O Task 5 item 5: fires on every genuine `.idle`/
@@ -1103,28 +1110,37 @@ struct LobbyView: View {
 
     /// What `CrewWeekStrip` draws, or nil for no strip and no space.
     ///
-    /// **NIL IN PRODUCTION TODAY, and that is a wiring gap rather than a
-    /// design choice.** The strip needs two facts per crew member: their
-    /// weekly session GOAL and their COMPLETED COUNT this week. The goals are
-    /// already in hand — `SessionRepository.participants(sessionID:)` fetches
-    /// each member's `Profile`, which carries `weeklySessionGoal`. The counts
-    /// are not, and no shipped read supplies them:
+    /// **THE READ IS `crew_week(p_session_id, p_week_start)`** (plan task S7,
+    /// owner decision 21) — one row per participant of THIS session carrying
+    /// their weekly session goal and their completed count inside the window
+    /// `WeekMath.weekStartString()` names, gated server-side on membership of
+    /// the session. It replaces the Phase A gap this comment used to describe:
+    /// the per-member weekly count existed nowhere, since `SocialTabView`'s bar
+    /// counts the whole crew and `group_consistency_honor` counts thirty days.
     ///
-    ///   * `SocialTabView`'s crew bar counts sessions for the WHOLE CREW, not
-    ///     per member (`SocialTabView.swift:635-650`);
-    ///   * `group_consistency_honor` is per member but over THIRTY DAYS
-    ///     (`CrewHonor.swift:73`, migration 20260911000001) — right shape,
-    ///     wrong window, and a 30-day count printed under a "this week"
-    ///     kicker would be wrong data wearing a right label.
+    /// NIL WHILE THE ROWS ARE EMPTY, so the strip and its space appear together
+    /// or not at all — which is what this property has always promised. A
+    /// non-participant, or a read that did not land, is the same nil.
     ///
-    /// The ruling was explicit: add no tables, policies or RPCs for this. So
-    /// production renders nothing and the catalog frames render the fixture,
-    /// which is what the owner asked to see. Wiring it is a Phase B item.
+    /// `doneByDay` IS NIL BY DESIGN (plan decision 2): the RPC returns no
+    /// per-day breakdown, so production draws the straight line
+    /// `CrewWeekMath.actualSeries` already falls back to — honest about being a
+    /// straight line rather than pretending to a shape. The catalog fixture on
+    /// frame 135 keeps its shaped one.
     private var crewWeek: CrewWeek? {
         #if DEBUG
         if let catalog { return catalog.crewWeek }
         #endif
-        return nil
+        guard !crewWeekRows.isEmpty else { return nil }
+        return CrewWeek(
+            lifters: crewWeekRows.map { row in
+                // The goal is mapped STRAIGHT ACROSS (ruling R-B2-14): the
+                // server already returns the EFFECTIVE weekly goal for that
+                // week, and re-applying the rule here would apply it twice.
+                CrewWeekLifter(id: row.userID, name: row.username,
+                               goal: row.goal, done: row.done, doneByDay: nil)
+            },
+            todayIndex: CrewWeekMath.todayIndex())
     }
 
     // MARK: - The lobby's own pieces (plan task S7)
@@ -1699,6 +1715,32 @@ struct LobbyView: View {
               let page = await blockGoalRepository.page(goalID: goal.id)
         else { return }
         rungPage = page
+    }
+
+    /// THE CREW'S WEEK (plan task S7, owner decision 21).
+    ///
+    /// Best-effort, like every other read this screen makes: a failure — a
+    /// non-participant's `P0001`, an offline device, a decode that did not
+    /// match — is LOGGED and leaves `crewWeekRows` empty, which leaves the
+    /// lobby without the strip rather than with an error. A lifter who cannot
+    /// see a chart has not done anything wrong.
+    ///
+    /// Behind the `catalog != nil` guard every read in this file carries
+    /// (global constraint 11): a frame draws `LobbyFixtures`' week.
+    @MainActor
+    private func loadCrewWeek() async {
+        #if DEBUG
+        if catalog != nil { return }
+        #endif
+        guard crewWeekRows.isEmpty else { return }
+        do {
+            crewWeekRows = try await CrewWeekRepository.week(
+                sessionID: effectiveSession.id,
+                weekStart: WeekMath.weekStartString())
+        } catch {
+            AppLogger.db.error(
+                "crew_week failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     @MainActor
