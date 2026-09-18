@@ -58,6 +58,15 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
     /// timestamp the round-close predicate measures sets against. NULL until
     /// the first round closes.
     var roundStartedAt: Date?
+    /// The building this session is being trained in (20260918, decision 2).
+    /// CLAIMED, not set: `public.claim_session_venue` writes it from the
+    /// caller's most recent `venue_checkins` row within 12 hours, once, while
+    /// it is still NULL — so the first checked-in lifter's building wins and a
+    /// crew that never checked into a venue hub stays NULL forever.
+    ///
+    /// NULL is the ordinary case and means "unknown", never "no venue": the
+    /// rack-count cap is simply absent and the split is today's `ceil(n/3)`.
+    var venueID: UUID?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -82,6 +91,7 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
         case stations
         case round
         case roundStartedAt = "round_started_at"
+        case venueID = "venue_id"
     }
 
     // Safe decode: duration_was_edited has DB DEFAULT false so older rows always carry it;
@@ -115,6 +125,10 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
         stations             = try? c.decodeIfPresent(SessionStations.self, forKey: .stations)
         round                = (try? c.decodeIfPresent(Int.self,  forKey: .round)) ?? 1
         roundStartedAt       = try? c.decodeIfPresent(Date.self,  forKey: .roundStartedAt)
+        // Same schema-lag guard: a projected select that does not name the
+        // column, or a client running behind the migration, decodes NULL
+        // rather than failing the whole row.
+        venueID              = try? c.decodeIfPresent(UUID.self,  forKey: .venueID)
     }
 
     // Memberwise init used by startSolo and other repository callers.
@@ -140,7 +154,8 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
         style: SessionStyle = .rounds,
         stations: SessionStations? = nil,
         round: Int = 1,
-        roundStartedAt: Date? = nil
+        roundStartedAt: Date? = nil,
+        venueID: UUID? = nil
     ) {
         self.id                   = id
         self.routineID            = routineID
@@ -164,6 +179,7 @@ struct WorkoutSession: Codable, Identifiable, Sendable {
         self.stations             = stations
         self.round                = round
         self.roundStartedAt       = roundStartedAt
+        self.venueID              = venueID
     }
 }
 

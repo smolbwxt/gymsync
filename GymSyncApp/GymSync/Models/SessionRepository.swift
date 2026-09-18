@@ -613,6 +613,13 @@ enum SessionRepository {
                 .eq("user_id", value: userID.uuidString)
                 .execute()
         } catch { throw ErrorMapping.map(error) }
+        // Decision 2: the venue comes from the VENUE check-in (venue_checkins,
+        // server-verified geofence), never from `gyms` — a gyms row is a private
+        // per-user geofence and is not a venues.id. Best-effort and last: a session
+        // with no venue is today's behaviour, and a failure here must never turn a
+        // successful check-in into an error the lifter sees.
+        _ = try? await client.rpc("claim_session_venue",
+                                  params: ["p_session_id": sessionID.uuidString]).execute()
     }
 
     /// Write my own energy for this session (spec §6, owner decision 18).
