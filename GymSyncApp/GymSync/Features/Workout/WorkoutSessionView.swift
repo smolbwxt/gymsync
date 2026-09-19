@@ -282,6 +282,12 @@ struct WorkoutSessionView: View {
     @State private var freeformExercises: [RoutineExercise] = []
     @State private var showExercisePicker = false
     @State private var pickerCatalog: [Exercise] = []
+    /// Whether the catalogue fetch has RESOLVED — not whether it found
+    /// anything. The swap sheet's "Search all exercises" page needs to tell
+    /// "still loading" from "the fetch came back empty", because rendering
+    /// the second as a bare empty search list claims the app knows of no
+    /// exercises at all.
+    @State private var pickerCatalogLoaded = false
 
     /// True for a session started with no routine (Home's "Start solo
     /// workout" without picking one). Same condition the old placeholder
@@ -1332,10 +1338,81 @@ struct WorkoutSessionView: View {
                         }
                     }
                 }
+                swapCatalogRow
             }
             .navigationTitle("Swap \(currentExercise?.name ?? "exercise")")
             .navigationBarTitleDisplayMode(.inline)
-            .task { await loadSwapOptions() }
+            .task {
+                await loadSwapOptions()
+                // The catalogue the row below pushes into. Loaded with the
+                // suggestions rather than on the tap, so the search list is
+                // already populated when it arrives.
+                await loadPickerCatalog()
+            }
+        }
+    }
+
+    /// THE WAY OUT OF THE SUGGESTIONS (owner field report 2026-09-18: "a
+    /// truncated list, not the entire searchable catalogue"). The
+    /// suggestions above stay exactly as they were — graph edges first,
+    /// then ≤ 10 same-muscle/same-pattern neighbours — because they are the
+    /// coach's answer and usually the right one. This row is the escape
+    /// hatch for the gym's reality, and it pushes the EXISTING searchable
+    /// picker (`ExercisePickSheet`, which this file already uses for
+    /// freeform) rather than growing a second search list.
+    @ViewBuilder
+    private var swapCatalogRow: some View {
+        NavigationLink {
+            swapCatalogPage
+                .navigationTitle("All exercises")
+                .navigationBarTitleDisplayMode(.inline)
+                // Belt and braces: the sheet's own `.task` normally has the
+                // catalogue in hand before this is ever pushed, but that task
+                // is cancelled if the sheet is dismissed and re-opened fast.
+                .task { await loadPickerCatalog() }
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(theme.accent)
+                Text("Search all exercises")
+                    .font(GSFont.bold(15, relativeTo: .body))
+                    .foregroundStyle(theme.text)
+            }
+        }
+    }
+
+    /// Three honest states, because a failed catalogue fetch rendering as an
+    /// empty search list would read as "the app knows of no exercises".
+    @ViewBuilder
+    private var swapCatalogPage: some View {
+        if !pickerCatalogLoaded {
+            VStack(spacing: 10) {
+                ProgressView().tint(theme.accent)
+                Text("Loading every exercise…")
+                    .font(GSFont.body(13, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral700)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(theme.bg)
+        } else if pickerCatalog.isEmpty {
+            VStack(spacing: 10) {
+                Text("Couldn't load the catalogue")
+                    .font(GSFont.bold(16, relativeTo: .headline))
+                    .foregroundStyle(theme.text)
+                Text("The suggestions on the previous screen still work. Check your connection and open this again.")
+                    .font(GSFont.body(13, relativeTo: .caption))
+                    .foregroundStyle(theme.neutral700)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(theme.bg)
+        } else {
+            ExercisePickSheet(
+                exercises: pickerCatalog.filter { $0.aliasOf == nil },
+                onPick: { applySwap(toExerciseID: $0.id) }
+            )
         }
     }
 
@@ -4389,8 +4466,22 @@ struct WorkoutSessionView: View {
     /// on the Home no-routine path.
     @MainActor
     private func loadPickerCatalogIfFreeform() async {
-        guard isFreeform, pickerCatalog.isEmpty else { return }
+        guard isFreeform else { return }
+        await loadPickerCatalog()
+    }
+
+    /// The same fetch, unconditional — the swap sheet's "Search all
+    /// exercises" row needs the whole catalogue in a ROUTINE session too
+    /// (ruling H5), and `exerciseCatalog` reads `pickerCatalog`, so a lift
+    /// swapped in from outside the routine resolves its own NAME through
+    /// this too. Once per session; a failed fetch is reported by the swap
+    /// catalogue page rather than rendering as an empty catalogue, and
+    /// never blocks the suggestions or the workout.
+    @MainActor
+    private func loadPickerCatalog() async {
+        guard pickerCatalog.isEmpty else { return }
         pickerCatalog = (try? await ExerciseRepository.fetchAll()) ?? []
+        pickerCatalogLoaded = true
     }
 
     /// LEAVING THE EXERCISE FLUSHES (ruling R-OD-2) — the solo twin of
