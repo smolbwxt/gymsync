@@ -263,6 +263,14 @@ struct SessionLiveView: View {
     /// so it is a whole sentence, not a clause.
     private static let rosterFailedText =
         "Couldn't load who's here — the crew's controls may be missing until it does."
+    /// The sentence a refused `self_swaps` write puts in that same slot, named
+    /// for the same reason (final review N6): it PROMISES a retry, so when the
+    /// retry lands the promise is kept and the line must go. `flushSwapOutbox`
+    /// is the one place that happens, and it retires only this line — a roster
+    /// failure or a refused squad swap is a statement about something the
+    /// write knows nothing about.
+    private static let swapRetryText =
+        "Couldn't save the swap — it applies on this phone; will retry."
     /// Canvas Completion Task 4 fix round 1 (proof p31-errors, "Set didn't
     /// save"): dedicated to `logSetAndAdvance`'s failure only — deliberately
     /// separate from the generic `errorText` above (which stays the small
@@ -3901,8 +3909,28 @@ struct SessionLiveView: View {
             SessionSwapPendingStore.shared.confirm(liveSession.id, matching: layer)
         } catch {
             AppLogger.sessions.error("self_swaps write failed: \(error, privacy: .public)")
-            errorText = "Couldn't save the swap — it applies on this phone; will retry."
+            errorText = Self.swapRetryText
         }
+    }
+
+    /// THE RETRY, AND THE RETIREMENT OF THE NOTICE IT ANSWERS (final review
+    /// N6).
+    ///
+    /// `persistSelfSwaps`' line says "will retry", and nothing cleared it when
+    /// the retry succeeded — so a lifter could sit looking at "Couldn't save
+    /// the swap" for the rest of a workout in which it had long since saved.
+    /// Tap-to-dismiss was the only exit from a sentence that was no longer
+    /// true.
+    ///
+    /// ONLY WHEN THERE WAS SOMETHING TO FLUSH, and only ITS OWN line: a clean
+    /// outbox returns true without writing anything, which is not news about
+    /// any notice on screen.
+    @MainActor
+    private func flushSwapOutbox() async {
+        let wasDirty = SessionSwapPendingStore.shared.isDirty(liveSession.id)
+        let landed = await SessionSwapPendingStore.shared.flushIfDirty(liveSession.id)
+        guard wasDirty, landed, errorText == Self.swapRetryText else { return }
+        errorText = nil
     }
 
     @MainActor
@@ -4139,8 +4167,9 @@ struct SessionLiveView: View {
             selfScales[userID] = held
         }
         // A natural opportunity: the layer is in hand and the network just
-        // answered. Silent — see `flushIfDirty`.
-        await SessionSwapPendingStore.shared.flushIfDirty(liveSession.id)
+        // answered. Silent on failure — see `flushIfDirty`; a SUCCESS retires
+        // the notice that promised it (N6).
+        await flushSwapOutbox()
         guard let squadRow = try? await SessionSwapRepository.loadSquad(sessionID: session.id),
               !squadRow.isEmpty else { return }
         let merged = SessionSwapLayer(squadSwaps.mapValues(\.id)).merging(squadRow)
@@ -5211,7 +5240,7 @@ struct SessionLiveView: View {
                 Task { await OfflineSetLogQueue.shared.replay() }   // cheap drain
                 // The same opportunity for the swap outbox (ruling F1): a
                 // successful insert proves the connection.
-                Task { await SessionSwapPendingStore.shared.flushIfDirty(liveSession.id) }
+                Task { await flushSwapOutbox() }
             } catch let error as GymSyncError {
                 guard case .network = error else { throw error }
                 // Offline — queue for replay + optimistic local append. `feedSets`/

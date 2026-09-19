@@ -248,6 +248,39 @@ final class RoutineSlotProgressTests: XCTestCase {
                        SoloResumeCursor.Position(exerciseIndex: 0, setIndex: 1))
     }
 
+    // MARK: - The walk's own order (final review N4)
+    //
+    // `derive` used to enumerate the array exactly as handed in, while
+    // `SlotProgress.init` and `RoutineProgression.currentSlot` both sort by
+    // `position`. Every caller passes position-ordered rows today, so nothing
+    // was wrong on screen — but the answer is positional and the order was the
+    // caller's to get right. Both cases below fail on the enumerated spelling.
+
+    func testTheWalkIsInPositionOrderEvenWhenTheRowsArriveOutOfIt() {
+        let second = slot(squatID, sets: 3, position: 1)
+        let first = slot(benchID, sets: 3, position: 0)
+        // Handed in BACKWARDS, nothing logged: the lifter belongs on the
+        // routine's first movement, whose index in this array is 1.
+        XCTAssertEqual(
+            SoloResumeCursor.derive(rows: [second, first], swapOverrides: [:], logs: []),
+            SoloResumeCursor.Position(exerciseIndex: 1, setIndex: 1),
+            "the enumerated walk answered the array's first row, which is position 2")
+    }
+
+    /// A finished routine lands on the LAST slot BY POSITION — the one the
+    /// lifter finishes bonus sets from — not on whichever row the array
+    /// happened to end with.
+    func testAFinishedRoutineLandsOnTheLastSlotByPositionNotByArrayOrder() {
+        let second = slot(squatID, sets: 1, position: 1)
+        let first = slot(benchID, sets: 1, position: 0)
+        let logged = logs(benchID, 1, slot: first.id)
+            + logs(squatID, 1, slot: second.id, from: 100)
+        XCTAssertEqual(
+            SoloResumeCursor.derive(rows: [second, first], swapOverrides: [:], logs: logged),
+            SoloResumeCursor.Position(exerciseIndex: 0, setIndex: 2),
+            "index 0 IS position 2 in this array — the answer is the caller's index of the last slot")
+    }
+
     // MARK: - Penalties, and the queue
 
     func testPenaltyRowsAreStillNotProgress() {
