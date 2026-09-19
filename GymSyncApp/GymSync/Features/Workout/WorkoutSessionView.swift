@@ -294,6 +294,14 @@ struct WorkoutSessionView: View {
     /// exercise's id, so history, PRs, and the debrief all see what was
     /// actually done. Quiet by design: shown where the exercise shows,
     /// announced nowhere.
+    ///
+    /// SESSION-LOCAL, NOT VIEW-LOCAL (hotfix 2026-09-18, ruling H1). This
+    /// view is a push inside a dismissible sheet, so a swipe-down destroys
+    /// it and every `@State` in it; the layer is therefore mirrored into
+    /// `AppState.liveSoloSession.swapOverrides` on every change
+    /// (`mirrorSwapLayer()`) and read back in `startIfNeeded()` BEFORE the
+    /// cursor is derived. In memory only — see that type's own comment for
+    /// why, and for Phase C's durable replacement.
     @State private var soloSwapOverrides: [UUID: RoutineExercise] = [:]
     @State private var showSwapSheet = false
     // Form video v1 (owner rulings 2026-08-21): record a set, attach the
@@ -323,9 +331,13 @@ struct WorkoutSessionView: View {
     private var activeExercises: [RoutineExercise] {
         // Mid-session edits supersede the routine's rows; swap overrides
         // still layer on top (a swap made before an edit survives it).
+        //
+        // The layering runs through `SoloResumeCursor.layered` — the same
+        // call the resume cursor makes — so the list this screen draws and
+        // the list the cursor is derived against cannot be two different
+        // layerings. That divergence IS the 2026-09-18 report.
         let base = isFreeform ? freeformExercises : (soloEditedList ?? routineExercises)
-        guard !soloSwapOverrides.isEmpty else { return base }
-        return base.map { soloSwapOverrides[$0.id] ?? $0 }
+        return SoloResumeCursor.layered(base, swapOverrides: soloSwapOverrides)
     }
 
     private var currentRoutineExercise: RoutineExercise? {
@@ -489,6 +501,15 @@ struct WorkoutSessionView: View {
             // Only when the session is truly over — a mid-rest lock/
             // background must keep the cue (that IS the feature).
             if completed { RestNotification.cancel() }
+            // The IN-APP cue is a different thing from the notification:
+            // it belongs to this view, and this view is going away (ruling
+            // H3). `onDisappear` fires on the swipe-down, not on a lock —
+            // backgrounding leaves the view mounted — so the locked-phone
+            // cue above is untouched and only the orphaned chime dies. The
+            // re-entered view arms its own single task from the window it
+            // restores out of `LiveSessionTimerStore`.
+            restLapseTask?.cancel()
+            restLapseTask = nil
         }
         .confirmationDialog(
             "Delete this set?",
@@ -818,10 +839,38 @@ struct WorkoutSessionView: View {
         // values are not recomputed here (migration 20260730000003 header).
     }
 
+    /// The running lapse task, held so it can be cancelled (ruling H3).
+    ///
+    /// It used to be a bare fire-and-forget `Task`, and its closure captures
+    /// `self` — a View STRUCT, whose `@State` storage the closure keeps
+    /// alive after SwiftUI has torn the view down. So a swipe-down mid-rest
+    /// left a task sleeping on a dead view that would still wake at the
+    /// window's end and fire the chime and the haptic; re-entering through
+    /// the pill and restoring the SAME window (which is now what happens)
+    /// would arm a second one, and the lifter would hear the rest end twice.
+    /// One task per live view, cancelled when that view goes away.
+    @State private var restLapseTask: Task<Void, Never>?
+
     /// Rest-over cue for a LOCKED phone: one observer covers every
     /// restEndAt assignment site — any future window schedules, any clear
     /// cancels.
+    ///
+    /// It is also the ONE place the window is PERSISTED (ruling H3), to
+    /// `LiveSessionTimerStore` — the store the group body has written its
+    /// own interlude window to since the owner's 2026-08-14 report of this
+    /// exact symptom ("swiping down, then swiping up erases rest timer").
+    /// Solo never adopted it, which is the whole of why solo's rest died
+    /// with the sheet. Same store, same three fields, same restore shape
+    /// (`SessionLiveView.swift:2168-2184` writes, `:3105` restores).
+    ///
+    /// Every assignment to `restEndAt` in this file reaches this observer,
+    /// and `soloRestIsTransit` / `soloRestStartedAt` are always written
+    /// immediately BEFORE it in the same turn, so the three are stored
+    /// together and consistently.
     private func handleRestWindowChange() {
+        restLapseTask?.cancel()
+        restLapseTask = nil
+        persistRestWindow()
         if let restEndAt, restEndAt > .now {
             RestNotification.schedule(
                 at: restEndAt,
@@ -833,8 +882,9 @@ struct WorkoutSessionView: View {
             // shape the group interlude uses). +1s grace so this clear can
             // never race the rest cue's own delivery at exactly restEndAt.
             let until = restEndAt
-            Task { @MainActor in
+            restLapseTask = Task { @MainActor in
                 try? await Task.sleep(for: .seconds(max(0, until.timeIntervalSinceNow) + 1))
+                guard !Task.isCancelled else { return }
                 if self.restEndAt == until {
                     // In-app cue (field report: "while looking at the
                     // app"): the haptic+chime fires from the timer itself,
@@ -853,6 +903,43 @@ struct WorkoutSessionView: View {
         } else {
             RestNotification.cancel()
         }
+    }
+
+    /// WRITE THE SWAP LAYER WHERE IT OUTLIVES THIS VIEW (ruling H1).
+    ///
+    /// Called from `applySwap`, the one place the layer changes. Guarded on
+    /// the id so a stale view — one that lost the race with a finished
+    /// session, or a second solo session — can never write over the live
+    /// one's layer.
+    ///
+    /// Deliberately NOT mirrored, and therefore still lost on a swipe-down:
+    /// `soloEditedList`, the mid-session builder's list (report §8.3, a
+    /// second unreported instance of the same defect). It is Phase C's,
+    /// with the durable swap layer it belongs beside.
+    private func mirrorSwapLayer() {
+        guard let sessionID = session?.id,
+              appState.liveSoloSession?.id == sessionID else { return }
+        appState.liveSoloSession?.swapOverrides = soloSwapOverrides
+    }
+
+    /// THE REST WINDOW, WHERE THE GROUP BODY ALREADY KEEPS ITS OWN.
+    /// Writes on every change of the window, including its clear — so a
+    /// rest the lifter cut short cannot be resurrected by a re-entry.
+    private func persistRestWindow() {
+        guard let sessionID = session?.id else { return }
+        // A FINISHED SESSION NEVER HOLDS ANCHORS. Finishing mid-rest leaves
+        // the lapse task running under the recap; when it wakes and clears
+        // `restEndAt`, this observer fires again — and without this it
+        // would re-create the entry `endSession` just cleared.
+        guard !completed else {
+            LiveSessionTimerStore.shared.clear(sessionID: sessionID)
+            return
+        }
+        LiveSessionTimerStore.shared.updateRest(
+            sessionID: sessionID,
+            until: restEndAt,
+            startedAt: soloRestStartedAt,
+            isTransit: soloRestIsTransit)
     }
 
     // Canvas: "In Progress" live session — exercise header/table/rest-timer,
@@ -1566,6 +1653,17 @@ struct WorkoutSessionView: View {
     private func captureRestDrop() {
         guard restEndAt != nil, let drop = soloRecoveryBuffer.drop, drop > 0 else { return }
         soloRestDrops.append(drop)
+        // The baseline the GO EARLY / +30s pills are judged against is
+        // learned over a session, so losing it to a swipe-down silences
+        // those pills for the rest of the workout. Persisted at its one
+        // mutation site rather than through another `.onChange` — this
+        // body has blown the Swift type checker twice (see the split note
+        // on `sessionChrome`) — but it is the same store field the group
+        // body writes from its own `.onChange(of: selfRotationRestDrops)`.
+        if let sessionID = session?.id {
+            LiveSessionTimerStore.shared.updateDrops(sessionID: sessionID,
+                                                     drops: soloRestDrops)
+        }
     }
 
     /// The GO EARLY / +30s suggestion pill. Actions follow the house rules:
@@ -3639,12 +3737,23 @@ struct WorkoutSessionView: View {
             // startedAt, and re-enter the phase when it's still open and
             // nothing has been logged yet.
             session = resumeSession
+            // THE SWAP LAYER COMES BACK FIRST (ruling H1/H2) — the cursor
+            // inside `restoreLoggedProgress` is derived against the LAYERED
+            // routine, so restoring it afterwards would be restoring it
+            // too late and the lifter would land back on the lift they
+            // swapped away, with its sets already in the log.
+            let restoredSwaps = adoptSwapLayer(sessionID: resumeSession.id)
             await restoreLoggedProgress(sessionID: resumeSession.id)
+            // …and the rest window AFTER, so its notification and lapse
+            // task are armed against the cursor the logs just produced
+            // (the cue names the set number).
+            restoreSoloTimersFromStore(sessionID: resumeSession.id)
             if !isFreeform, soloWarmupMinutes > 0, loggedSets.isEmpty {
                 let ends = (resumeSession.startedAt ?? Date())
                     .addingTimeInterval(TimeInterval(soloWarmupMinutes * 60))
                 if ends > .now { soloWarmupEndsAt = ends }
             }
+            logSoloEntry(path: "resume", restoredFromSnapshot: restoredSwaps)
             return
         }
         // Field regression 2026-08-22 ("weight not carrying forward"):
@@ -3657,12 +3766,16 @@ struct WorkoutSessionView: View {
            live.session.completedAt == nil,
            live.routine?.id == routine?.id {
             session = live.session
+            // Same ordering law as the resume branch above.
+            let restoredSwaps = adoptSwapLayer(sessionID: live.session.id)
             await restoreLoggedProgress(sessionID: live.session.id)
+            restoreSoloTimersFromStore(sessionID: live.session.id)
             if !isFreeform, soloWarmupMinutes > 0, loggedSets.isEmpty {
                 let ends = (live.session.startedAt ?? Date())
                     .addingTimeInterval(TimeInterval(soloWarmupMinutes * 60))
                 if ends > .now { soloWarmupEndsAt = ends }
             }
+            logSoloEntry(path: "adopt", restoredFromSnapshot: restoredSwaps)
             return
         }
         do {
@@ -3671,6 +3784,7 @@ struct WorkoutSessionView: View {
             appState.liveSoloSession = AppState.LiveSoloSession(
                 session: newSession, routine: routine,
                 routineExercises: routineExercises, allExercises: allExercises)
+            logSoloEntry(path: "new", restoredFromSnapshot: false)
             // Solo warm-up (2026-08): a configured duration opens the
             // warm-up page before the first set — the persisted DEFAULT of
             // 0 keeps existing solo behavior untouched. Routine sessions
@@ -3723,6 +3837,79 @@ struct WorkoutSessionView: View {
         catch { errorText = ErrorMapping.map(error).errorDescription }
     }
 
+    /// READ BACK THE SWAP LAYER THE LAST INSTANCE OF THIS VIEW LEFT BEHIND
+    /// (ruling H1).
+    ///
+    /// Must run BEFORE `restoreLoggedProgress`: the cursor is derived
+    /// against the LAYERED routine, and layering with an empty layer is
+    /// exactly the bug.
+    ///
+    /// - Returns: whether a layer was actually restored — the breadcrumb's
+    ///   "did the snapshot carry anything" bit.
+    @MainActor
+    @discardableResult
+    private func adoptSwapLayer(sessionID: UUID) -> Bool {
+        guard let live = appState.liveSoloSession, live.id == sessionID else { return false }
+        soloSwapOverrides = live.swapOverrides
+        return !live.swapOverrides.isEmpty
+    }
+
+    /// Re-seed the rest window + the recovery-drop history from
+    /// `LiveSessionTimerStore` after a swipe-down/re-entry (ruling H3) —
+    /// the solo twin of `SessionLiveView.restoreTimersFromStore()`, and
+    /// deliberately the same shape.
+    ///
+    /// The window is resumed from its WALL-CLOCK end date, which is the
+    /// only honest way to resume a countdown nothing was ticking:
+    ///
+    ///   - still in the future → the rest page comes back showing the time
+    ///     that is actually left;
+    ///   - already past → nothing is restored. The window is over, and the
+    ///     cursor derived from the logs puts the lifter on the next set
+    ///     with nothing skipped and nothing advanced twice — a lapsed
+    ///     window never advanced a set in the first place, it only cleared
+    ///     `restEndAt` and re-stamped the set clock, which a fresh view is
+    ///     already in.
+    ///
+    /// ONE lapse task, unlike the group twin, which arms its own here:
+    /// assigning `restEndAt` fires `.onChange` → `handleRestWindowChange`,
+    /// which cancels any previous task and arms exactly one. Arming a
+    /// second one here is how a resumed rest would chime twice.
+    @MainActor
+    private func restoreSoloTimersFromStore(sessionID: UUID) {
+        guard let snap = LiveSessionTimerStore.shared.snapshot(for: sessionID) else { return }
+        if soloRestDrops.isEmpty, !snap.restDrops.isEmpty {
+            soloRestDrops = snap.restDrops
+        }
+        guard restEndAt == nil, let until = snap.restUntil, until > .now else { return }
+        soloRestIsTransit = snap.restIsTransit
+        soloRestStartedAt = snap.restStartedAt
+        restEndAt = until
+    }
+
+    /// ONE LINE PER ENTRY INTO A SOLO SESSION (ruling H4).
+    ///
+    /// The lock-screen half of the 2026-09-18 report is NOT fixed here,
+    /// because it is not yet evidenced: the debug write-up names two
+    /// candidates — an OS TERMINATION while locked, and the rest window's
+    /// own lapse task completing through the locked interval (correct
+    /// behaviour that reads as "erased") — and no repro separates them. A
+    /// speculative `scenePhase` handler would be a fix for a cause nobody
+    /// has seen. This line is the instrument instead.
+    ///
+    /// Neither `AppState.liveSoloSession` nor `LiveSessionTimerStore`
+    /// survives a process death — both are in memory, the store's own
+    /// header says so on purpose — so the termination candidate is NOT
+    /// covered by this hotfix. It reads as `path=new` (no live session to
+    /// adopt, so a brand-new one is minted); `path=resume` with
+    /// `rest=none` and a cursor that moved on is the lapse candidate.
+    /// Whichever line the owner's next report carries names the cause.
+    private func logSoloEntry(path: String, restoredFromSnapshot: Bool) {
+        let rest = restEndAt.map { "\(max(0, Int($0.timeIntervalSinceNow)))s" } ?? "none"
+        AppLogger.workout.info(
+            "solo entry path=\(path, privacy: .public) restored=\(restoredFromSnapshot) swaps=\(self.soloSwapOverrides.count) cursor=\(self.currentExerciseIndex)/\(self.currentSetIndex) logs=\(self.loggedSets.count) rest=\(rest, privacy: .public) sess=\(self.session?.id.uuidString.prefix(8) ?? "nil", privacy: .public)")
+    }
+
     /// Rebuild `loggedSets` + the exercise/set cursor from the session's
     /// durable `set_logs` record — the resume-mode half of `startIfNeeded()`.
     /// Best-effort on the fetch: an empty result just lands the lifter at
@@ -3749,26 +3936,19 @@ struct WorkoutSessionView: View {
             currentExerciseIndex = max(freeformExercises.count - 1, 0)
             currentSetIndex = workSets.filter { $0.exerciseID == seen.last }.count + 1
         } else {
-            // Walk the plan in order, attributing logged sets to slots
-            // greedily (handles the same exercise appearing twice); land on
-            // the first slot still short of its target. A fully-logged
-            // routine lands on the last slot, one past its target — the
-            // lifter finishes from there.
-            var remaining = workSets
-            for (i, re) in activeExercises.enumerated() {
-                let target = max(re.targetSets ?? 1, 1)
-                var consumed = 0
-                remaining.removeAll { log in
-                    if consumed < target && log.exerciseID == re.exerciseID {
-                        consumed += 1
-                        return true
-                    }
-                    return false
-                }
-                currentExerciseIndex = i
-                currentSetIndex = consumed + 1
-                if consumed < target { break }
-            }
+            // THE DECISION LIVES IN `SoloResumeCursor`, not here (ruling
+            // H2). It is a pure function of three values — the routine's
+            // rows, the swap layer, the logs — so it can be asserted
+            // directly; the loop that used to sit inline could not be,
+            // which is why it shipped attributing a swapped slot's sets to
+            // nobody. The layering happens INSIDE it, against the same
+            // `SoloResumeCursor.layered` call `activeExercises` makes.
+            let base = soloEditedList ?? routineExercises
+            let cursor = SoloResumeCursor.derive(rows: base,
+                                                 swapOverrides: soloSwapOverrides,
+                                                 logs: logs)
+            currentExerciseIndex = cursor.exerciseIndex
+            currentSetIndex = cursor.setIndex
         }
     }
 
@@ -4285,10 +4465,17 @@ struct WorkoutSessionView: View {
             let completedResult = try await SessionRepository.complete(sessionID: session.id)
             let logs = try await SessionRepository.setLogs(sessionID: completedResult.id)
             completedSession = completedResult
-            // The session is durably over — retire the recovery pill.
+            // The session is durably over — retire the recovery pill (and
+            // with it the swap layer it carries).
             if appState.liveSoloSession?.id == session.id {
                 appState.liveSoloSession = nil
             }
+            // …and the timer anchors, so a finished session leaves nothing
+            // behind for a later one to restore. `clear(sessionID:)` had no
+            // call site anywhere in the app before this one — the group
+            // body writes to the store and never clears it (pre-existing;
+            // surfaced in the hotfix report, not fixed here).
+            LiveSessionTimerStore.shared.clear(sessionID: session.id)
 
             // Open a recovery probe per muscle this session trained, and
             // pick up the oldest one still waiting for an answer. Both are
