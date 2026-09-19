@@ -166,7 +166,19 @@ struct SessionRunnerView: View {
                     blockMilestone: blockMilestone,
                     elapsed: WarmUpGate.elapsed(since: effective.startedAt, now: now),
                     // Solo only, and only before check-in — spec §2's path.
-                    showsCheckIn: isSolo && !isCheckedIn,
+                    //
+                    // AND ONLY WITH A ROSTER IN HAND (fix round 1 / N5).
+                    // `SessionEntryView` now routes a solo session here
+                    // rather than to a crew lobby when the participants
+                    // fetch fails, and an EMPTY roster cannot tell us
+                    // whether this lifter is already checked in — an ad-hoc
+                    // row is inserted at `ready`, so offering check-in would
+                    // be offering an act that is already done, and tapping
+                    // it reaches `CheckInService` and a location read
+                    // (constraint 10's permitted site, but for nothing).
+                    // The five-second poll below fills `roster` and the
+                    // control appears if it is genuinely owed.
+                    showsCheckIn: isSolo && !isCheckedIn && !roster.isEmpty,
                     isCheckingIn: isCheckingIn,
                     canCheckIn: canCheckIn,
                     checkInOpensAtText: checkInOpensAtText,
@@ -328,9 +340,21 @@ struct SessionRunnerView: View {
     @MainActor
     private func loadPlan() async {
         guard warmingUp, planExercises.isEmpty,
-              let routineID = effective.routineID,
-              let (routine, exercises) = try? await RoutineRepository.fetch(id: routineID)
+              let routineID = effective.routineID else { return }
+        // THE PLAN SURVIVES A LOST SIGNAL (final review NEW-1) — the warm-up
+        // is where a minimised ad-hoc session comes back, and this read has no
+        // cache of its own. A successful fetch always wins and is recorded;
+        // only a failed one falls back to what this process last saw, so an
+        // edited routine can never be masked by a remembered copy.
+        var loadedNow: SessionRoutineCache.Loaded?
+        if let (routine, exercises) = try? await RoutineRepository.fetch(id: routineID) {
+            loadedNow = SessionRoutineCache.Loaded(routine: routine, exercises: exercises)
+        }
+        guard let loaded = SessionRoutineCache.shared.resolve(routineID: routineID,
+                                                             fetched: loadedNow)
         else { return }
+        let routine = loaded.routine
+        let exercises = loaded.exercises
         if exerciseCatalog == nil {
             exerciseCatalog = (try? await ExerciseRepository.fetchAll()) ?? []
         }

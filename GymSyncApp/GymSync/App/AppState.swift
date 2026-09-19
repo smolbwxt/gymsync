@@ -132,51 +132,54 @@ final class AppState {
 
     // MARK: - Live solo session recovery (user report 2026-08-11)
     //
-    // A solo session lives inside a plain `.sheet` (Home's RoutinePickerSheet
+    // NO LONGER THE RESUME MECHANISM (Phase C1 S5). An ad-hoc solo session
+    // now runs in the one body (`SessionLiveView`, plan tasks S1-S4) inside a
+    // `.fullScreenCover` it cannot be swiped out of, and `SessionLiveView.
+    // onAppear` registers `liveGroupSession` below unconditionally — for a
+    // roster of one too.
+    //
+    // ITS ONLY REMAINING WRITERS AND READERS ARE BEHIND `#if DEBUG` (fix
+    // round 2 corrected this note, which named `SessionRepository.startSolo`
+    // as a writer — it never was; the field was written by the VIEW, not by
+    // the repository, and `startSolo` has never mentioned `AppState`):
+    // `WorkoutSessionView` writes it at `:3955`, reads it at `:3936` for the
+    // hotfix adopt and clears it at `:4749-4750`, and `CatalogHostView:1941`
+    // pre-seeds it — and that view has exactly one construction site, inside
+    // `#if DEBUG`. So `MainTabView`'s pill and `RootView`'s resume cover no
+    // longer read it; S5 removed that dead branch. **Not deleted here**: the
+    // old view still constructs it, and it retires with that view in C2.
+    //
+    // What follows is the ORIGINAL rationale, kept for that reader: a solo
+    // session used to live inside a plain `.sheet` (Home's RoutinePickerSheet
     // → pushed WorkoutSessionView) — swiping the sheet down destroyed every
     // `@State` in it with no re-entry route, leaving an in_progress session
-    // permanently orphaned. This handle is the durable trace: registered the
-    // moment `SessionRepository.startSolo` succeeds, cleared only when the
-    // session actually completes. While it is non-nil, MainTabView shows a
-    // "SESSION LIVE" pill above the dock; tapping it re-presents
-    // WorkoutSessionView in resume mode (which refetches `set_logs` and
-    // re-derives the exercise/set cursor). Dismissal is therefore harmless
-    // by design rather than prevented — the lifter can browse chat, social,
-    // or routines mid-session and swipe back up.
+    // permanently orphaned. This handle was the durable trace, registered the
+    // moment `SessionRepository.startSolo` succeeded and cleared only when
+    // the session actually completed.
     //
     // Group sessions deliberately have no handle here: they are pushes with
     // the back button hidden (no swipe-down exists) and Home's "Join" hero +
     // check-in widget already re-enter an in_progress group session.
-    /// THE SNAPSHOT IS NO LONGER FROZEN AT START (owner field report
-    /// 2026-09-18: a swiped-down session came back on the exercise that had
-    /// been swapped OUT, so its sets were logged a second time under the
-    /// original lift). The four `let`s below are still the session's
-    /// identity, captured once; `swapOverrides` beneath them is session
-    /// state that must OUTLIVE the view, because `WorkoutSessionView` is a
-    /// push inside a dismissible sheet and a swipe-down destroys every
-    /// `@State` it holds. `WorkoutSessionView` writes it on every swap
-    /// (`mirrorSwapLayer()`) and reads it back in `startIfNeeded()`.
+    /// THE FOUR `let`s BELOW ARE THE SESSION'S IDENTITY, captured once.
     ///
-    /// THE REST WINDOW IS NOT HERE. It belongs to `LiveSessionTimerStore`,
-    /// which the group body has used for the same symptom since the
-    /// 2026-08-14 report; solo simply never adopted it. One store, one
-    /// shape, both bodies.
+    /// THE SWAP MIRROR IS GONE (Phase C1, plan task S1). The 2026-09-18
+    /// hotfix added a `swapOverrides` field here so the layer would survive
+    /// a swipe-down, and said in this very comment that it did NOT survive
+    /// an OS termination and that the durable layer — a row keyed by
+    /// routine SLOT, read back before the cursor is derived — was Phase C's
+    /// job. That row now exists (`session_participants.self_swaps`,
+    /// 20260919000101) and `WorkoutSessionView` reads and writes it
+    /// directly, so a second in-memory copy could only ever drift from it.
     ///
-    /// IN-MEMORY ONLY, deliberately: this fixes swipe-down/up and any
-    /// relaunch-free return (the SESSION LIVE pill, a re-entry from Home),
-    /// which is the whole of the evidenced report. It does NOT survive an
-    /// OS termination — the DURABLE swap layer (a row keyed by routine
-    /// SLOT, read back before the cursor is derived) is Phase C's job, and
-    /// this property is deleted with `WorkoutSessionView` when that lands.
+    /// THE REST WINDOW WAS NEVER HERE EITHER. It belongs to
+    /// `LiveSessionTimerStore`, which the group body has used for the same
+    /// symptom since the 2026-08-14 report. One store, one shape, both
+    /// bodies.
     struct LiveSoloSession: Identifiable, Equatable {
         let session: WorkoutSession
         let routine: Routine?
         let routineExercises: [RoutineExercise]
         let allExercises: [Exercise]
-        /// Session-local hot-swaps, keyed by ROUTINE-EXERCISE ROW ID (not
-        /// exercise id) — the same keying `WorkoutSessionView`'s own
-        /// `soloSwapOverrides` uses, so a slot swapped twice has one entry.
-        var swapOverrides: [UUID: RoutineExercise] = [:]
         var id: UUID { session.id }
         static func == (lhs: Self, rhs: Self) -> Bool { lhs.session.id == rhs.session.id }
     }
@@ -191,9 +194,43 @@ final class AppState {
     /// is off-screen, MainTabView's SESSION LIVE pill routes back through
     /// the lobby deep-link (`pendingRoute = .lobby`), whose existing
     /// auto-forward re-presents the live sheet.
+    ///
+    /// NOW THE ONLY LIVE-PILL HANDLE (Phase C1 S5, decision 6). Registration
+    /// is unconditional in `SessionLiveView.onAppear` — it fires for a roster
+    /// of one exactly as it does for a crew — so this single struct is what
+    /// both an ad-hoc solo session and a group session ride back in on.
     struct LiveGroupSession: Equatable {
         let sessionID: UUID
         let title: String
+
+        /// THE PILL'S TITLE, PURE (Phase C1 S5). `title` is computed by the
+        /// caller (`SessionLiveView.onAppear`) before this struct is built,
+        /// through this function, so the ONE rule — a solo lifter has no
+        /// crew, and must never read "Crew session" — lives in one place and
+        /// is unit-testable outside the view. `routineName` wins either way;
+        /// only the no-routine fallback differs by whether the session is a
+        /// party of one (`SessionLiveView.hidesCrewFurniture`, S4's roster
+        /// law — a scheduled solo session gets the same honest fallback).
+        static func pillTitle(routineName: String?, isSolo: Bool) -> String {
+            routineName ?? (isSolo ? "Freeform workout" : "Crew session")
+        }
     }
     var liveGroupSession: LiveGroupSession?
+}
+
+/// THE LIVE PILL'S TITLE/ROUTE DECISION, PURE (Phase C1 S5). `MainTabView`'s
+/// `safeAreaInset` used to branch on two optionals (`liveSoloSession` then
+/// `liveGroupSession`) inline in its `body`; the first branch is now dead
+/// (`AppState.liveSoloSession`'s doc comment explains why) and this is what
+/// is left of the decision once it is. Extracted so the answer — show
+/// nothing, or show this title and resume this session — is testable without
+/// a view.
+enum LivePillDecision: Equatable {
+    case hidden
+    case resume(sessionID: UUID, title: String)
+
+    static func decide(liveGroupSession: AppState.LiveGroupSession?) -> LivePillDecision {
+        guard let liveGroupSession else { return .hidden }
+        return .resume(sessionID: liveGroupSession.sessionID, title: liveGroupSession.title)
+    }
 }

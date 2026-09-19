@@ -57,6 +57,27 @@ struct HomeView: View {
     @State private var joinedSession: WorkoutSession?
     @State private var navigateToJoined = false
 
+    /// THE AD-HOC SESSION THE PICKER JUST STARTED (Phase C1 S3, decision 6),
+    /// waiting for the picker sheet to finish going away.
+    ///
+    /// TWO FIELDS RATHER THAN ONE, AND THE HAND-OFF IS `onDismiss`. The
+    /// session must be presented from HOME, not from inside the picker: a
+    /// cover presented over a sheet leaves the sheet standing underneath, so
+    /// minimising would land the lifter back on the routine picker — and the
+    /// SESSION LIVE pill lives in `RootView`'s bottom inset, which a sheet
+    /// covers, so the promise decision 6 makes ("minimising returns to where
+    /// the lifter came from, with the pill showing") would be broken at
+    /// exactly the moment it is needed. Presenting a cover in the same turn
+    /// the sheet is dismissed races; `onDismiss` fires after the sheet has
+    /// actually gone, which is deterministic.
+    @State private var startedAdHocSession: WorkoutSession?
+    /// The ad-hoc session currently filling the screen. A
+    /// `.fullScreenCover`, NOT a sheet (decision 6): a swipe-down used to
+    /// destroy the view and every `@State` in it, which is the single
+    /// mechanism behind both halves of the owner's field report. S4 adds
+    /// MINIMISE as the deliberate way out.
+    @State private var adHocSession: WorkoutSession?
+
     // MARK: - Canvas content state (Task 5)
     @State private var historySessions: [WorkoutSession] = []
     @State private var ownedRoutines: [Routine] = []
@@ -277,8 +298,41 @@ struct HomeView: View {
             .sheet(isPresented: $showHelp) {
                 HelpSheet()
             }
-            .sheet(isPresented: $showRoutinePicker) {
-                RoutinePickerSheet(routines: ownedRoutines, initialRoutine: routinePickerPreselected)
+            .sheet(isPresented: $showRoutinePicker, onDismiss: {
+                // The hand-off described on `startedAdHocSession` above. The
+                // picker has gone; the session may now fill the screen.
+                guard let started = startedAdHocSession else { return }
+                startedAdHocSession = nil
+                adHocSession = started
+            }) {
+                RoutinePickerSheet(routines: ownedRoutines,
+                                   initialRoutine: routinePickerPreselected,
+                                   onStarted: { started in startedAdHocSession = started })
+            }
+            // THE AD-HOC SESSION, IN THE ONE BODY (Phase C1 S3). The same
+            // `SessionEntryView` every other live session is routed through:
+            // its router reads `state == "in_progress"` with
+            // `lifting_started_at` still NULL and sends the row to
+            // `SessionRunnerView`'s warm-up, never to a lobby.
+            //
+            // NON-DISMISSIBLE ON PURPOSE. A cover cannot be swiped away, so
+            // an accidental gesture cannot end a screen the lifter is
+            // mid-set on. S4's MINIMISE is the only way out.
+            //
+            // `onDismiss` re-reads Home, because the two ways out both
+            // change what this screen should say: a finished workout moves
+            // the streak and the week, and a MINIMISED one has to appear in
+            // `liveSessions` for the one button to offer the way back in.
+            // The adopt in `startOrAdoptSolo` means a stale button is still
+            // a correct door — tapping START lands back on the same
+            // session — so this is truthfulness, not a load-bearing fetch.
+            .fullScreenCover(item: $adHocSession, onDismiss: {
+                Task { await refresh() }
+            }) { session in
+                // S4: MINIMISE, the only way out (decision 6). ONE view for
+                // every cover in the app (fix round 1 / B2) — the MINIMISE
+                // decision is made inside it, once.
+                SoloSessionCover(session: session)
             }
             // The weekly-goal editor, moved off `weeklyGoalWidget` (deleted
             // with the wide streak card) and onto the page root — it is the
@@ -407,9 +461,13 @@ struct HomeView: View {
         // round trip and no-op re-navigation when it's the same session
         // that's already the active deep-link target.
         if navigateToJoined, joinedSession?.id == sessionID { return }
+        // …and the same no-op for the cover, which is where a solo session
+        // now lands (fix round 1 / B2): the live pill routes through
+        // `pendingRoute = .lobby`, so re-tapping it while the cover is
+        // already up must not re-raise it.
+        if adHocSession?.id == sessionID { return }
         guard let session = try? await SessionRepository.session(id: sessionID) else { return }
-        joinedSession = session
-        navigateToJoined = true
+        present(session)
     }
 
     // MARK: - Replay-failure notice (debt-zero sprint item 2)
@@ -617,16 +675,51 @@ struct HomeView: View {
 
     private func oneButtonInput(for session: WorkoutSession, now: Date) -> HomeOneButtonInput {
         let opensAt = checkInOpensAt(session)
+        // MY OWN live ad-hoc workout (final review F4). The shape comes from
+        // `SoloSessionShape.isSoloByConstruction` — the same triple
+        // `SessionPresentation.of` reads to decide this row opens as the cover
+        // — and the ownership from the organizer, which is the only thing at a
+        // session row that separates the workout I started from one I am
+        // merely a participant of.
+        let isSoloByConstruction = SoloSessionShape.isSoloByConstruction(
+            groupID: session.groupID,
+            roomCode: session.roomCode,
+            scheduledFor: session.scheduledFor)
+        let isMine = signedInUserID.map { session.organizerID == $0 } ?? false
         return HomeOneButtonInput(
             isInProgress: session.state == "in_progress",
             startedAtLabel: session.startedAt.map { $0.formatted(.dateTime.hour().minute()) },
             isGroupSession: session.groupID != nil,
+            isOwnSoloWorkout: isSoloByConstruction && isMine,
             checkInAvailable: checkInAvailable(session, now: now),
             opensInLabel: opensAt.flatMap { now < $0 ? compactCountdown(to: $0, from: now) : nil },
             crewName: crewName(for: session),
             routineName: routineLabel(for: session),
             timeLabel: session.scheduledFor.map { $0.formatted(.dateTime.hour().minute()) } ?? ""
         )
+    }
+
+    /// WHO IS SIGNED IN, from whichever source already knows (final review
+    /// NEW-4).
+    ///
+    /// `isOwnSoloWorkout` used to read `currentProfile?.id` alone, which is
+    /// `nil` until the profile fetch lands — and a `nil` there does not read
+    /// as "not yet known", it reads as "not mine", which is the WRONG verb
+    /// ("JOIN THE SESSION · YOU'RE LATE") rather than a cautious one. That is
+    /// the shape N1 taught this branch to avoid with a three-valued
+    /// `SoloSessionShape.Crew`.
+    ///
+    /// The auth session knows first and knows synchronously: `AuthService`'s
+    /// `state` is the same accessor `RootView` pattern-matches on for every
+    /// replay trigger and `AuthServiceCurrentUserIDProvider` reads for the
+    /// offline queue's user scoping. `RootView` already renders `MainTabView`
+    /// only in `.signedIn` WITH a loaded profile, so the flicker is not
+    /// reachable through that gate today — this removes the dependency on the
+    /// gate rather than on a fix for a bug that gate happens to hide.
+    private var signedInUserID: UUID? {
+        if let profileID = appState.currentProfile?.id { return profileID }
+        if case .signedIn(let userID) = AuthService.shared.state { return userID }
+        return nil
     }
 
     /// The crew a session belongs to, or `Solo`. Same lookup
@@ -657,8 +750,11 @@ struct HomeView: View {
     private func performOneButtonAction(_ state: HomeOneButtonState,
                                         session: WorkoutSession?) {
         switch state {
-        case .joinSession, .checkIn:
-            if let session { openLobby(session) }
+        case .joinSession, .checkIn, .resumeWorkout:
+            // `.resumeWorkout` takes the SAME route (final review F4): a solo
+            // session is always the cover, and `present(_:)` is where that is
+            // decided, by the row rather than by the button that found it.
+            if let session { present(session) }
         case .checkInOpens:
             guard let session else { return }
             if let groupID = session.groupID {
@@ -668,7 +764,7 @@ struct HomeView: View {
                 appState.pendingRoute = .chat(groupID: groupID)
                 appState.selectedTab = .social
             } else {
-                openLobby(session)
+                present(session)
             }
         case .startRoutine, .startWorkout:
             routinePickerPreselected = todaysRoutine
@@ -676,12 +772,44 @@ struct HomeView: View {
         }
     }
 
-    /// Home's one lobby push. `.id(session.id)` on the destination is
-    /// load-bearing — see `navigateToJoined`'s destination comment for the
-    /// 2026-07-30 field bug it exists to prevent.
-    private func openLobby(_ session: WorkoutSession) {
-        joinedSession = session
-        navigateToJoined = true
+    /// HOME'S ONE PRESENTATION OF A SESSION (fix round 1 / B2). Every route
+    /// on this screen that opens a session goes through here: the one
+    /// button (`performOneButtonAction`), the live pill's deep link
+    /// (`consumePendingRouteIfNeeded`) and a room-code join (`joinByCode`).
+    ///
+    /// A SOLO SESSION IS ALWAYS THE COVER, NEVER A PUSH. Removing the solo
+    /// exclusion (R-C-1) made a live ad-hoc row reachable from the one
+    /// button, which pushed `SessionEntryView` — where MINIMISE is not
+    /// mounted, `arenaBase` hides the back button and the body hides the
+    /// dock. There was no control on that screen that left it: a lifter who
+    /// minimised during the warm-up and came back through the button was
+    /// stranded until they force-quit, which is the exact failure mode
+    /// decision 6 exists to end. So how a session is presented is a fact
+    /// about the SESSION, not about the route that found it.
+    ///
+    /// A CREW SESSION KEEPS THE PUSH it has always had, and so does a
+    /// SCHEDULED solo session — at the session row those two are
+    /// indistinguishable (`ScheduleSessionView` leaves `group_id` and
+    /// `room_code` nil for both `.solo` and `.friends`), and this call site
+    /// holds no roster to separate them. The push is no longer a dead end
+    /// regardless: B1 and N10 gave every page the router can show an end.
+    ///
+    /// THE RULE ITSELF IS `SessionPresentation.of(_:)` (fix round 2 / N11).
+    /// It used to be spelled out here, which made it a rule about this
+    /// screen — and the calendar page, which also opens live sessions,
+    /// pushed a solo row straight past it.
+    ///
+    /// `.id(session.id)` on the push destination is load-bearing — see
+    /// `navigateToJoined`'s destination comment for the 2026-07-30 field bug
+    /// it exists to prevent.
+    private func present(_ session: WorkoutSession) {
+        switch SessionPresentation.of(session) {
+        case .soloCover:
+            adHocSession = session
+        case .push:
+            joinedSession = session
+            navigateToJoined = true
+        }
     }
 
     // MARK: - Tile pair, crew pulse, goal strip, calendar (design §A items 5-8)
@@ -1219,7 +1347,7 @@ struct HomeView: View {
            let rows = try? await SessionRepository.participants(sessionID: friend.sessionID),
            rows.contains(where: { $0.participant.userID == userID }),
            let session = try? await SessionRepository.session(id: friend.sessionID) {
-            openLobby(session)
+            present(session)
             return
         }
         // Not yours to walk into — the crew room is where you ask.
@@ -1261,14 +1389,29 @@ struct HomeView: View {
     /// alone, so no session can appear in both and no de-duplication is
     /// needed.
     ///
-    /// SOLO live sessions are excluded here, not in the repository. A live
-    /// solo session already has a recovery surface — `AppState
-    /// .liveSoloSession` and RootView's SESSION LIVE pill, which re-present
-    /// `WorkoutSessionView` in resume mode (`AppState.swift:133-147`) — and
-    /// routing it through `LobbyView` instead would fight that design. A live
-    /// CREW session has no such handle, which is the gap this closes.
+    /// SOLO LIVE SESSIONS ARE NO LONGER EXCLUDED (Phase C1 S3, decision 6,
+    /// ruling R-C-1). This line used to read
+    /// `liveSessions.filter { $0.groupID != nil }`, and it was the real
+    /// exclusion — `SessionRepository.liveForCurrentUser` returns solo and
+    /// always did, which is why the plan's aim at that function found nothing
+    /// to change. The reasoning it carried was that a live solo session had
+    /// its own recovery surface (`AppState.liveSoloSession` and RootView's
+    /// pill, re-presenting `WorkoutSessionView` in resume mode) and that
+    /// routing it through `LobbyView` would fight that design.
+    ///
+    /// Both halves of that stopped being true in one commit. An ad-hoc
+    /// session is now a real session in the one body's state machine, and
+    /// this destination is not `LobbyView` — it is
+    /// `SessionEntryView(session:)` (`:358-367`), whose router sends a solo
+    /// row to `SessionRunnerView`, never to a lobby.
+    ///
+    /// AND IT IS LOAD-BEARING, not tidying. A lifter who MINIMISES during the
+    /// warm-up phase has no pill yet — `AppState.liveGroupSession` is
+    /// registered by `SessionLiveView.onAppear`, which has not run until
+    /// lifting starts — so this button is the ONLY way back into a minimised
+    /// warm-up. With the filter in place that session was unreachable.
     private var actionableSessions: [WorkoutSession] {
-        liveSessions.filter { $0.groupID != nil } + upcomingSessions
+        liveSessions + upcomingSessions
     }
 
     /// The soonest ACTIONABLE session (repository order is soonest-first). A
@@ -2048,8 +2191,11 @@ struct HomeView: View {
         do {
             let session = try await SessionRepository.joinByCode(joinCode)
             joinCode = ""
-            joinedSession = session
-            navigateToJoined = true
+            // Through the one presentation law (B2). A room-code session
+            // carries a room code, so this always takes the push branch —
+            // routed through `present` anyway so no call site on this screen
+            // decides for itself.
+            present(session)
         } catch let error as GymSyncError {
             joinError = error.errorDescription
         } catch {
@@ -2093,41 +2239,51 @@ struct HomeView: View {
 // MARK: - Routine Picker Sheet
 //
 // Task 5: the "Start Solo Workout" CTA and the "Today's routine" card both
-// route through this sheet. It reuses the EXACT solo-start mechanism already
-// used by Library/Workout's `RoutineDetailChoice`
-// (`WorkoutSessionView(routine:routineExercises:allExercises:)`) — no new
-// session-start path was built. "No routine" starts an untargeted session by
-// passing `routine: nil` (see the Task 5 deviation note in
-// `WorkoutSessionView.swift`, where `routine` was widened from `Routine` to
-// `Routine?` to make that representable).
+// route through this sheet. "No routine" starts an untargeted session by
+// passing `routine: nil`.
+//
+// PHASE C1 S3: IT STARTS THE SESSION AND HANDS THE ROW UP. It used to push
+// `WorkoutSessionView(routine:routineExercises:allExercises:)`, which created
+// the session itself on mount; now the row is created here and `HomeView`
+// presents `SessionEntryView` over it in a full-screen cover. That is why
+// `routineExercises`/`allExercises` are gone from this view: they existed
+// solely to be handed to the old body, and the one body loads the plan it
+// needs itself (`SessionRunnerView.loadPlan()`).
 
 private struct RoutinePickerSheet: View {
     let initialRoutine: Routine?
+    /// Called with the row the tap created or adopted, BEFORE this sheet
+    /// dismisses itself. `HomeView` holds it until the sheet has gone and
+    /// then presents the cover — see `startedAdHocSession` there for why the
+    /// cover cannot be presented from inside this sheet.
+    let onStarted: (WorkoutSession) -> Void
 
     @Environment(\.gsTheme) private var theme
-    /// This view IS the sheet's root, so this dismisses the SHEET (a
-    /// `dismiss()` captured inside the pushed session would only pop the
-    /// push). Handed to `WorkoutSessionView.onFinished` so completing a
-    /// workout exits all the way out instead of landing back on this picker.
+    /// This view IS the sheet's root, so this dismisses the SHEET.
     @Environment(\.dismiss) private var dismissPicker
 
     /// Seeded from the caller's fetched list, then locally owned so a routine
     /// built in-sheet (Build Routine push below) appears immediately.
     @State private var routines: [Routine]
     @State private var chosenRoutine: Routine?
-    @State private var routineExercises: [RoutineExercise] = []
-    @State private var allExercises: [Exercise] = []
-    @State private var startNavigation = false
     @State private var showBuilder = false
+    /// One start at a time: the rows stay tappable while the round trip is in
+    /// flight otherwise, and two taps would ask for two sessions.
+    @State private var starting = false
+    /// The start is the one thing on this screen that can fail, and it is
+    /// the tap the lifter just made — so it is said, not swallowed.
+    @State private var startErrorText: String?
 
     // Today's-routine card opens this sheet PAUSED: `chosenRoutine` seeds from
     // `initialRoutine` purely for the visible preselection/highlight below — it no
     // longer auto-starts. The user must tap a row (the preselected one or another)
     // to actually start. Start Solo Workout still passes `initialRoutine: nil`, so
     // this seeds to nil and the list opens with nothing highlighted — unchanged.
-    init(routines: [Routine], initialRoutine: Routine?) {
+    init(routines: [Routine], initialRoutine: Routine?,
+         onStarted: @escaping (WorkoutSession) -> Void) {
         _routines = State(initialValue: routines)
         self.initialRoutine = initialRoutine
+        self.onStarted = onStarted
         _chosenRoutine = State(initialValue: initialRoutine)
     }
 
@@ -2178,6 +2334,14 @@ private struct RoutinePickerSheet: View {
                             }
                         }
                     }
+
+                    if let startErrorText {
+                        Text(startErrorText)
+                            .font(GSFont.body(12, relativeTo: .footnote))
+                            .foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 12)
+                    }
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 24)
@@ -2203,18 +2367,6 @@ private struct RoutinePickerSheet: View {
                     chosenRoutine = newRoutine
                     showBuilder = false
                 }
-            }
-            .navigationDestination(isPresented: $startNavigation) {
-                WorkoutSessionView(routine: chosenRoutine,
-                                   routineExercises: routineExercises,
-                                   allExercises: allExercises,
-                                   // Finishing must close this whole SHEET,
-                                   // not just pop back to the picker the
-                                   // lifter chose from (user report
-                                   // 2026-07-28). `dismiss()` inside the
-                                   // pushed session only pops the push, so
-                                   // the sheet's own dismiss is handed down.
-                                   onFinished: { dismissPicker() })
             }
         }
     }
@@ -2268,16 +2420,29 @@ private struct RoutinePickerSheet: View {
         .buttonStyle(.gs3DCardStyle(cornerRadius: GSMetrics.radiusSm))
     }
 
+    /// PHASE C1 S3. The tap creates the row, hands it up and closes the
+    /// picker; `HomeView` puts `SessionEntryView` over it.
+    ///
+    /// `routine: nil` is the FREEFORM path and still creates an ordinary
+    /// session, with `routine_id` NULL — `startOrAdoptSolo` passes the nil
+    /// straight through, and a freeform session's sets carry no slot
+    /// (decision 3), which is correct for them forever.
     @MainActor
     private func start(routine: Routine?) async {
-        allExercises = (try? await ExerciseRepository.fetchAll()) ?? []
-        if let routine {
-            routineExercises = (try? await RoutineRepository.fetch(id: routine.id))?.1 ?? []
-        } else {
-            routineExercises = []
-        }
+        guard !starting else { return }
+        starting = true
+        defer { starting = false }
+        startErrorText = nil
         chosenRoutine = routine
-        startNavigation = true
+        do {
+            let session = try await SessionRepository.startOrAdoptSolo(routineID: routine?.id)
+            onStarted(session)
+            dismissPicker()
+        } catch let error as GymSyncError {
+            startErrorText = error.errorDescription
+        } catch {
+            startErrorText = error.localizedDescription
+        }
     }
 }
 

@@ -286,6 +286,28 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
     /// which exists precisely because "last month's pull-ups were done at
     /// last month's body weight".
     let bodyWeightLbs: Decimal?
+    /// THE ROUTINE SLOT the phone is currently on (Phase C1, decision 3), so
+    /// a set logged from the wrist is attributed to the same station a set
+    /// logged on the phone would be.
+    ///
+    /// IT HAD TO TRAVEL, and the reason is not the one this comment used to
+    /// give (final review N1). It named the PRE-RULING fallback — "a slot that
+    /// already has attributed rows does not count NULL rows" — which ruling
+    /// R-F2-1 rejected. The shipped rule (`Models/RoutineProgression.swift`,
+    /// `SlotProgress`) is that NULL-slot rows are never dropped: they are
+    /// placed among the slots naming that lift, in routine order, each taking
+    /// only what its target still has room for, with any surplus going to the
+    /// last of them.
+    ///
+    /// So the field earns its place on the wire by the OTHER half of that
+    /// rule: a slot already at its target has no room left, so a wrist row
+    /// arriving with no slot would be pushed past it — onto a later slot
+    /// naming the same lift, or onto the last one as surplus — rather than
+    /// counting where the lifter actually was. Naming the slot is what puts it
+    /// at the station the phone was on. `nil` for a freeform session and for a
+    /// Watch build predating this, which is exactly the pre-column population
+    /// the placement rule exists for.
+    let routineExerciseID: UUID?
 
     init(
         sessionID: UUID,
@@ -302,6 +324,7 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         sampleHeartRate: Bool? = nil,
         nextSetIndex: Int? = nil,
         bodyWeightLbs: Decimal? = nil,
+        routineExerciseID: UUID? = nil,
         updatedAt: Date = Date()
     ) {
         self.sessionID = sessionID
@@ -318,6 +341,7 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         self.sampleHeartRate = sampleHeartRate
         self.nextSetIndex = nextSetIndex
         self.bodyWeightLbs = bodyWeightLbs
+        self.routineExerciseID = routineExerciseID
         self.updatedAt = updatedAt
     }
 
@@ -325,7 +349,7 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         case sessionID, groupID, sessionName, currentExerciseName, currentExerciseID
         case currentLifterName, isMyTurn, burpeesOwed, burpeesPaid
         case isActive, shareHeartRate, updatedAt
-        case nextSetIndex, bodyWeightLbs, sampleHeartRate
+        case nextSetIndex, bodyWeightLbs, sampleHeartRate, routineExerciseID
     }
 
     /// Custom decode (Task 3, extended fix wave 1) — same "schema-lag" shape
@@ -371,6 +395,7 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         sampleHeartRate = try? c.decodeIfPresent(Bool.self, forKey: .sampleHeartRate)
         nextSetIndex = try? c.decodeIfPresent(Int.self, forKey: .nextSetIndex)
         bodyWeightLbs = try? c.decodeIfPresent(Decimal.self, forKey: .bodyWeightLbs)
+        routineExerciseID = try? c.decodeIfPresent(UUID.self, forKey: .routineExerciseID)
         updatedAt = try c.decode(Date.self, forKey: .updatedAt)
     }
 }

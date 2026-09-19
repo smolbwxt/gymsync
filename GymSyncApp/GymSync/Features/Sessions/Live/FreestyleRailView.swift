@@ -134,6 +134,22 @@ struct FreestyleRailView: View {
     let kicker: String
     let title: String
     let rail: FreestyleRailModel
+    /// A PROVED PARTY OF ONE, AND THEIR OWN COUNT (frames 155-157).
+    ///
+    /// `nil` is the crew rail exactly as it has always rendered — every crew
+    /// call site, production and catalog alike, leaves it out, so frame 141
+    /// is byte-identical. Non-nil turns the same card into this lifter's own
+    /// progress: the kicker drops the crew word, the trailing count says how
+    /// many of the routine's sets are done rather than only the denominator,
+    /// the track fills to that fraction instead of carrying markers, and the
+    /// legend — a row per crewmate — is not drawn at all, because with a
+    /// roster of one it is either empty or a single "YOU" under a bar that
+    /// already says it.
+    ///
+    /// It is a COUNT rather than a `Bool` + a lookup in `rail.lifters`: the
+    /// roster is exactly what a lost signal takes away, and the number is
+    /// derived from the session's own set rows, which survive it.
+    var soloSetsDone: Int? = nil
     let restElapsed: String
     let standing: FreestylePace.Standing
 
@@ -160,6 +176,29 @@ struct FreestyleRailView: View {
     var onAcceptAccessory: () -> Void = {}
     var onDeclineAccessory: () -> Void = {}
 
+    /// THE WAY OUT (fix round 1 / B1, ruling R-C-7). This page drew no
+    /// header rail and no foot of its own, and the pinned `turnChrome`
+    /// beneath it carries LOG and nothing else — so a Freestyle session
+    /// could not be ended at all. Shipped for CREW Freestyle since Phase B1;
+    /// Phase C1 made every ad-hoc solo workout `.freestyle` and so made it
+    /// everybody's.
+    ///
+    /// The SAME hook and the SAME control `TogetherClockView` already takes
+    /// (`onEnd` → `RoundDoor(glyph: "xmark", title: RoundCopy.endSession)`,
+    /// last in its foot), for the same reason its own comment gives:
+    /// neutral, never accent, because the LOG card above is this screen's
+    /// one accent act and ending is not what the lifter came to do. No new
+    /// composition.
+    ///
+    /// OPTIONAL, AND NIL IS THE CATALOG'S ANSWER (fix round 2 / N10 aligned
+    /// this with `RoundWaitView` and `SpotterView`; it was an `onEnd` plus a
+    /// separate `showsEnd` Bool). One idiom across all three pages that mount
+    /// their own door, and the same `onSetRackCount` precedent: a fixture
+    /// world passes nothing and the rail renders exactly as it does today.
+    /// Production passes it through
+    /// `SessionEndAffordance.pageMountsItsOwnEnd(.freestyleRail)`.
+    var onEnd: (() -> Void)?
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
@@ -180,6 +219,9 @@ struct FreestyleRailView: View {
                 }
                 if let entryCard {
                     entryCard
+                }
+                if let onEnd {
+                    RoundDoor(glyph: "xmark", title: RoundCopy.endSession, onTap: onEnd)
                 }
             }
             .padding(.horizontal, 16)
@@ -217,18 +259,22 @@ struct FreestyleRailView: View {
     private var railCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                GSSectionHeader(RoundCopy.freestyleRailKicker)
+                GSSectionHeader(soloSetsDone == nil
+                                ? RoundCopy.freestyleRailKicker
+                                : RoundCopy.freestyleSoloRailKicker)
                 Spacer(minLength: 8)
-                Text(RoundCopy.freestyleOfTotal(rail.totalSets))
+                Text(countLine)
                     .font(GSFont.bold(11, relativeTo: .caption2))
                     .tracking(0.8)
                     .foregroundStyle(theme.neutral700)
                     .fixedSize()
             }
             track
-            HStack(spacing: 0) {
-                ForEach(rail.lifters) { lifter in
-                    legend(lifter)
+            if soloSetsDone == nil {
+                HStack(spacing: 0) {
+                    ForEach(rail.lifters) { lifter in
+                        legend(lifter)
+                    }
                 }
             }
         }
@@ -237,8 +283,18 @@ struct FreestyleRailView: View {
         .gs3DCard(cornerRadius: GSMetrics.radiusMd, lipHeight: 6)
     }
 
+    private var countLine: String {
+        guard let soloSetsDone else { return RoundCopy.freestyleOfTotal(rail.totalSets) }
+        return RoundCopy.freestyleSoloProgress(done: soloSetsDone, total: rail.totalSets)
+    }
+
     /// One track, four markers — the thing the rail exists to show is the
     /// GAP, which four separate meters would turn into four private facts.
+    ///
+    /// For a party of one there is no gap to show, so the same track carries
+    /// the one thing there IS: how far through the routine this lifter is.
+    /// The fill is `theme.text`, the colour a marker already uses for YOU —
+    /// no accent, this card still spends none (rule 2).
     private var track: some View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
@@ -246,13 +302,28 @@ struct FreestyleRailView: View {
                     .fill(theme.neutral300)
                     .frame(height: 6)
                     .frame(maxHeight: .infinity, alignment: .center)
-                ForEach(rail.lifters) { lifter in
-                    marker(isYou: lifter.isYou)
-                        .offset(x: offset(lifter.setsDone, width: proxy.size.width))
+                if let soloSetsDone {
+                    Capsule()
+                        .fill(theme.text)
+                        .frame(width: fill(soloSetsDone, width: proxy.size.width), height: 6)
+                        .frame(maxHeight: .infinity, alignment: .center)
+                } else {
+                    ForEach(rail.lifters) { lifter in
+                        marker(isYou: lifter.isYou)
+                            .offset(x: offset(lifter.setsDone, width: proxy.size.width))
+                    }
                 }
             }
         }
         .frame(height: 26)
+    }
+
+    /// The fraction of the routine's own total this lifter has logged, as a
+    /// width. A routine with no prescribed sets fills nothing rather than
+    /// dividing by zero.
+    private func fill(_ done: Int, width: CGFloat) -> CGFloat {
+        guard rail.totalSets > 0 else { return 0 }
+        return width * CGFloat(min(max(Double(done) / Double(rail.totalSets), 0), 1))
     }
 
     private func offset(_ done: Int, width: CGFloat) -> CGFloat {

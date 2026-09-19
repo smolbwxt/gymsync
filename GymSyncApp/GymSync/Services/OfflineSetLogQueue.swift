@@ -63,6 +63,52 @@ struct AuthServiceCurrentUserIDProvider: CurrentUserIDProviding {
     }
 }
 
+// MARK: - Merging what is still queued into what the server returned
+
+/// A SET LOGGED OFFLINE SURVIVES RE-ENTRY, AND IS NEVER LOGGED TWICE (final
+/// review F3).
+///
+/// THE WALK THIS CLOSES. Airplane mode, three sets logged: each
+/// `SessionRepository.logSet` throws `.network`, so each is enqueued here AND
+/// appended optimistically into the body's `@State`. MINIMISE destroys that
+/// state. Re-entry, still offline: the `set_logs` fetch throws, the rows are
+/// gone, `SlotProgress` sees nothing, the cursor returns to slot 1 / set 1 —
+/// and the lifter logs the same three sets again, under three FRESH ids, so
+/// `set_logs.id`'s "client-generated for idempotent retry" contract cannot
+/// dedupe them. Back online, the replay lands the first three and the live
+/// path the second three: six rows for three sets, doubled recap volume, a
+/// polluted PR baseline.
+///
+/// PURE, AND DE-DUPLICATED BY THE SET'S OWN ID, which is the only identity a
+/// row has on both sides: a queued row that has SINCE landed comes back in
+/// the fetch, and it must appear once, not twice. The fetch's rows are the
+/// truth about order and content; a pending row is appended only when nothing
+/// fetched already carries its id.
+///
+/// SCOPED TO ONE SESSION for the same reason
+/// `OfflineSetLogQueue.pendingLogs(sessionID:)` is scoped to one user: a set
+/// queued in yesterday's workout is not a row of this one.
+enum PendingSetLogMerge {
+
+    /// - Parameters:
+    ///   - fetched: what the server returned, in its own order (`logged_at`
+    ///     ASC) — or, when the fetch FAILED, what this body already holds.
+    ///   - pending: `OfflineSetLogQueue.pendingLogs(sessionID:)`.
+    ///   - sessionID: the session being read; a pending row naming another is
+    ///     ignored.
+    static func merged(fetched: [SetLog], pending: [SetLog],
+                       sessionID: UUID) -> [SetLog] {
+        var known = Set(fetched.map(\.id))
+        var rows = fetched
+        for row in pending.sorted(by: { $0.loggedAt < $1.loggedAt })
+        where row.sessionID == sessionID && !known.contains(row.id) {
+            rows.append(row)
+            known.insert(row.id)
+        }
+        return rows
+    }
+}
+
 // MARK: - Offline set-log queue
 
 /// Master spec §6.4's "pending writes queue" for set logs — SCOPE: set
@@ -440,6 +486,32 @@ final class OfflineSetLogQueue {
             pendingSetLogIDs.remove(item.id)
         }
         try? modelContext.save()
+    }
+
+    /// WHAT IS STILL QUEUED FOR ONE SESSION — the reader this queue never had
+    /// (final review F3).
+    ///
+    /// Every other caller asks this queue to DO something (enqueue, replay,
+    /// prune) or asks whether one id is in flight. Nothing could ask "what of
+    /// mine has not reached the server for this session", so nothing did: a
+    /// body that re-entered a session offline fetched an empty `set_logs`,
+    /// showed no sets, rewound its cursor to slot 1 / set 1, and the lifter
+    /// re-logged work that was already queued — with a FRESH `SetLog.id` each
+    /// time, so the replay landed both copies.
+    ///
+    /// Scoped to the CURRENT signed-in user, like `replay()` and
+    /// `refreshPendingIDs()` and for the same shared-device reason: another
+    /// user's queued rows must not appear in this user's session. Ordered by
+    /// `loggedAt` — when the lifter actually performed the set, which is the
+    /// order a session's rows are read in everywhere else.
+    func pendingLogs(sessionID: UUID) -> [SetLog] {
+        guard let modelContext,
+              let userID = userIDProvider.currentUserID else { return [] }
+        let descriptor = FetchDescriptor<PendingSetLog>(
+            predicate: #Predicate { $0.sessionID == sessionID && $0.userID == userID },
+            sortBy: [SortDescriptor(\.loggedAt, order: .forward)]
+        )
+        return ((try? modelContext.fetch(descriptor)) ?? []).map(\.asSetLog)
     }
 
     /// Rebuilds `pendingSetLogIDs` for the CURRENT signed-in user only (gate

@@ -230,5 +230,13 @@
   {
     "screenId": "pr-celebration-b",
     "reason": "Owner-decisions round 2026-09-18, integration task I1 (contingency path, constraint 7): the owner's pick between pr-celebration-a and pr-celebration-b had not arrived at integration, so S4 (the production rebuild + the retirement of both ids) did not run in this PR. `pr-celebration-b` (frame 152) therefore ships live rather than retiring - it is a live design round awaiting the owner's pick, not a shipped production composition. The moment the pick is recorded, S4 runs as a follow-up PR, this id retires, and this entry retires with it."
+  },
+  {
+    "screenId": "session-together-clock",
+    "reason": "Group-session Phase C1 (2026-09-19): the log control's word is now a pure function of the session's style (RoundCopy.logControlTitle). Together has no turns, so production says \"LOG SET\"; the catalog foot's default said \"LOG SET & PASS\" and was read only by this frame, so the frame disagreed with the app. It re-captures with the true word - a copy correction, not a layout change."
+  },
+  {
+    "screenId": "session-solo-warmup-cover",
+    "reason": "Group-session Phase C1 (2026-09-19), frame 159: the ad-hoc solo warm-up inside SoloSessionCover. MINIMISE is mounted at the cover and clips the top-right corner of the warm-up plan card (it covers no text). Shipped as-is under the owner's function-before-design directive of 2026-09-18; its placement belongs to the design pass, alongside the owner's rule that no session page scrolls."
   }
 ]

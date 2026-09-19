@@ -131,13 +131,14 @@ enum RoutineRepository {
             description: source.description, visibility: "private",
             createdAt: Date(), updatedAt: Date()
         )
+        // ONE COPY HELPER (ruling R-C-6). This list was written out by hand
+        // and stopped at `notes`, so "Add to my routines" dropped `setType`,
+        // `dropSteps`, `dropPercent`, `targetFailure`, `supersetGroup`,
+        // `targetRepsLow`/`High` and `cardioZone`/`Minutes` — it flattened a
+        // generated program to bare sets and reps, and the athlete had no
+        // way to know the copy was not the workout they saved.
         let copiedExercises = exercises.map { ex in
-            RoutineExercise(
-                id: UUID(), routineID: copy.id, exerciseID: ex.exerciseID,
-                position: ex.position, targetSets: ex.targetSets,
-                targetReps: ex.targetReps, targetWeight: ex.targetWeight,
-                restSeconds: ex.restSeconds, notes: ex.notes
-            )
+            RoutineLayering.copied(ex, intoRoutine: copy.id, position: ex.position)
         }
         try await save(copy, exercises: copiedExercises)
         return copy

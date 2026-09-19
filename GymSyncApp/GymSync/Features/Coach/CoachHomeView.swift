@@ -1115,8 +1115,17 @@ struct CoachThreadView: View {
             // exerciseID is immutable by design - a swap is a REPLACEMENT
             // row carrying the old prescription. save() deletes and
             // re-inserts the full array, so position survives by copying.
+            //
+            // AND SO MUST THE ID (ruling R-C-5, Phase C1). Coach chat is
+            // reachable WHILE a session is running — a solo session swiped
+            // down, a crew session in another tab — and this writer edits
+            // one of the lifter's own routines IN PLACE. A fresh `UUID()`
+            // here orphans that slot's durable swap entry and, from S2,
+            // every set already attributed to it; neither has a foreign key,
+            // so nothing raises and the sets simply stop counting. The
+            // twin of `WorkoutSessionView.applyCoachRoutineEdit`'s own fix.
             rows[index] = RoutineExercise(
-                id: UUID(), routineID: old.routineID, exerciseID: replacement.id,
+                id: old.id, routineID: old.routineID, exerciseID: replacement.id,
                 position: old.position,
                 targetSets: old.targetSets,
                 targetReps: old.targetReps,

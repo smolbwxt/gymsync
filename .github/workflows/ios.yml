@@ -459,7 +459,16 @@ jobs:
           # THE DELTA IS THE INVARIANT, NOT THE LITERAL: this plan's own N was specified as 0 on the picked
           # path (two variations in at S3, the same two out at S4) — the +2 here is the stated contingency,
           # not a drift from plan.
-          FLOOR=135
+          # Group-session Phase C1 (2026-09-19, 2026-09-19-group-session-phase-c-plan I1): 135 -> 140.
+          # +3 = the plan's own frames, the ad-hoc solo workout in the one session body: session-solo-live
+          # 155, session-solo-rest 156, session-solo-swap 157. +2 = frames the reviews asked for after the
+          # plan was written: session-round-wait-door 158 (the waiting pages had no Leave/End since B1 —
+          # found in C1's push-2 review; the new RoundDoor photographed) and session-solo-warmup-cover 159
+          # (where MINIMISE sits over the warm-up — an accepted unknown the owner is shown, not told).
+          # Out: none in C1 — solo-live-set (frame 66) retires with WorkoutSessionView in C2 (-1), and
+          # 151/152 (both compositions REJECTED by the owner, 2026-09-18) retire when the design pass's
+          # new PR-celebration round lands (-2). THE DELTA IS THE INVARIANT, NOT THE LITERAL.
+          FLOOR=140
           # `|| true` + the `:-0` default for the same `set -eo pipefail`
           # reason as the simulator picker above: a missing $SCREENS makes
           # `find` exit 1, which would kill the step before it printed the
