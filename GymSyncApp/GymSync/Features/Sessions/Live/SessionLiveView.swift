@@ -4085,6 +4085,9 @@ struct SessionLiveView: View {
     /// exact and not merely cautious: neither body has an un-swap, so the
     /// layer only grows within a session.
     ///
+    /// AND IT DOES NOT NEED THE ROSTER TO READ MY OWN (final review F2) —
+    /// see `SessionSwapSeeding`, which is that rule as a pure function.
+    ///
     /// THE NAME IS RE-RESOLVED, NEVER READ FROM THE ROW. Only ids are
     /// persisted — a name cached in a row goes stale the day the catalog
     /// renames a lift, and a swap's truth is the id. `SwapTarget` still
@@ -4092,25 +4095,29 @@ struct SessionLiveView: View {
     /// worded from it.
     @MainActor
     private func seedSwapLayers() async {
-        for (participant, _) in participants {
-            let isMe = participant.userID == selfID
-            // MY OWN row is laid under the pending store (ruling F1), so a
-            // swap whose write has not landed is not erased by the reload
-            // that races it. A crewmate's row is all there is to know about
-            // theirs.
-            let row = participant.selfSwaps ?? SessionSwapLayer()
-            let durable = isMe
-                ? SessionSwapPendingStore.shared.seeded(from: row, for: liveSession.id)
-                : row
-            guard !durable.isEmpty else { continue }
-            var held = selfScales[participant.userID] ?? [:]
+        // MY OWN LAYER IS NOT INSIDE THE ROSTER LOOP (final review F2). It
+        // used to be, and `participants` is `@State … = []` that `reload()`'s
+        // catch leaves empty — so offline, after MINIMISE, the loop body never
+        // ran and the pending layer the notice promised "applies on this
+        // phone" was silently dropped. `SessionSwapSeeding.layers` is that
+        // rule as a pure value: the outbox is keyed by session and holds only
+        // mine, so it needs no row to be readable.
+        let durableByUser = SessionSwapSeeding.layers(
+            roster: participants.map {
+                SessionSwapSeeding.Row(userID: $0.participant.userID,
+                                       layer: $0.participant.selfSwaps ?? SessionSwapLayer())
+            },
+            selfID: selfID,
+            pendingSelf: SessionSwapPendingStore.shared.layer(for: liveSession.id))
+        for (userID, durable) in durableByUser where !durable.isEmpty {
+            var held = selfScales[userID] ?? [:]
             let merged = SessionSwapLayer(held.mapValues(\.id)).merging(durable)
             for (slotID, replacementID) in merged.bySlot
             where held[slotID]?.id != replacementID {
                 held[slotID] = SwapTarget(id: replacementID,
                                           name: await swapName(for: replacementID))
             }
-            selfScales[participant.userID] = held
+            selfScales[userID] = held
         }
         // A natural opportunity: the layer is in hand and the network just
         // answered. Silent — see `flushIfDirty`.
