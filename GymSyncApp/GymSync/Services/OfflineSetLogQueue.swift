@@ -85,8 +85,9 @@ struct AuthServiceCurrentUserIDProvider: CurrentUserIDProviding {
 /// truth about order and content; a pending row is appended only when nothing
 /// fetched already carries its id.
 ///
-/// SCOPED TO ONE SESSION for the same reason the reader above is scoped to
-/// one user: a set queued in yesterday's workout is not a row of this one.
+/// SCOPED TO ONE SESSION for the same reason
+/// `OfflineSetLogQueue.pendingLogs(sessionID:)` is scoped to one user: a set
+/// queued in yesterday's workout is not a row of this one.
 enum PendingSetLogMerge {
 
     /// - Parameters:

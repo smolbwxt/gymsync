@@ -202,6 +202,60 @@ final class RoutineSlotProgressTests: XCTestCase {
                        "the by-lift lookup would have answered the FIRST slot's 5")
     }
 
+    /// FINAL REVIEW, ruling 5 — THE THIRD BEHAVIOURAL MOVE through a frozen
+    /// symbol's inputs, pinned explicitly rather than inherited.
+    ///
+    /// `prefillLogInputs`, `commitInlineLog`, `turnEntryCard` and
+    /// `LogFollowUp.calls(for:)` are byte-identical, but two of the values
+    /// that reach them moved with decision 3: `currentExerciseForSheet` now
+    /// reads the lift off `currentRoutineExercise`'s row instead of running
+    /// its own by-lift walk, and `turnEntryCard`'s prescription line is
+    /// resolved by slot. The push-1 review pinned only `defaultReps` (the test
+    /// above).
+    ///
+    /// WHAT CHANGED FOR A LIFTER, in the case that actually differs: a slot
+    /// whose lift was swapped MID-EXERCISE. Three sets are in the log for that
+    /// slot — one under the original lift, two under the substitute — so the
+    /// slot is done and the card moves to the next station. The by-lift walk
+    /// counts only the two sets naming the layered lift, so it asks for a
+    /// fourth set of a slot that is finished, and prints that slot's
+    /// prescription while doing it. Reading the slot is the intended
+    /// consequence of per-slot keying, and it is the same answer the plan list
+    /// and the station card already give.
+    func testTheCardFollowsTheSLOTAfterAMidExerciseSwapAndTheByLiftWalkDoesNot() {
+        var bench = slot(benchID, sets: 3, position: 0)
+        bench.targetReps = "8"
+        var squat = slot(squatID, sets: 3, position: 1)
+        squat.targetReps = "5"
+        let layered = RoutineLayering.apply([bench, squat],
+                                            selfScale: [bench.id: inclineID])
+        // One set of the original lift, then the swap, then two of the
+        // substitute — all three naming the one slot they were done at.
+        let logged = logs(benchID, 1, slot: bench.id)
+            + logs(inclineID, 2, slot: bench.id, from: 100)
+
+        let progress = SlotProgress(routine: layered, logs: logged)
+        let bySlot = RoutineProgression.currentSlot(
+            routine: layered,
+            completedSets: { re in progress.count(for: re) })
+        XCTAssertEqual(bySlot?.id, squat.id, "the swapped slot is finished; the walk moves on")
+        XCTAssertEqual(bySlot?.exerciseID, squatID,
+                       "`currentExerciseForSheet` reads the lift off THIS row")
+        XCTAssertEqual(bySlot?.targetReps, "5",
+                       "`turnEntryCard`'s prescription line rides the same row")
+
+        // The spelling both of those used before decision 3, stated as an
+        // assertion so the difference is on the record rather than implied.
+        let byLift = RoutineProgression.currentExercise(
+            routine: layered,
+            completedSets: { exerciseID in
+                logged.filter { $0.exerciseID == exerciseID }.count
+            })
+        XCTAssertEqual(byLift?.id, bench.id,
+                       "the by-lift walk sees two sets of the substitute and asks for a fourth "
+                       + "set of a slot that already holds three")
+    }
+
     // MARK: - No swap, and pre-column: unchanged
 
     func testANoSwapSessionIsExactlyWhatItAlwaysWas() {
