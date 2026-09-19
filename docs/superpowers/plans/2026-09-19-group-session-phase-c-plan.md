@@ -466,6 +466,10 @@ behaviour for an all-new one, and the old behaviour for the one session that str
 
 **Every reader of the cursor is re-pointed, named here so none is missed:**
 `SessionLiveView.currentExerciseForSheet` (`:2901-2915`) and `mySetCount(for:)`;
+**`SessionLiveView.currentRoutineExercise` (`:628-631`)**, which resolves the slot by
+`first(where: { $0.exerciseID == ex.id })` — after a swap that finds the row bearing the *substitute's*
+id, which is right today only because the layer is keyed the same wrong way, and must become a lookup
+by slot id once S1 lands (**the same one-line trap at `:630`, `:3075`, `:2924` and `:3843`**);
 `WorkoutSessionView.restoreLoggedProgress` (`:3713-3756`, or the hotfix's extracted function),
 `soloCurrentExerciseSets` (`:897-899`), `nextSetIndex` on the watch payload (`:939`);
 `RoutineProgression.currentExercise` itself. **Not re-pointed, on purpose** — `lastTimeByExercise`
@@ -812,15 +816,26 @@ it is the evidenced root cause with file:line throughout. If `hotfix-report.md` 
 that too — the hotfix may already have landed H2's pure cursor function and H6's `RoutineLayering.swapped`
 extension, and this task **verifies rather than assumes** which of them is already in the tree.
 
-1. **`SessionSwapLayer`** — a value type over `[UUID: UUID]` keyed by **routine-exercise row id**, with a
-   codec that treats `NULL` and `{}` identically, ignores an unknown slot id, and round-trips. Plus
+1. **`SessionSwapLayer`** — a value type over `[slotID: replacementExerciseID]`, i.e. `[UUID: UUID]` keyed
+   by **routine-exercise row id**, with a codec that treats `NULL` and `{}` identically, ignores an
+   unknown slot id, and round-trips. **The in-memory shapes it backs are not `[UUID: UUID]` and the
+   report must not pretend they are**: `selfScales` is `[userID: [exerciseID: SwapTarget]]`
+   (`SessionLiveView.swift:344-345`) and `squadSwaps` is `[exerciseID: SwapTarget]` (`:346-347`), where
+   `SwapTarget` (`:336`) carries the replacement's **name** for the consent card's wording.
+   `effectiveRoutineExercises` (`:620-626`) already maps them down with `.mapValues(\.id)` before calling
+   `RoutineLayering.apply`. So S1 re-keys the **inner** dictionary from `exerciseID` to slot id in both,
+   keeps `SwapTarget` and keeps `selfScales`' per-user outer key (the crew reads other members' scales on
+   the station card), and persists only the mapped-down `[slotID: UUID]` — the name is re-resolved from
+   the exercise catalog on load, because a name cached in a row goes stale and a swap's truth is the id.
+   Plus
    `SessionSwapRepository`: `loadSelf(sessionID:)` / `saveSelf(sessionID:layer:)` (own-row PATCH on
    `session_participants.self_swaps`) and `applySquad(sessionID:slotID:replacementID:)` (the RPC), each
    mapping `P0001` to a readable error through the shipped `ErrorMapping`.
 2. **`RoutineLayering.apply` re-keyed.** `squadSwaps` and `selfScale` become `[slotID: replacementID]`
-   and are looked up by `re.id`, not `re.exerciseID`. `todaysScale` **keeps** its `exerciseID` keying —
-   decision 2's last paragraph, and the function's own header (`:14-18`) already explains why. Update
-   every caller: `SessionLiveView.effectiveRoutineExercises` (`:621-637` region),
+   and are looked up by `re.id`, not `re.exerciseID` (`RoutineLayering.swift:80-82`). `todaysScale`
+   **keeps** its `exerciseID` keying — decision 2's last paragraph, and the function's own header
+   (`:14-18`) already explains why. Update every caller:
+   `SessionLiveView.effectiveRoutineExercises` (`:620-626`),
    `SessionRunnerView.planRows` (`:249-256`), `SessionLiveView.swapDoorDetails`, and
    `WarmUpReadinessTests`' call.
 3. **The durable row becomes the truth.** `SessionLiveView`'s `selfScales` and `squadSwaps` stay as the
