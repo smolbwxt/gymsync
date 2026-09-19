@@ -14,9 +14,9 @@ SELECT plan(10);
 -- Three things this file still proves that LOOK like soundboard and are
 -- deliberately kept: assertions 3 and 12 exercise chat_messages.kind =
 -- 'soundboard_echo', whose CHECK D5 does not narrow (shipped chat history
--- holds that kind), and assertion 9 asserts the 'soundboard' storage bucket
--- is public, which D5 does not drop either — the objects under it are
--- removed by hand afterwards, the bucket and its read policy stay.
+-- holds that kind). Assertion 9 used to assert the 'soundboard' storage bucket
+-- was public; the owner had the bucket deleted on 2026-09-18, so it now asserts
+-- the bucket is gone (its storage.objects read policy is inert and stays).
 
 -- ── Fixtures ──────────────────────────────────────────────────────────────────
 INSERT INTO auth.users (id, email) VALUES
@@ -116,14 +116,17 @@ SELECT lives_ok(
   'member can upload to chat-audio bucket'
 );
 
--- ── 9. soundboard bucket exists and is public ─────────────────────────────────
+-- ── 9. the soundboard bucket is GONE ──────────────────────────────────────────
+-- Flipped 2026-09-19: the owner had the bucket and its 49 objects deleted on
+-- 2026-09-18 (Storage API; manifest in the owner-decisions round's workspace),
+-- so "exists and is public" went red on every branch at once — pgTAP runs
+-- against the live database. The plan count is unchanged.
 -- storage.buckets is superuser-accessible; switch to postgres role for these checks.
 SET LOCAL role postgres;
 
-SELECT results_eq(
-  $$SELECT public::int FROM storage.buckets WHERE id = 'soundboard'$$,
-  ARRAY[1],
-  'soundboard bucket is public'
+SELECT is_empty(
+  $$SELECT 1 FROM storage.buckets WHERE id = 'soundboard'$$,
+  'the soundboard bucket no longer exists'
 );
 
 -- ── 10. chat-audio bucket exists and is private ───────────────────────────────
