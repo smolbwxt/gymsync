@@ -144,23 +144,38 @@ final class SoloResumeCursorTests: XCTestCase {
 
     // MARK: - (c) A swap with nothing logged against it yet
 
-    func testASwapWithNoSetsYetLeavesTheCursorOnTheSlotShowingTheSubstitute() {
+    /// WITH NO SETS LOGGED, THE CURSOR CANNOT DISCRIMINATE — and saying so
+    /// is the point of the name (review F5). An unswapped slot and a
+    /// swapped one with nothing under either lift are both "0 of 3", so
+    /// `(0, 1)` is what the old logic returned too. That assertion is a
+    /// BEHAVIOUR PIN, not a regression test; the real discriminators for
+    /// H2 are the two cases above, which each also assert the defect
+    /// directly by deriving with an empty layer.
+    ///
+    /// What IS new here is the second half: the slot the cursor lands on
+    /// must SHOW the substitute. That is the half a lost layer destroyed
+    /// even before a single set was logged, and `layered` is the call that
+    /// decides it — the same call `activeExercises` makes, so the screen
+    /// and the cursor can never be looking at two different routines.
+    func testASwapWithNoSetsYetStillShowsTheSubstituteInTheSlot() {
         let rows = [slot(benchID, sets: 3, position: 0),
                     slot(squatID, sets: 3, position: 1)]
         let overrides = [rows[0].id: RoutineLayering.swapped(rows[0], to: inclineID)]
 
+        // Pin (not a discriminator — see above).
         let cursor = SoloResumeCursor.derive(rows: rows, swapOverrides: overrides, logs: [])
         XCTAssertEqual(cursor, SoloResumeCursor.Position(exerciseIndex: 0, setIndex: 1))
 
-        // …and the slot the cursor points at is the SUBSTITUTE, which is the
-        // half the lifter sees. One call, so the screen and the cursor can
-        // never be looking at two different routines.
+        // Discriminator: the layer is what the lifter sees.
         let layered = SoloResumeCursor.layered(rows, swapOverrides: overrides)
         XCTAssertEqual(layered[cursor.exerciseIndex].exerciseID, inclineID)
         XCTAssertEqual(layered[1].exerciseID, squatID)
         // The slot's identity is the ROW, so the prescription rides with it.
         XCTAssertEqual(layered[0].id, rows[0].id)
         XCTAssertEqual(layered[0].targetSets, 3)
+        // Losing the layer is losing the substitute, with nothing logged yet.
+        XCTAssertEqual(SoloResumeCursor.layered(rows, swapOverrides: [:])[0].exerciseID,
+                       benchID)
     }
 
     func testSwappingTheSameSlotTwiceReplacesRatherThanStacks() {

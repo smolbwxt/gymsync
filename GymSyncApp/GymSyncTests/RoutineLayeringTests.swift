@@ -122,11 +122,24 @@ final class RoutineLayeringTests: XCTestCase {
         XCTAssertEqual(applied.dropPercent, 15)
     }
 
-    /// The whole row, field by field, so the next field added to
-    /// `RoutineExercise` cannot be quietly left behind by a hand-written
-    /// argument list — which is how `targetFailure` and the three above
-    /// were lost in the first place. The bar number is the ONE deliberate
-    /// omission: a weight for one lift is not a weight for another.
+    /// NO FIELD LEFT BEHIND — including a field that does not exist yet.
+    ///
+    /// The obvious spelling of this test builds its `expected` row from its
+    /// own hand-written argument list, and that version cannot do what it
+    /// claims: a NEW defaulted field on `RoutineExercise` that `swapped`
+    /// forgets takes its default on both sides, and the test passes while
+    /// the field is silently dropped — which is exactly how `targetFailure`,
+    /// `setType`, `dropSteps` and `dropPercent` were lost (review F4).
+    ///
+    /// So this asserts a ROUND TRIP through the production function
+    /// instead. Swap the row away, swap it back, put the deliberately
+    /// dropped bar number back by hand, and the result must equal the input
+    /// — for EVERY field, named or not. A field `swapped` drops comes back
+    /// as its default and the equality fails.
+    ///
+    /// The one obligation this places on the test: `full` must give every
+    /// field a NON-DEFAULT value, or a dropped field is default on both
+    /// sides and invisible again. Keep it maximal when the model grows.
     func testASwapKeepsEveryPrescriptionFieldAndOnlyDropsTheBarNumber() {
         var full = row(benchID, sets: 4, reps: "6", weight: "225", position: 2)
         full.restSeconds = 150
@@ -141,21 +154,19 @@ final class RoutineLayeringTests: XCTestCase {
         full.cardioZone = 2
         full.cardioMinutes = 20
 
-        let expected = RoutineExercise(
-            id: full.id, routineID: full.routineID, exerciseID: inclineID,
-            position: full.position, targetSets: full.targetSets,
-            targetReps: full.targetReps, targetWeight: nil,
-            restSeconds: full.restSeconds, notes: full.notes,
-            setType: full.setType, supersetGroup: full.supersetGroup,
-            dropSteps: full.dropSteps, dropPercent: full.dropPercent,
-            targetFailure: full.targetFailure,
-            targetRepsLow: full.targetRepsLow, targetRepsHigh: full.targetRepsHigh,
-            cardioZone: full.cardioZone, cardioMinutes: full.cardioMinutes)
+        let applied = RoutineLayering.swapped(full, to: inclineID)
+        // The two things a swap is ALLOWED to change.
+        XCTAssertEqual(applied.exerciseID, inclineID)
+        XCTAssertNil(applied.targetWeight,
+                     "a weight for one lift is not a weight for another")
+        // The slot's identity survives — that is what makes a second swap of
+        // the same slot replace the first rather than stack on it.
+        XCTAssertEqual(applied.id, full.id)
 
-        XCTAssertEqual(RoutineLayering.swapped(full, to: inclineID), expected)
-        XCTAssertNil(RoutineLayering.swapped(full, to: inclineID).targetWeight)
-        // The slot's identity survives — that is what makes a second swap
-        // of the same slot replace the first rather than stack on it.
-        XCTAssertEqual(RoutineLayering.swapped(full, to: inclineID).id, full.id)
+        // Everything else must still be the input's, field for field.
+        var roundTripped = RoutineLayering.swapped(applied, to: benchID)
+        roundTripped.targetWeight = full.targetWeight
+        XCTAssertEqual(roundTripped, full,
+                       "a field dropped by `swapped` comes back as its default here")
     }
 }
