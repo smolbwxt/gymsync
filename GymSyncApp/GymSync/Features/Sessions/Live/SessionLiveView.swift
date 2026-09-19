@@ -656,10 +656,15 @@ struct SessionLiveView: View {
     /// second slot would be read off the first. The progression already
     /// knows which row it landed on; asking it is both correct and one
     /// fewer place for the two answers to disagree.
+    ///
+    /// COUNTED PER SLOT since Phase C1 (decision 3): `mySlotSetCount` applies
+    /// `RoutineProgression`'s one fallback rule, so a slot whose lift was
+    /// swapped mid-exercise counts both halves, and a pre-column session
+    /// walks exactly as it did before the column existed.
     private var currentRoutineExercise: RoutineExercise? {
-        RoutineProgression.currentExercise(
+        RoutineProgression.currentSlot(
             routine: effectiveRoutineExercises,
-            completedSets: { exerciseID in mySetCount(for: exerciseID) })
+            completedSets: { re in mySlotSetCount(re) })
     }
 
     /// The CURRENT exercise's venue equipment class, or `nil` when there is no
@@ -2960,8 +2965,29 @@ struct SessionLiveView: View {
         allSessionSets.filter { $0.userID == selfID && $0.exerciseID == exerciseID && !$0.isPenalty }.count
     }
 
+    /// MY sets at ONE SLOT (Phase C1, decision 3). The counterpart of
+    /// `mySetCount(for:)` above, which counts by lift and is still what
+    /// `logSetAndAdvance` numbers a set with — `set_index` has always been
+    /// "my nth set of this lift" and stays so.
+    private func mySlotSetCount(_ re: RoutineExercise) -> Int {
+        RoutineProgression.completedSets(forSlot: re, in: mySets)
+    }
+
+    /// My own non-penalty sets, uncapped — the input every slot count is
+    /// taken from, filtered once rather than per slot.
+    private var mySets: [SetLog] {
+        allSessionSets.filter { $0.userID == selfID && !$0.isPenalty }
+    }
+
+    /// The rep target of the slot this lifter is on. Resolved by SLOT
+    /// (Phase C1) when it is the current one; the by-lift lookup stays for
+    /// any other exercise a caller names, where a routine naming one lift
+    /// twice has two identical prescriptions anyway.
     private func defaultReps(for exerciseID: UUID) -> String? {
-        effectiveRoutineExercises.first(where: { $0.exerciseID == exerciseID })?.targetReps
+        if let slot = currentRoutineExercise, slot.exerciseID == exerciseID {
+            return slot.targetReps
+        }
+        return effectiveRoutineExercises.first(where: { $0.exerciseID == exerciseID })?.targetReps
     }
 
     /// Reset the inline log card to fresh defaults — called whenever it becomes my turn.
@@ -3255,7 +3281,12 @@ struct SessionLiveView: View {
             // Always sample: it is the athlete's own number on their own
             // screen. Whether it is BROADCAST is still shareHeartRate's
             // decision, made phone-side.
-            sampleHeartRate: true
+            sampleHeartRate: true,
+            // The slot this lifter is on (Phase C1, decision 3) — the phone
+            // is the only side that knows it, and a wrist-logged set that
+            // arrived without it would be dropped from a slot that already
+            // had attributed rows.
+            routineExerciseID: currentRoutineExercise?.id
         )
         WatchConnectivityBridge.shared.updateSessionState(payload)
     }
@@ -4047,8 +4078,11 @@ struct SessionLiveView: View {
                 name: allExercises.first(where: { $0.id == re.exerciseID })?.name
                     ?? exerciseNames[re.exerciseID] ?? "Exercise",
                 prescription: SessionPlanRow.prescription(for: re),
-                isCurrent: re.exerciseID == currentExerciseForSheet?.id,
-                setsDone: mySetCount(for: re.exerciseID),
+                // BY SLOT (Phase C1, decision 3): a routine naming one lift
+                // twice drew BOTH rows as current and gave both the same
+                // set count — the whole plan lighting up at once.
+                isCurrent: re.id == currentRoutineExercise?.id,
+                setsDone: mySlotSetCount(re),
                 sets: re.targetSets ?? 0)
         }
     }
@@ -4803,7 +4837,21 @@ struct SessionLiveView: View {
             // Owner item 7: bodyweight sets carry the load they moved.
             bodyWeightLbs: (currentExerciseForSheet?.id == exerciseID
                             && currentExerciseForSheet?.equipment == "bodyweight")
-                ? turnLatestBodyWeightLbs : nil
+                ? turnLatestBodyWeightLbs : nil,
+            // THE SLOT (Phase C1, decision 3) — this body's ONE place a set
+            // row is built. It is derived HERE, from the slot this lifter is
+            // already on, rather than threaded through the log path: none of
+            // `LogFollowUp.calls(for:)`, `commitInlineLog`, `prefillLogInputs`
+            // or `turnEntryCard` changes, because the slot rides on the SetLog
+            // being built and not through their signatures (constraint 21).
+            //
+            // GUARDED ON THE SAME EQUALITY `bodyWeightLbs` uses above, and
+            // for the same reason: `exerciseID` is the caller's, the slot is
+            // this view's, and stamping one against the other's lift would
+            // attribute a set to a station nobody was at. A mismatch writes
+            // NULL, which the per-exercise fallback then serves correctly.
+            routineExerciseID: currentRoutineExercise?.exerciseID == exerciseID
+                ? currentRoutineExercise?.id : nil
         )
         do {
             // PR check — same logic as solo WorkoutSessionView:

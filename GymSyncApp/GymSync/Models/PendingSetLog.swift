@@ -87,6 +87,27 @@ final class PendingSetLog {
     /// enqueued item).
     var unauthorizedAttemptCount: Int = 0
 
+    /// Mirrors `SetLog.routineExerciseID` (Phase C1, decision 3).
+    ///
+    /// IT HAD TO BE ADDED BY HAND, and that is worth a sentence, because the
+    /// plan assumed this queue "encodes a `SetLog`" and it does not — it is
+    /// a SwiftData model listing the wire type's fields one by one, which is
+    /// the same shape of mistake `RoutineLayering.swapped` exists to prevent
+    /// for routine rows. Without this, a set logged offline would replay
+    /// with a NULL slot, and the cursor would rewind that slot to its
+    /// fallback count the moment the lifter came back — the exact class of
+    /// failure this column exists to end.
+    ///
+    /// Defaults to nil: a lightweight SwiftData addition, and an item queued
+    /// by the previous build genuinely does not know its slot.
+    ///
+    /// STILL MISSING, AND NOT THIS TASK'S TO FIX: `bodyWeightLbs`, which
+    /// this model has never mirrored — an offline bodyweight set replays
+    /// with no body weight and so contributes no volume. Reported rather
+    /// than fixed here, because correcting it changes recorded tonnage and
+    /// deserves its own commit and its own test.
+    var routineExerciseID: UUID? = nil
+
     init(setLog: SetLog, enqueuedAt: Date = Date()) {
         self.id = setLog.id
         self.userID = setLog.userID
@@ -102,6 +123,7 @@ final class PendingSetLog {
         self.loggedAt = setLog.loggedAt
         self.enqueuedAt = enqueuedAt
         self.attemptCount = 0
+        self.routineExerciseID = setLog.routineExerciseID
     }
 
     /// Reconstitutes the wire model for a replay submit attempt.
@@ -109,7 +131,8 @@ final class PendingSetLog {
         SetLog(
             id: id, userID: userID, sessionID: sessionID, exerciseID: exerciseID,
             setIndex: setIndex, reps: reps, weight: weight, rpe: rpe,
-            isFailed: isFailed, isPenalty: isPenalty, note: note, loggedAt: loggedAt
+            isFailed: isFailed, isPenalty: isPenalty, note: note, loggedAt: loggedAt,
+            routineExerciseID: routineExerciseID
         )
     }
 }

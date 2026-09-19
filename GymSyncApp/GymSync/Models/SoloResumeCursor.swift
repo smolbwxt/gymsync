@@ -22,11 +22,17 @@ import Foundation
 //   View, a session, or a network, so `SoloResumeCursorTests` asserts it
 //   directly; the inline version could not be asserted at all.
 //
-// KNOWN AND DELIBERATELY UNCHANGED: attribution is by EXERCISE ID, so a
-// routine naming the same lift in two slots still fills the first slot to
-// its target before the second sees a single set. Slot-based attribution
-// (a `routine_exercise_id` on the set log) is Phase C's; pinned in a test
-// so it cannot change by accident here.
+// ATTRIBUTION IS BY SLOT (Phase C1, decision 3 — this comment's predecessor
+// named it as the known gap and said it was Phase C's). A set row now
+// carries the `routine_exercises` row it was logged against, so a routine
+// naming the same lift in two slots no longer fills the first to its target
+// out of the second's sets, and a slot whose lift was swapped MID-EXERCISE
+// counts both halves as the one slot they are.
+//
+// The pre-column fallback — `routine_exercise_id IS NULL`, matched by
+// exercise id — lives in `RoutineProgression.completedSets(forSlot:in:)`
+// and is applied here PER SLOT, so a session logged entirely before the
+// column lands on exactly the cursor it landed on yesterday.
 enum SoloResumeCursor {
 
     /// Exercise index + the 1-based set number to log next.
@@ -62,6 +68,15 @@ enum SoloResumeCursor {
     ///     rather than by the caller: a burpee penalty is not progress
     ///     through the plan, and that rule belongs with the walk.
     /// - Returns: `(0, 1)` for an empty routine — the honest floor.
+    ///
+    /// TWO PASSES PER SLOT, AND THE SECOND ONLY WHEN THE FIRST FOUND NOTHING
+    /// — `RoutineProgression.completedSets(forSlot:in:)`'s rule, applied
+    /// here inside the greedy walk rather than by counting the whole log for
+    /// each slot, because the FALLBACK pass still has to be greedy: two
+    /// pre-column slots naming one lift share one undifferentiated pile of
+    /// rows, and the first slot must take its target before the second sees
+    /// any. Rows that DO name a slot need no such arbitration and can never
+    /// be eaten by another slot's fallback, which is the whole point.
     static func derive(rows: [RoutineExercise],
                        swapOverrides: [UUID: RoutineExercise],
                        logs: [SetLog]) -> Position {
@@ -71,11 +86,21 @@ enum SoloResumeCursor {
             let target = max(re.targetSets ?? 1, 1)
             var consumed = 0
             remaining.removeAll { log in
-                if consumed < target && log.exerciseID == re.exerciseID {
+                if consumed < target && log.routineExerciseID == re.id {
                     consumed += 1
                     return true
                 }
                 return false
+            }
+            if consumed == 0 {
+                remaining.removeAll { log in
+                    if consumed < target, log.routineExerciseID == nil,
+                       log.exerciseID == re.exerciseID {
+                        consumed += 1
+                        return true
+                    }
+                    return false
+                }
             }
             position = Position(exerciseIndex: index, setIndex: consumed + 1)
             if consumed < target { break }

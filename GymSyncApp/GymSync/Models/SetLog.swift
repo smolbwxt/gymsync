@@ -21,6 +21,30 @@ struct SetLog: Codable, Identifiable, Sendable {
     /// site compiling.
     var bodyWeightLbs: Decimal? = nil
 
+    /// THE ROUTINE SLOT THIS SET WAS LOGGED AGAINST (20260919000102, Phase
+    /// C1 decision 3) — the `routine_exercises` row id, not the exercise id.
+    ///
+    /// It is what makes three things honest at once: a swap made MID-EXERCISE
+    /// (a slot with sets under two exercise ids now counts as one slot), a
+    /// routine that names one lift twice (slot 7's sets stop counting toward
+    /// slot 3), and the recap's volume, which was a per-id sum with no
+    /// per-slot dedupe.
+    ///
+    /// NO FOREIGN KEY, deliberately: `routine_exercises` rows are deleted
+    /// when a routine is edited and a logged set is history, so this is a
+    /// RECORDED INTENT, never a live reference. `nil` is ordinary and
+    /// permanent for two populations — every row written before the column
+    /// existed (there is no backfill; a pre-column row genuinely does not
+    /// know its slot) and every FREEFORM ad-hoc set, whose synthesized rows
+    /// are never persisted and so have no slot to name.
+    ///
+    /// `RoutineProgression.completedSets(forSlot:in:)` is the ONE place the
+    /// fallback for those rows is written down.
+    ///
+    /// Trailing default keeps every construction site compiling — the same
+    /// idiom `bodyWeightLbs` above used.
+    var routineExerciseID: UUID? = nil
+
     /// reps × this = honest tonnage: added load plus the body weight the
     /// set actually moved. nil when neither component exists (the set
     /// contributes no volume rather than a guessed one).
@@ -58,5 +82,6 @@ struct SetLog: Codable, Identifiable, Sendable {
         case note
         case loggedAt = "logged_at"
         case bodyWeightLbs = "body_weight_lbs"
+        case routineExerciseID = "routine_exercise_id"
     }
 }

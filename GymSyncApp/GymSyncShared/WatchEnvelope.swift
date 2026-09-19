@@ -286,6 +286,18 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
     /// which exists precisely because "last month's pull-ups were done at
     /// last month's body weight".
     let bodyWeightLbs: Decimal?
+    /// THE ROUTINE SLOT the phone is currently on (Phase C1, decision 3), so
+    /// a set logged from the wrist is attributed to the same station a set
+    /// logged on the phone would be.
+    ///
+    /// It had to travel. A NULL slot on a row belonging to a slot that
+    /// already has attributed rows is NOT counted — the fallback serves a
+    /// slot with zero attributed rows only — so without this field a set
+    /// logged from the watch would vanish from that slot's count the moment
+    /// any set of it had been logged on the phone. `nil` for a freeform
+    /// session and for a Watch build predating this, which is exactly the
+    /// pre-column case the fallback exists for.
+    let routineExerciseID: UUID?
 
     init(
         sessionID: UUID,
@@ -302,6 +314,7 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         sampleHeartRate: Bool? = nil,
         nextSetIndex: Int? = nil,
         bodyWeightLbs: Decimal? = nil,
+        routineExerciseID: UUID? = nil,
         updatedAt: Date = Date()
     ) {
         self.sessionID = sessionID
@@ -318,6 +331,7 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         self.sampleHeartRate = sampleHeartRate
         self.nextSetIndex = nextSetIndex
         self.bodyWeightLbs = bodyWeightLbs
+        self.routineExerciseID = routineExerciseID
         self.updatedAt = updatedAt
     }
 
@@ -325,7 +339,7 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         case sessionID, groupID, sessionName, currentExerciseName, currentExerciseID
         case currentLifterName, isMyTurn, burpeesOwed, burpeesPaid
         case isActive, shareHeartRate, updatedAt
-        case nextSetIndex, bodyWeightLbs, sampleHeartRate
+        case nextSetIndex, bodyWeightLbs, sampleHeartRate, routineExerciseID
     }
 
     /// Custom decode (Task 3, extended fix wave 1) — same "schema-lag" shape
@@ -371,6 +385,7 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
         sampleHeartRate = try? c.decodeIfPresent(Bool.self, forKey: .sampleHeartRate)
         nextSetIndex = try? c.decodeIfPresent(Int.self, forKey: .nextSetIndex)
         bodyWeightLbs = try? c.decodeIfPresent(Decimal.self, forKey: .bodyWeightLbs)
+        routineExerciseID = try? c.decodeIfPresent(UUID.self, forKey: .routineExerciseID)
         updatedAt = try c.decode(Date.self, forKey: .updatedAt)
     }
 }

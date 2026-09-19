@@ -406,7 +406,16 @@ final class WatchConnectivityBridge {
             // Dropped entirely before this: a set of pull-ups logged from
             // the wrist contributed no tonnage while the identical set
             // logged on the phone did.
-            bodyWeightLbs: lastPushedState?.bodyWeightLbs
+            bodyWeightLbs: lastPushedState?.bodyWeightLbs,
+            // The routine SLOT the phone last said it was on (Phase C1,
+            // decision 3). Guarded on the same exercise equality the
+            // `SetLog` construction in each body uses: the payload's slot
+            // and the payload's exercise were pushed together, so a wrist
+            // tap naming a DIFFERENT lift is a stale wrist and must not
+            // borrow the phone's slot. NULL then, and the per-exercise
+            // fallback serves it.
+            routineExerciseID: lastPushedState?.currentExerciseID == payload.exerciseID
+                ? lastPushedState?.routineExerciseID : nil
         )
         do {
             try await submitter.submit(log)

@@ -1105,7 +1105,12 @@ struct WorkoutSessionView: View {
             // contributed no tonnage while the identical set logged on the
             // phone did.
             bodyWeightLbs: currentExercise?.equipment == "bodyweight"
-                ? soloLatestBodyWeightLbs : nil)
+                ? soloLatestBodyWeightLbs : nil,
+            // The slot, for the same reason the set index travels: the
+            // phone is the only side that knows it (Phase C1, decision 3).
+            // Freeform sends nil — its rows are synthesized and their ids
+            // mean nothing outside this view instance.
+            routineExerciseID: isFreeform ? nil : currentRoutineExercise?.id)
         WatchConnectivityBridge.shared.updateSessionState(payload)
     }
 
@@ -2330,10 +2335,18 @@ struct WorkoutSessionView: View {
         .buttonStyle(.plain)
     }
 
+    /// THIS SLOT's sets in this session, not this LIFT's (Phase C1, decision
+    /// 3). It feeds the sets strip, the prefill's carry-forward and the
+    /// watch payload's next set number, and all three were wrong in the same
+    /// two ways: a swap made mid-exercise split one slot's work across two
+    /// ids so half of it vanished, and a routine naming one lift twice
+    /// showed slot 7 the sets done at slot 3.
+    ///
+    /// The pre-column fallback is `RoutineProgression`'s, applied here by
+    /// calling it rather than restating it.
     private var soloCurrentExerciseSets: [SetLog] {
         guard let re = currentRoutineExercise else { return [] }
-        return loggedSets
-            .filter { $0.exerciseID == re.exerciseID }
+        return RoutineProgression.completedRows(forSlot: re, in: loggedSets)
             .sorted { $0.loggedAt < $1.loggedAt }
     }
 
@@ -4205,7 +4218,20 @@ struct WorkoutSessionView: View {
             note: note, loggedAt: Date(),
             // Owner item 7: bodyweight sets carry the load they actually
             // moved — the latest logged body weight, stamped at log time.
-            bodyWeightLbs: currentExercise?.equipment == "bodyweight" ? soloLatestBodyWeightLbs : nil
+            bodyWeightLbs: currentExercise?.equipment == "bodyweight" ? soloLatestBodyWeightLbs : nil,
+            // THE SLOT (Phase C1, decision 3) — this body's ONE place a set
+            // row is built, and `re` is already the layered row the screen
+            // is drawing, so its `id` is the slot whatever has been swapped
+            // into it. `SessionRepository.logSet` is unchanged: the field
+            // rides on the value.
+            //
+            // FREEFORM WRITES NULL, forever. Its rows are synthesized with a
+            // throwaway `routineID` and a fresh `id` on every rebuild
+            // (`restoreLoggedProgress`), so stamping one would name a slot
+            // that exists only inside this view instance — worse than
+            // naming none, because the per-exercise fallback is exactly
+            // right for a freeform set and a stale id would defeat it.
+            routineExerciseID: isFreeform ? nil : re.id
         )
         do {
             // Prior max MUST be captured BEFORE the insert below — querying it after
