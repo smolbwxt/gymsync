@@ -3533,8 +3533,20 @@ struct SessionLiveView: View {
                 // successful replay. Without this guard, that echo would double
                 // -append the row (and double-count penaltyLogged) once reconnected.
                 // No-op for the ordinary online path — a fresh id is never already
-                // in feedSets.
-                guard !feedSets.contains(where: { $0.id == log.id }) else { return }
+                // in the session's rows.
+                //
+                // AGAINST `allSessionSets`, NEVER `feedSets` (final review
+                // NEW-3). The feed is capped at 30 and the guard was reading
+                // it, so a row that had aged out of the feed was invisible to
+                // the check and its echo appended a SECOND copy into the
+                // uncapped array — the one the cursor, the counts and the
+                // recap all read — and double-counted `penaltyLogged` with it.
+                // The merge re-seeds pending rows at the END of
+                // `allSessionSets` on every reload, so they normally survive
+                // `prefix(30)`; more than 30 rows logged offline at once is
+                // what made it reachable. Same "the feed caps at 30, so it
+                // undercounts" law `mySetCount` already states.
+                guard !allSessionSets.contains(where: { $0.id == log.id }) else { return }
                 // Prepend to feed (newest-first), cap 30
                 feedSets.insert(log, at: 0)
                 if feedSets.count > 30 { feedSets = Array(feedSets.prefix(30)) }
