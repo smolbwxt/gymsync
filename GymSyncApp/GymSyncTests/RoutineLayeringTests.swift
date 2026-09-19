@@ -103,4 +103,70 @@ final class RoutineLayeringTests: XCTestCase {
         XCTAssertEqual(applied.targetFailure, true)
         XCTAssertEqual(applied.targetSets, 3)
     }
+
+    /// Hotfix 2026-09-18 (ruling H6). Solo renders drop prescriptions —
+    /// "REPS · TOP + DROP 2×20%" on the entry card, and the drop-ladder
+    /// sheet arms off `setType` — and solo now routes its swap through
+    /// here. A set STRUCTURE is the dose, not the lift, so it rides the
+    /// slot exactly as the set count does; dropping it silently cancelled
+    /// a prescribed ladder the moment a station was taken.
+    func testASwapCarriesTheSetStructure() {
+        var drop = row(benchID, sets: 4)
+        drop.setType = "drop"
+        drop.dropSteps = 3
+        drop.dropPercent = 15
+        let applied = RoutineLayering.swapped(drop, to: inclineID)
+        XCTAssertEqual(applied.exerciseID, inclineID)
+        XCTAssertEqual(applied.setType, "drop")
+        XCTAssertEqual(applied.dropSteps, 3)
+        XCTAssertEqual(applied.dropPercent, 15)
+    }
+
+    /// NO FIELD LEFT BEHIND — including a field that does not exist yet.
+    ///
+    /// The obvious spelling of this test builds its `expected` row from its
+    /// own hand-written argument list, and that version cannot do what it
+    /// claims: a NEW defaulted field on `RoutineExercise` that `swapped`
+    /// forgets takes its default on both sides, and the test passes while
+    /// the field is silently dropped — which is exactly how `targetFailure`,
+    /// `setType`, `dropSteps` and `dropPercent` were lost (review F4).
+    ///
+    /// So this asserts a ROUND TRIP through the production function
+    /// instead. Swap the row away, swap it back, put the deliberately
+    /// dropped bar number back by hand, and the result must equal the input
+    /// — for EVERY field, named or not. A field `swapped` drops comes back
+    /// as its default and the equality fails.
+    ///
+    /// The one obligation this places on the test: `full` must give every
+    /// field a NON-DEFAULT value, or a dropped field is default on both
+    /// sides and invisible again. Keep it maximal when the model grows.
+    func testASwapKeepsEveryPrescriptionFieldAndOnlyDropsTheBarNumber() {
+        var full = row(benchID, sets: 4, reps: "6", weight: "225", position: 2)
+        full.restSeconds = 150
+        full.notes = "pause on the chest"
+        full.setType = "burnout"
+        full.supersetGroup = 1
+        full.dropSteps = 2
+        full.dropPercent = 20
+        full.targetFailure = true
+        full.targetRepsLow = 6
+        full.targetRepsHigh = 9
+        full.cardioZone = 2
+        full.cardioMinutes = 20
+
+        let applied = RoutineLayering.swapped(full, to: inclineID)
+        // The two things a swap is ALLOWED to change.
+        XCTAssertEqual(applied.exerciseID, inclineID)
+        XCTAssertNil(applied.targetWeight,
+                     "a weight for one lift is not a weight for another")
+        // The slot's identity survives — that is what makes a second swap of
+        // the same slot replace the first rather than stack on it.
+        XCTAssertEqual(applied.id, full.id)
+
+        // Everything else must still be the input's, field for field.
+        var roundTripped = RoutineLayering.swapped(applied, to: benchID)
+        roundTripped.targetWeight = full.targetWeight
+        XCTAssertEqual(roundTripped, full,
+                       "a field dropped by `swapped` comes back as its default here")
+    }
 }

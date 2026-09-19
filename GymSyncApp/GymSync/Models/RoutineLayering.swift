@@ -37,17 +37,31 @@ enum RoutineLayering {
     /// `targetFailure` IS CARRIED (R-B2-13). The old spelling listed fields by
     /// hand and left it behind, so a swapped `AMRAP` row silently became
     /// `3 × —`: a prescribed failure is the assignment fulfilled (the failure
-    /// doctrine), and swapping the lift does not cancel it. STILL DROPPED, and
-    /// named here rather than left to be discovered: `setType`, `dropSteps` and
-    /// `dropPercent` — set STRUCTURES, which the live body does not render and
-    /// which no surface in that file reads.
+    /// doctrine), and swapping the lift does not cancel it.
+    ///
+    /// `setType`, `dropSteps` and `dropPercent` ARE CARRIED TOO (hotfix
+    /// 2026-09-18, ruling H6). They were named here as knowingly dropped on
+    /// the grounds that the live body renders none of them — but SOLO does:
+    /// `WorkoutSessionView.repTargetLabel` prints "TOP + DROP 2×20%" from
+    /// them and the log path arms the drop-ladder sheet off `setType`. Solo
+    /// kept its own hand-written rebuild, which dropped these AND
+    /// `targetFailure`; routing it here is what closes that, so the fields
+    /// the one caller reads have to survive the trip. A drop prescription is
+    /// a set STRUCTURE — how hard the dose is, not which lift delivers it —
+    /// so it rides the slot exactly as the set count does.
+    ///
+    /// The bar number is the one thing that never survives: a weight for one
+    /// lift is not a weight for another.
     static func swapped(_ re: RoutineExercise, to targetID: UUID) -> RoutineExercise {
         RoutineExercise(
             id: re.id, routineID: re.routineID, exerciseID: targetID,
             position: re.position, targetSets: re.targetSets,
             targetReps: re.targetReps, targetWeight: nil,
             restSeconds: re.restSeconds, notes: re.notes,
+            setType: re.setType,
             supersetGroup: re.supersetGroup,
+            dropSteps: re.dropSteps,
+            dropPercent: re.dropPercent,
             targetFailure: re.targetFailure,
             targetRepsLow: re.targetRepsLow, targetRepsHigh: re.targetRepsHigh,
             cardioZone: re.cardioZone, cardioMinutes: re.cardioMinutes)
