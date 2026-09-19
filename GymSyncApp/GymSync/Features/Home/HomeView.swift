@@ -329,15 +329,10 @@ struct HomeView: View {
             .fullScreenCover(item: $adHocSession, onDismiss: {
                 Task { await refresh() }
             }) { session in
-                // S4: MINIMISE, the only way out (decision 6). The row was
-                // created by this screen a moment ago, so it is ad-hoc by
-                // construction — the predicate is asked anyway so the four
-                // covers read one law rather than four assumptions.
-                SessionEntryView(session: session)
-                    .soloMinimiseOverlay(SoloSessionShape.isAdHocSolo(
-                        participantCount: 1,
-                        roomCode: session.roomCode,
-                        scheduledFor: session.scheduledFor))
+                // S4: MINIMISE, the only way out (decision 6). ONE view for
+                // every cover in the app (fix round 1 / B2) — the MINIMISE
+                // decision is made inside it, once.
+                SoloSessionCover(session: session)
             }
             // The weekly-goal editor, moved off `weeklyGoalWidget` (deleted
             // with the wide streak card) and onto the page root — it is the
@@ -466,9 +461,13 @@ struct HomeView: View {
         // round trip and no-op re-navigation when it's the same session
         // that's already the active deep-link target.
         if navigateToJoined, joinedSession?.id == sessionID { return }
+        // …and the same no-op for the cover, which is where a solo session
+        // now lands (fix round 1 / B2): the live pill routes through
+        // `pendingRoute = .lobby`, so re-tapping it while the cover is
+        // already up must not re-raise it.
+        if adHocSession?.id == sessionID { return }
         guard let session = try? await SessionRepository.session(id: sessionID) else { return }
-        joinedSession = session
-        navigateToJoined = true
+        present(session)
     }
 
     // MARK: - Replay-failure notice (debt-zero sprint item 2)
@@ -717,7 +716,7 @@ struct HomeView: View {
                                         session: WorkoutSession?) {
         switch state {
         case .joinSession, .checkIn:
-            if let session { openLobby(session) }
+            if let session { present(session) }
         case .checkInOpens:
             guard let session else { return }
             if let groupID = session.groupID {
@@ -727,7 +726,7 @@ struct HomeView: View {
                 appState.pendingRoute = .chat(groupID: groupID)
                 appState.selectedTab = .social
             } else {
-                openLobby(session)
+                present(session)
             }
         case .startRoutine, .startWorkout:
             routinePickerPreselected = todaysRoutine
@@ -735,12 +734,40 @@ struct HomeView: View {
         }
     }
 
-    /// Home's one lobby push. `.id(session.id)` on the destination is
-    /// load-bearing — see `navigateToJoined`'s destination comment for the
-    /// 2026-07-30 field bug it exists to prevent.
-    private func openLobby(_ session: WorkoutSession) {
-        joinedSession = session
-        navigateToJoined = true
+    /// HOME'S ONE PRESENTATION OF A SESSION (fix round 1 / B2). Every route
+    /// on this screen that opens a session goes through here: the one
+    /// button (`performOneButtonAction`), the live pill's deep link
+    /// (`consumePendingRouteIfNeeded`) and a room-code join (`joinByCode`).
+    ///
+    /// A SOLO SESSION IS ALWAYS THE COVER, NEVER A PUSH. Removing the solo
+    /// exclusion (R-C-1) made a live ad-hoc row reachable from the one
+    /// button, which pushed `SessionEntryView` — where MINIMISE is not
+    /// mounted, `arenaBase` hides the back button and the body hides the
+    /// dock. There was no control on that screen that left it: a lifter who
+    /// minimised during the warm-up and came back through the button was
+    /// stranded until they force-quit, which is the exact failure mode
+    /// decision 6 exists to end. So how a session is presented is a fact
+    /// about the SESSION, not about the route that found it.
+    ///
+    /// A CREW SESSION KEEPS THE PUSH it has always had, and so does a
+    /// SCHEDULED solo session — at the session row those two are
+    /// indistinguishable (`ScheduleSessionView` leaves `group_id` and
+    /// `room_code` nil for both `.solo` and `.friends`), and this call site
+    /// holds no roster to separate them. The push is no longer a dead end
+    /// regardless: B1 gave every style page an end control.
+    ///
+    /// `.id(session.id)` on the push destination is load-bearing — see
+    /// `navigateToJoined`'s destination comment for the 2026-07-30 field bug
+    /// it exists to prevent.
+    private func present(_ session: WorkoutSession) {
+        if SoloSessionShape.isSoloByConstruction(groupID: session.groupID,
+                                                 roomCode: session.roomCode,
+                                                 scheduledFor: session.scheduledFor) {
+            adHocSession = session
+        } else {
+            joinedSession = session
+            navigateToJoined = true
+        }
     }
 
     // MARK: - Tile pair, crew pulse, goal strip, calendar (design §A items 5-8)
@@ -1278,7 +1305,7 @@ struct HomeView: View {
            let rows = try? await SessionRepository.participants(sessionID: friend.sessionID),
            rows.contains(where: { $0.participant.userID == userID }),
            let session = try? await SessionRepository.session(id: friend.sessionID) {
-            openLobby(session)
+            present(session)
             return
         }
         // Not yours to walk into — the crew room is where you ask.
@@ -2122,8 +2149,11 @@ struct HomeView: View {
         do {
             let session = try await SessionRepository.joinByCode(joinCode)
             joinCode = ""
-            joinedSession = session
-            navigateToJoined = true
+            // Through the one presentation law (B2). A room-code session
+            // carries a room code, so this always takes the push branch —
+            // routed through `present` anyway so no call site on this screen
+            // decides for itself.
+            present(session)
         } catch let error as GymSyncError {
             joinError = error.errorDescription
         } catch {

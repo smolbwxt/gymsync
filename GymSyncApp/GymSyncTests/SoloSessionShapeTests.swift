@@ -42,62 +42,59 @@ final class SoloSessionShapeTests: XCTestCase {
         XCTAssertTrue(SoloSessionShape.hidesCrewFurniture(participantCount: 1))
     }
 
-    // MARK: - isAdHocSolo — a party of one, no code, no clock
+    // MARK: - isSoloByConstruction — the session row alone, no roster
 
-    func testAnAdHocSoloSessionIsOne() {
-        XCTAssertTrue(SoloSessionShape.isAdHocSolo(
-            participantCount: 1, roomCode: nil, scheduledFor: nil))
+    func testAnAdHocRowIsSoloByConstruction() {
+        XCTAssertTrue(SoloSessionShape.isSoloByConstruction(
+            groupID: nil, roomCode: nil, scheduledFor: nil))
     }
 
-    func testAScheduledSoloSessionIsNOTAdHoc() {
-        // It is solo — `SessionShape.isSolo` says so — but it was booked, so
-        // it is reached through Home's button as a navigation push with a
-        // back button of its own, and needs no MINIMISE built for it.
+    func testAScheduledSOLOSessionIsNOTSoloByConstruction() {
+        // It IS solo, and `SessionShape.isSolo` says so once a roster is in
+        // hand. But at the session row a scheduled solo session and a
+        // scheduled `.friends` session are byte-identical — both leave
+        // `group_id` and `room_code` nil — so this law, which has no roster,
+        // must not claim to tell them apart.
         XCTAssertTrue(SessionShape.isSolo(participantCount: 1, roomCode: nil))
-        XCTAssertFalse(SoloSessionShape.isAdHocSolo(
-            participantCount: 1, roomCode: nil,
-            scheduledFor: Self.date(2099, 1, 1)))
+        XCTAssertFalse(SoloSessionShape.isSoloByConstruction(
+            groupID: nil, roomCode: nil, scheduledFor: Self.date(2099, 1, 1)))
     }
 
-    func testARoomCodeSessionIsNotSoloEvenWithOneRowSoFar() {
-        // The crew has not arrived yet; the code says they are coming.
-        // `SessionShape.isSolo`'s own doc carries this reasoning — `group_id`
-        // is not the signal, because `.friends` and `.code` both leave it nil.
-        XCTAssertFalse(SoloSessionShape.isAdHocSolo(
-            participantCount: 1, roomCode: "PX4K9Z", scheduledFor: nil))
+    func testARoomCodeSessionIsNotSoloByConstruction() {
+        XCTAssertFalse(SoloSessionShape.isSoloByConstruction(
+            groupID: nil, roomCode: "PX4K9Z", scheduledFor: nil))
     }
 
-    func testACrewIsNotAdHocSolo() {
-        XCTAssertFalse(SoloSessionShape.isAdHocSolo(
-            participantCount: 4, roomCode: nil, scheduledFor: nil))
+    func testAGroupSessionIsNotSoloByConstruction() {
+        XCTAssertFalse(SoloSessionShape.isSoloByConstruction(
+            groupID: UUID(), roomCode: nil, scheduledFor: nil))
     }
 
-    func testNeitherACodeNORAClockIsNeededToRuleItOut() {
-        // Both discriminators at once — each is sufficient on its own, so the
-        // pair must not accidentally be read as a conjunction.
-        XCTAssertFalse(SoloSessionShape.isAdHocSolo(
-            participantCount: 1, roomCode: "PX4K9Z",
-            scheduledFor: Self.date(2099, 6, 2)))
-    }
-
-    func testAnEmptyRosterCountsAsAPartyOfOne() {
-        // `SessionShape.isSolo` is `<= 1`, not `== 1`, and this inherits it:
-        // the ad-hoc cover must offer MINIMISE on the very first frame, while
-        // the roster fetch is still in flight.
-        XCTAssertTrue(SoloSessionShape.isAdHocSolo(
-            participantCount: 0, roomCode: nil, scheduledFor: nil))
+    func testEachDiscriminatorRulesItOutONITSOWN() {
+        // Three signals, any one of which is sufficient — so the predicate
+        // must not accidentally be read as needing all three.
+        let group = UUID()
+        XCTAssertFalse(SoloSessionShape.isSoloByConstruction(
+            groupID: group, roomCode: "PX4K9Z", scheduledFor: Self.date(2099, 6, 2)))
+        XCTAssertFalse(SoloSessionShape.isSoloByConstruction(
+            groupID: group, roomCode: nil, scheduledFor: nil))
+        XCTAssertFalse(SoloSessionShape.isSoloByConstruction(
+            groupID: nil, roomCode: "PX4K9Z", scheduledFor: nil))
+        XCTAssertFalse(SoloSessionShape.isSoloByConstruction(
+            groupID: nil, roomCode: nil, scheduledFor: Self.date(2099, 6, 2)))
     }
 
     // MARK: - The two laws answer different questions
 
-    func testAScheduledSoloSessionHidesTheFurnitureWITHOUTBeingAdHoc() {
+    func testAScheduledSoloSessionHidesTheFurnitureWITHOUTBeingSoloByConstruction() {
         // The one case that would collapse if these were the same predicate.
-        // A lifter who booked a solo slot must still not see a talk dock —
-        // and must still get Home's ordinary push, not a cover.
+        // A lifter who booked a solo slot must still not see a talk dock once
+        // the roster proves they are alone — and must still get Home's
+        // ordinary push, because the row alone cannot prove it.
         let scheduled = Self.date(2099, 3, 14)
         XCTAssertTrue(SoloSessionShape.hidesCrewFurniture(participantCount: 1))
-        XCTAssertFalse(SoloSessionShape.isAdHocSolo(
-            participantCount: 1, roomCode: nil, scheduledFor: scheduled))
+        XCTAssertFalse(SoloSessionShape.isSoloByConstruction(
+            groupID: nil, roomCode: nil, scheduledFor: scheduled))
     }
 
     // MARK: - Helper

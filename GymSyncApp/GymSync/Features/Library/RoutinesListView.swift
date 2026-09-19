@@ -350,12 +350,9 @@ struct RoutineDetailChoice: View {
                     }
                     .buttonStyle(GSPrimaryButtonStyle())
                     .fullScreenCover(item: $startedSession) { session in
-                        // S4: MINIMISE, the only way out of the cover.
-                        SessionEntryView(session: session)
-                            .soloMinimiseOverlay(SoloSessionShape.isAdHocSolo(
-                                participantCount: 1,
-                                roomCode: session.roomCode,
-                                scheduledFor: session.scheduledFor))
+                        // S4: MINIMISE, the only way out of the cover — the
+                        // one cover view every route builds (B2).
+                        SoloSessionCover(session: session)
                     }
 
                     if let startErrorText {

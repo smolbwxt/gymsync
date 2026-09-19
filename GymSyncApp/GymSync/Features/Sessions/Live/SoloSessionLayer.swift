@@ -12,11 +12,12 @@ import SwiftUI
 //     ROSTER and nothing else, which is why a SCHEDULED solo session gets the
 //     same treatment: a party of one has nobody to talk to whether or not a
 //     calendar said so.
-//   * `SoloSessionShape.isAdHocSolo(participantCount:roomCode:scheduledFor:)`
-//     — the discriminator the four ENTRY POINTS read to decide whether the
-//     full-screen cover carries a MINIMISE control. A scheduled session
-//     reached through Home's button is a navigation push with a back button
-//     of its own; only the ad-hoc cover needs a way out built for it.
+//   * `SoloSessionShape.isSoloByConstruction(groupID:roomCode:scheduledFor:)`
+//     — the discriminator every PRESENTATION route reads, decided from the
+//     session row alone because that is all those call sites hold. It is what
+//     says a session is presented in a cover with MINIMISE rather than
+//     pushed, and it is the seed of the furniture law below when no roster
+//     has arrived yet.
 //
 // WHY A SEPARATE FILE AND NOT FOUR INLINE CONDITIONS. Constraint 22: the one
 // body's `body` is at its type-checker budget, so every modifier this task
@@ -52,20 +53,63 @@ enum SoloSessionShape {
         participantCount <= 1
     }
 
-    /// AN AD-HOC SOLO SESSION: a party of one, no room code, and no
-    /// scheduled time.
+    /// SOLO BY CONSTRUCTION — decided from the SESSION ROW ALONE, with no
+    /// roster at all.
     ///
-    /// It reuses `SessionShape.isSolo(participantCount:roomCode:)` verbatim
-    /// rather than restating it — that function already carries the reason
-    /// `group_id` is not the signal (`.friends` and `.code` sessions leave it
-    /// nil too) — and adds the one discriminator that separates the lifter
-    /// who just tapped START from the lifter who booked a slot: an ad-hoc
-    /// session has no `scheduled_for` at all.
-    static func isAdHocSolo(participantCount: Int,
-                            roomCode: String?,
-                            scheduledFor: Date?) -> Bool {
-        SessionShape.isSolo(participantCount: participantCount, roomCode: roomCode)
-            && scheduledFor == nil
+    /// THE ROSTER IS NOT AVAILABLE WHERE THIS IS ASKED. Home holds
+    /// `WorkoutSession` rows and no participants; a cover is raised the
+    /// instant `startSolo` returns; the live body's `participants` is empty
+    /// until `reload()` lands. A law that needs a count cannot answer at any
+    /// of those moments, and `isAdHocSolo(participantCount:…)` — which this
+    /// replaces — was being handed a literal `1` at all four covers, so its
+    /// roster argument was inert and the honest question was always this one.
+    ///
+    /// THE TRIPLE NIL IS EXACTLY `startSolo`'s SHAPE and nothing else's:
+    /// `ScheduleSessionView` sets `scheduled_for` on every mode including
+    /// `.solo` (`:864-871`), `.code` carries a room code, `.group` carries a
+    /// group, and the trainer booking is scheduled. So a row with no group,
+    /// no code and no time is an ad-hoc workout somebody tapped START on.
+    ///
+    /// WHAT IT DELIBERATELY DOES NOT CLAIM: that every solo session answers
+    /// true. A SCHEDULED solo session is `false` here, because at the session
+    /// row a scheduled solo session and a scheduled `.friends` session are
+    /// byte-identical (`ScheduleSessionView:781-784`: both leave `group_id`
+    /// and `room_code` nil). Only the roster separates them, and where the
+    /// roster is known, `crew(…)` below is what asks.
+    static func isSoloByConstruction(groupID: UUID?,
+                                     roomCode: String?,
+                                     scheduledFor: Date?) -> Bool {
+        groupID == nil && roomCode == nil && scheduledFor == nil
+    }
+}
+
+// MARK: - The one way a solo session is presented
+
+/// A SOLO SESSION IS ALWAYS THE COVER, FROM EVERY ROUTE (fix round 1 / B2).
+///
+/// THE DEAD END THIS CLOSES. Removing Home's solo exclusion (R-C-1) made a
+/// live ad-hoc row reachable from the one button — which PUSHES
+/// `SessionEntryView`. `soloMinimiseOverlay` was mounted at the covers only,
+/// `arenaBase` sets `.navigationBarBackButtonHidden(true)` and the body sets
+/// `.gsHidesDock()`, so that push had no MINIMISE, no back button and no tab
+/// bar. Combined with B1 there was no control on the screen that left it: the
+/// lifter who minimised during the warm-up and came back through Home's
+/// button was stranded until they force-quit. That is the exact failure mode
+/// decision 6 exists to end, reintroduced through a different door.
+///
+/// So the presentation is a property of the SESSION, not of the route that
+/// found it. Every route that can land on an ad-hoc session — the four entry
+/// points, Home's one button, the live pill's deep link, a relaunch — builds
+/// this one view, and the MINIMISE decision is made in exactly one place.
+struct SoloSessionCover: View {
+    let session: WorkoutSession
+
+    var body: some View {
+        SessionEntryView(session: session)
+            .soloMinimiseOverlay(SoloSessionShape.isSoloByConstruction(
+                groupID: session.groupID,
+                roomCode: session.roomCode,
+                scheduledFor: session.scheduledFor))
     }
 }
 
