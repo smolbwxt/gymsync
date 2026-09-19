@@ -190,4 +190,48 @@ final class RoutineLayeringTests: XCTestCase {
         XCTAssertEqual(roundTripped, full,
                        "a field dropped by `swapped` comes back as its default here")
     }
+
+    /// THE SAME OBLIGATION FOR A COPY INTO ANOTHER ROUTINE (ruling R-C-6),
+    /// asserted the same way and for the same reason.
+    ///
+    /// Three hand-written copies were leaking when this was written:
+    /// `persistSessionEdits(asNew: true)` dropped `setType`, `dropSteps`,
+    /// `dropPercent` and `targetFailure`, so "save as new" cancelled a drop
+    /// ladder and an AMRAP; `RoutineRepository.clone` dropped those four AND
+    /// `supersetGroup`, the rep range and the cardio pair, so "Add to my
+    /// routines" flattened a generated program to bare sets and reps.
+    ///
+    /// Asked by identity, not by a hand-written expectation: copy into the
+    /// same routine, keeping the id and the position, and the result must
+    /// EQUAL the input — for every field, including one added after this
+    /// test was written. `full` must therefore give every field a
+    /// non-default value; keep it maximal when the model grows.
+    func testACopyIntoANewRoutineKeepsEveryPrescriptionField() {
+        var full = row(benchID, sets: 4, reps: "6", weight: "225", position: 2)
+        full.restSeconds = 150
+        full.notes = "pause on the chest"
+        full.setType = "burnout"
+        full.supersetGroup = 1
+        full.dropSteps = 2
+        full.dropPercent = 20
+        full.targetFailure = true
+        full.targetRepsLow = 6
+        full.targetRepsHigh = 9
+        full.cardioZone = 2
+        full.cardioMinutes = 20
+
+        let identity = RoutineLayering.copied(full, intoRoutine: full.routineID,
+                                              id: full.id, position: full.position)
+        XCTAssertEqual(identity, full,
+                       "a field dropped by `copied` comes back as its default here")
+
+        // And the three things a copy IS allowed to change.
+        let elsewhere = RoutineLayering.copied(full, intoRoutine: squatID, position: 7)
+        XCTAssertEqual(elsewhere.routineID, squatID)
+        XCTAssertEqual(elsewhere.position, 7)
+        XCTAssertNotEqual(elsewhere.id, full.id)
+        // THE BAR NUMBER SURVIVES, unlike a swap: the lift is the same lift.
+        XCTAssertEqual(elsewhere.targetWeight, "225")
+        XCTAssertEqual(elsewhere.exerciseID, benchID)
+    }
 }

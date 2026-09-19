@@ -69,6 +69,48 @@ enum RoutineLayering {
             cardioZone: re.cardioZone, cardioMinutes: re.cardioMinutes)
     }
 
+    /// THE SAME PRESCRIPTION IN A NEW ROW — a copy into a different routine
+    /// (ruling R-C-6).
+    ///
+    /// It lives beside `swapped` because it is the same obligation seen from
+    /// the other side: `swapped` moves a slot's prescription onto a new LIFT,
+    /// this moves it into a new ROUTINE, and both have to carry every field
+    /// the model has or they silently cancel a prescription.
+    ///
+    /// Three hand-written copies were found doing this and all three were
+    /// leaking. `persistSessionEdits(asNew: true)` dropped `setType`,
+    /// `dropSteps`, `dropPercent` and `targetFailure`, so "save as new"
+    /// cancelled a drop ladder and an AMRAP. `RoutineRepository.clone`
+    /// dropped those four AND `supersetGroup`, `targetRepsLow`/`High`,
+    /// `cardioZone`/`Minutes`, so "add to my routines" flattened a generated
+    /// program to bare sets and reps. It is the R-B2-13 defect, three more
+    /// times, and the reason it keeps happening is that each site lists the
+    /// fields by hand.
+    ///
+    /// `RoutineLayeringTests` asserts this by ROUND TRIP rather than against
+    /// a hand-written expectation, for the reason that test records at
+    /// length: a new defaulted field this function forgets takes its default
+    /// on both sides of a hand-written comparison and the test passes while
+    /// the field is dropped.
+    ///
+    /// THE BAR NUMBER SURVIVES HERE, unlike in `swapped` — the lift is the
+    /// same lift, so its weight is still its weight.
+    static func copied(_ re: RoutineExercise, intoRoutine routineID: UUID,
+                       id: UUID = UUID(), position: Int) -> RoutineExercise {
+        RoutineExercise(
+            id: id, routineID: routineID, exerciseID: re.exerciseID,
+            position: position, targetSets: re.targetSets,
+            targetReps: re.targetReps, targetWeight: re.targetWeight,
+            restSeconds: re.restSeconds, notes: re.notes,
+            setType: re.setType,
+            supersetGroup: re.supersetGroup,
+            dropSteps: re.dropSteps,
+            dropPercent: re.dropPercent,
+            targetFailure: re.targetFailure,
+            targetRepsLow: re.targetRepsLow, targetRepsHigh: re.targetRepsHigh,
+            cardioZone: re.cardioZone, cardioMinutes: re.cardioMinutes)
+    }
+
     /// The routine as this lifter will actually run it.
     ///
     /// BOTH SWAP LAYERS ARE KEYED BY THE SLOT — `re.id`, the

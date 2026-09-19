@@ -3583,15 +3583,14 @@ struct WorkoutSessionView: View {
                 description: routine.description,
                 visibility: "private",
                 createdAt: Date(), updatedAt: Date())
+            // ONE COPY HELPER (ruling R-C-6). This list used to be written
+            // out by hand and left `setType`, `dropSteps`, `dropPercent` and
+            // `targetFailure` behind, so "save as new" silently cancelled a
+            // drop ladder and an AMRAP prescription — the R-B2-13 defect,
+            // one file over from where it was first fixed.
             let rows = edited.enumerated().map { index, re in
-                RoutineExercise(
-                    id: UUID(), routineID: newRoutineID, exerciseID: re.exerciseID,
-                    position: index + 1, targetSets: re.targetSets,
-                    targetReps: re.targetReps, targetWeight: re.targetWeight,
-                    restSeconds: re.restSeconds, notes: re.notes,
-                    supersetGroup: re.supersetGroup,
-                    targetRepsLow: re.targetRepsLow, targetRepsHigh: re.targetRepsHigh,
-                    cardioZone: re.cardioZone, cardioMinutes: re.cardioMinutes)
+                RoutineLayering.copied(re, intoRoutine: newRoutineID,
+                                       position: index + 1)
             }
             try? await RoutineRepository.save(clone, exercises: rows)
         } else {

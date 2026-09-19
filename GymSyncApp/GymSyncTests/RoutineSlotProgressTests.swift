@@ -271,6 +271,33 @@ final class RoutineSlotProgressTests: XCTestCase {
         XCTAssertEqual(replayed.exerciseID, original.exerciseID)
     }
 
+    /// RULING R-C-6. The queue had never mirrored `bodyWeightLbs` either, so
+    /// a set of pull-ups logged offline replayed with no body weight and
+    /// contributed NO tonnage, while the identical set logged online
+    /// contributed all of it.
+    func testTheOfflineQueueCarriesTheBodyWeightASetWasLiftedAt() {
+        var original = logs(benchID, 1, slot: UUID())[0]
+        original.weight = 0
+        original.bodyWeightLbs = 183
+        let replayed = PendingSetLog(setLog: original).asSetLog
+        XCTAssertEqual(replayed.bodyWeightLbs, 183)
+        XCTAssertEqual(replayed.effectiveWeightPounds, 183,
+                       "a bodyweight set's tonnage IS the body weight")
+    }
+
+    /// An item queued by the previous build knows neither field, and must
+    /// still replay rather than fail — both are `nil`-defaulted stored
+    /// properties, a lightweight SwiftData addition.
+    func testAnItemQueuedBeforeEitherColumnStillReplays() {
+        var bare = logs(benchID, 1, slot: nil)[0]
+        bare.bodyWeightLbs = nil
+        let pending = PendingSetLog(setLog: bare)
+        XCTAssertNil(pending.routineExerciseID)
+        XCTAssertNil(pending.bodyWeightLbs)
+        XCTAssertEqual(pending.asSetLog.id, bare.id)
+        XCTAssertNil(pending.asSetLog.routineExerciseID)
+    }
+
     /// The column is NULLABLE and the codec must say so both ways — a
     /// pre-column row decodes to nil, and a nil never encodes a key.
     func testTheColumnRoundTripsAndOmitsItselfWhenThereIsNoSlot() throws {
