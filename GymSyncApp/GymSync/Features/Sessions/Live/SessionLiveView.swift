@@ -5783,6 +5783,7 @@ struct SessionLiveView: View {
     /// arrives as a realtime/poll echo (field 2026-08-01: the organizer's
     /// End only ended the session on the organizer's phone; members'
     /// screens just sat there).
+    ///
     /// THE RECAP SEES WHAT THE CURSOR SEES (final review NEW-2, ruling 2's own
     /// words: "the cursor and THE RECAP therefore see them").
     ///

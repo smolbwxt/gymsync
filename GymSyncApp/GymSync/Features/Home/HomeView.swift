@@ -685,7 +685,7 @@ struct HomeView: View {
             groupID: session.groupID,
             roomCode: session.roomCode,
             scheduledFor: session.scheduledFor)
-        let isMine = session.organizerID == appState.currentProfile?.id
+        let isMine = signedInUserID.map { session.organizerID == $0 } ?? false
         return HomeOneButtonInput(
             isInProgress: session.state == "in_progress",
             startedAtLabel: session.startedAt.map { $0.formatted(.dateTime.hour().minute()) },
@@ -697,6 +697,29 @@ struct HomeView: View {
             routineName: routineLabel(for: session),
             timeLabel: session.scheduledFor.map { $0.formatted(.dateTime.hour().minute()) } ?? ""
         )
+    }
+
+    /// WHO IS SIGNED IN, from whichever source already knows (final review
+    /// NEW-4).
+    ///
+    /// `isOwnSoloWorkout` used to read `currentProfile?.id` alone, which is
+    /// `nil` until the profile fetch lands — and a `nil` there does not read
+    /// as "not yet known", it reads as "not mine", which is the WRONG verb
+    /// ("JOIN THE SESSION · YOU'RE LATE") rather than a cautious one. That is
+    /// the shape N1 taught this branch to avoid with a three-valued
+    /// `SoloSessionShape.Crew`.
+    ///
+    /// The auth session knows first and knows synchronously: `AuthService`'s
+    /// `state` is the same accessor `RootView` pattern-matches on for every
+    /// replay trigger and `AuthServiceCurrentUserIDProvider` reads for the
+    /// offline queue's user scoping. `RootView` already renders `MainTabView`
+    /// only in `.signedIn` WITH a loaded profile, so the flicker is not
+    /// reachable through that gate today — this removes the dependency on the
+    /// gate rather than on a fix for a bug that gate happens to hide.
+    private var signedInUserID: UUID? {
+        if let profileID = appState.currentProfile?.id { return profileID }
+        if case .signedIn(let userID) = AuthService.shared.state { return userID }
+        return nil
     }
 
     /// The crew a session belongs to, or `Solo`. Same lookup
