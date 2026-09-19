@@ -9,10 +9,21 @@ import Foundation
 // two setters — `turnHeaderRail`'s ✕, which only `myTurnFixedPage` mounts,
 // and `togetherPage`'s `onEnd`. `freestylePage` mounted neither, so a
 // Freestyle session could not be finished at all: `complete()` was never
-// called, the recap never ran, no streak or week credit was written, and the
-// row sat `in_progress` until it aged out. That has been true for CREW
-// Freestyle since Phase B1; Phase C1 is what made every ad-hoc solo workout
-// a `.freestyle` session and therefore made it everybody's bug.
+// called, the recap never ran, the week never counted the day, and the row
+// sat `in_progress` until it aged out. That has been true for CREW Freestyle
+// since Phase B1; Phase C1 is what made every ad-hoc solo workout a
+// `.freestyle` session and therefore made it everybody's bug.
+//
+// NOT THE STREAK, and this was claimed wrongly once (fix round 2). An ad-hoc
+// workout has never moved anyone's streak and still does not:
+// `streak_on_session_state_change` returns at
+// `IF NEW.scheduled_for IS NULL` (`20260719000006_streaks.sql:316-319`), by
+// design, and the old `WorkoutSessionView.endSession()` called the SAME
+// `SessionRepository.complete()`, so Phase C changes nothing about it. What
+// finishing now buys that it did not: the recap, the pump post, the
+// HealthKit export, a `completed` row — and the WEEK, which is a client-side
+// count of distinct training days over completed history
+// (`WeeklyGoalProgressMath.distinctTrainingDays`), not a trigger.
 //
 // LEAVING AND ENDING BELONG TO THE BODY, NOT TO A STYLE PAGE. A style decides
 // how a session MOVES — a rotation, a shared clock, a self-paced rail — and
@@ -78,9 +89,10 @@ enum SessionEndAffordance {
 /// A lifter alone in a gym is not "leaving a session" and is not "ending it
 /// for everyone" — both sentences describe other people, and there are none.
 /// They are finishing their workout. The ACT is identical either way
-/// (`endSession()` → `complete()` → the recap, the streak, the week, the pump
-/// post); only the words change, which is design rule 9's whole point: a
-/// button says exactly what happens.
+/// (`endSession()` → `complete()` → the recap, the week, the pump post — not
+/// the streak, which no ad-hoc session has ever moved; see the header); only
+/// the words change, which is design rule 9's whole point: a button says
+/// exactly what happens.
 ///
 /// Pure and here rather than inline in the dialog so the copy is asserted
 /// rather than eyeballed, and so the solo and crew branches cannot drift.

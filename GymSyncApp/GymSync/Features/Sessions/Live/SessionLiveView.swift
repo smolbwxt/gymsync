@@ -2233,10 +2233,12 @@ struct SessionLiveView: View {
         // B1, ruling R-C-7). "Leave session" and "End for everyone" both
         // describe other people; a lifter alone in a gym has none, and is
         // finishing their workout. ONE action, worded for that, calling the
-        // very same `endSession()` — `complete()`, the recap, the streak,
-        // the week, the pump post — as a crew end does. `SessionEndCopy`
-        // owns both branches' words so they are asserted rather than
-        // eyeballed.
+        // very same `endSession()` — `complete()`, the recap, the week, the
+        // pump post — as a crew end does. NOT the streak: an ad-hoc session
+        // has never moved one (`streak_on_session_state_change` returns on
+        // `scheduled_for IS NULL`) and this does not change that; see
+        // `SessionEndAffordance`'s header. `SessionEndCopy` owns both
+        // branches' words so they are asserted rather than eyeballed.
         .confirmationDialog(
             endDialog.title,
             isPresented: $showEndConfirmation,

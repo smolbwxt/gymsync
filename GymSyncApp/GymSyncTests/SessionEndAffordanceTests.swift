@@ -5,10 +5,11 @@ import XCTest
 ///
 /// The failure this pins is a real shipped one: `.freestyle`'s page mounted
 /// neither of `showEndConfirmation`'s two setters, so a Freestyle session
-/// could not be ended — no `complete()`, no recap, no streak credit, and a
-/// row left `in_progress`. It shipped for crew Freestyle in Phase B1 and
-/// became everybody's when Phase C1 made every ad-hoc solo workout
-/// `.freestyle`.
+/// could not be ended — no `complete()`, no recap, no week credit, and a row
+/// left `in_progress`. It shipped for crew Freestyle in Phase B1 and became
+/// everybody's when Phase C1 made every ad-hoc solo workout `.freestyle`.
+/// (No STREAK credit either way: an ad-hoc session has never moved one —
+/// `streak_on_session_state_change` returns on `scheduled_for IS NULL`.)
 ///
 /// WHAT MAKES IT UNREPEATABLE, and it is two things together: the switch in
 /// `SessionEndAffordance.mount(for:)` is exhaustive over `SessionStyle`, so a
