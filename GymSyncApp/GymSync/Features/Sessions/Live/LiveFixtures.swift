@@ -121,7 +121,7 @@ struct LiveWorld {
     /// same idiom `RoundWaitWorld.rest.elapsed`/`FreestyleWorld.restElapsed`
     /// already use. `nil` in every existing world, which keeps
     /// `session-your-turn` and `session-solo-live` byte-identical.
-    let restElapsedOverride: String? = nil
+    var restElapsedOverride: String? = nil
 
     /// DEBUG-only self-swap seed (plan task S6, frame 157): `[slotID:
     /// SessionLiveView.SwapTarget]`, seeded into `selfScales[selfID]` at
@@ -132,7 +132,7 @@ struct LiveWorld {
     /// broadcast, no production seam. Empty in every existing world, which
     /// keeps `effectiveRoutineExercises` resolving the UNSWAPPED routine for
     /// `session-your-turn` and `session-solo-live`.
-    let selfSwaps: [UUID: SessionLiveView.SwapTarget] = [:]
+    var selfSwaps: [UUID: SessionLiveView.SwapTarget] = [:]
 
     struct Reading: Equatable {
         let bpm: Int
