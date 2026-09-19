@@ -960,10 +960,18 @@ struct WorkoutSessionView: View {
     /// OS kill too. Only ids are persisted — the rebuilt row is derived from
     /// the routine on the way back in.
     ///
-    /// BEST-EFFORT, NEVER A GATE. The in-memory layer is already applied by
-    /// the time this runs, so a refused write costs the lifter nothing in
-    /// this session; what is lost is its survival of a relaunch, and the
-    /// notice says so.
+    /// RECORDED BEFORE IT IS WRITTEN (ruling F1). This is the leg the review
+    /// found: with the hotfix's mirror deleted, a refused write left the
+    /// layer in `@State` alone, a swipe-down destroyed it, and the lifter
+    /// came back on the lift they had swapped away — the 1031 report,
+    /// reopened through the failure path. The outbox is the third place, the
+    /// layer keeps applying from it, and the retry happens at the next seed,
+    /// set log or foreground.
+    ///
+    /// BEST-EFFORT, NEVER A GATE, and the notice tells the truth. It used to
+    /// say "Swap saved for this workout, but not for a relaunch", which was
+    /// wrong twice over: nothing had been saved, and after a swipe-down it
+    /// was not saved for this workout either.
     ///
     /// Still NOT durable, and named so it stays visible: `soloEditedList`,
     /// the mid-session builder's list (debug-swap-state.md §8.3, a second
@@ -974,11 +982,13 @@ struct WorkoutSessionView: View {
         guard let sessionID = session?.id else { return }
         let layer = SessionSwapLayer(soloSwapOverrides.mapValues(\.exerciseID))
         guard !layer.isEmpty else { return }
+        SessionSwapPendingStore.shared.record(layer, for: sessionID)
         do {
             try await SessionSwapRepository.saveSelf(sessionID: sessionID, layer: layer)
+            SessionSwapPendingStore.shared.confirm(sessionID)
         } catch {
             AppLogger.workout.error("self_swaps write failed: \(error, privacy: .public)")
-            await showSoloNotice("Swap saved for this workout, but not for a relaunch.")
+            await showSoloNotice("Couldn't save the swap — it applies on this phone; will retry.")
         }
     }
 
@@ -4015,22 +4025,44 @@ struct WorkoutSessionView: View {
     /// screen renders survives the trip — a bare id in a column cannot drop
     /// `targetFailure` the way the old hand-written rebuild did (R-B2-13).
     ///
+    /// A FAILED READ IS NOT SILENT (ruling F1). It used to be
+    /// `guard let row = try? … else { return }`, which lost the layer with
+    /// nothing said — the same harm as a failed write, arrived at from the
+    /// other side. Now the read's failure is logged, the lifter is told, and
+    /// the outbox is what the walk layers with: on this phone, the swap is
+    /// still applied.
+    ///
     /// A FREEFORM SESSION HAS NO SLOTS: its rows are re-synthesised from the
     /// logs with fresh ids, so any entry here is inert. That is not an error
     /// and `appliedSwapCount` is what reports it honestly.
     @MainActor
     private func adoptSwapLayer(sessionID: UUID) async {
-        guard let row = try? await SessionSwapRepository.loadSelf(sessionID: sessionID) else {
-            return
+        var row = SessionSwapLayer()
+        do {
+            row = try await SessionSwapRepository.loadSelf(sessionID: sessionID)
+        } catch {
+            AppLogger.workout.error("self_swaps read failed: \(error, privacy: .public)")
+            if !SessionSwapPendingStore.shared.layer(for: sessionID).isEmpty {
+                // Fire-and-forget: this notice holds itself on screen for
+                // three seconds and `startIfNeeded()` is waiting on us —
+                // the same reasoning `showAttemptOptInFailedNotice`'s own
+                // call site records.
+                Task { await showSoloNotice("Couldn't reload your swaps — using what this phone remembers.") }
+            }
         }
         let held = SessionSwapLayer(soloSwapOverrides.mapValues(\.exerciseID))
-        let merged = held.merging(row)
+        let merged = held.merging(
+            SessionSwapPendingStore.shared.seeded(from: row, for: sessionID))
         guard !merged.isEmpty else { return }
         let base = soloEditedList ?? routineExercises
         soloSwapOverrides = base.reduce(into: [UUID: RoutineExercise]()) { layered, re in
             guard let replacementID = merged[re.id] else { return }
             layered[re.id] = RoutineLayering.swapped(re, to: replacementID)
         }
+        // A natural retry opportunity — detached, because `startIfNeeded()`
+        // is waiting on this function and a resume must not queue behind a
+        // write the lifter is not watching.
+        Task { await SessionSwapPendingStore.shared.flushIfDirty(sessionID) }
     }
 
     /// The transient top pill, shared with the leaderboard notice (they can
@@ -4305,6 +4337,10 @@ struct WorkoutSessionView: View {
                 // opportunistically flushes any earlier queued sets now that we
                 // know we're online. Fire-and-forget: never blocks this submit.
                 Task { await OfflineSetLogQueue.shared.replay() }
+                // The same opportunity for the swap outbox (ruling F1): a
+                // successful insert proves the connection, and a swap whose
+                // write was refused a moment ago can land now.
+                Task { await SessionSwapPendingStore.shared.flushIfDirty(session.id) }
             } catch let error as GymSyncError {
                 guard case .network = error else { throw error }
                 // Offline — queue for replay instead of losing the set. The rest of
@@ -4708,11 +4744,14 @@ struct WorkoutSessionView: View {
             let completedResult = try await SessionRepository.complete(sessionID: session.id)
             let logs = try await SessionRepository.setLogs(sessionID: completedResult.id)
             completedSession = completedResult
-            // The session is durably over — retire the recovery pill (and
-            // with it the swap layer it carries).
+            // The session is durably over — retire the recovery pill.
             if appState.liveSoloSession?.id == session.id {
                 appState.liveSoloSession = nil
             }
+            // …and the swap outbox (ruling F1). A finished session has
+            // nothing left to retry, and an entry kept past the end would be
+            // written back onto a completed session's participant row.
+            SessionSwapPendingStore.shared.clear(session.id)
             // …and the timer anchors, so a finished session leaves nothing
             // behind for a later one to restore. `clear(sessionID:)` had no
             // call site anywhere in the app before this one — the group

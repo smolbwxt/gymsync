@@ -139,6 +139,95 @@ final class SessionSwapLayerTests: XCTestCase {
         XCTAssertEqual(applied.map(\.targetSets), [3, 5])
     }
 
+    // MARK: - The outbox (ruling F1)
+    //
+    // S1 deleted the hotfix's in-memory mirror because the row replaced it —
+    // on every path the write SUCCEEDS on. On the one it does not, the swap
+    // was left in `@State` alone, a swipe-down destroyed it, and the lifter
+    // came back on the lift they had swapped away. These pin the lifecycle
+    // that closes it. `flushIfDirty` is not asserted here: it is the one
+    // member that touches the network.
+
+    @MainActor
+    func testARecordedLayerIsDirtyUntilTheRowConfirmsIt() {
+        let store = SessionSwapPendingStore()
+        let session = UUID(), slot = UUID()
+        XCTAssertFalse(store.isDirty(session))
+        XCTAssertTrue(store.layer(for: session).isEmpty)
+
+        store.record(SessionSwapLayer([slot: inclineID]), for: session)
+        XCTAssertTrue(store.isDirty(session))
+        XCTAssertEqual(store.layer(for: session)[slot], inclineID)
+
+        store.confirm(session)
+        XCTAssertFalse(store.isDirty(session))
+        XCTAssertEqual(store.layer(for: session)[slot], inclineID,
+                       "a confirmed layer is kept — it is what a FAILED read falls back to")
+    }
+
+    @MainActor
+    func testADirtyLayerBEATSTheRowItHasNotReachedYet() {
+        let store = SessionSwapPendingStore()
+        let session = UUID(), slot = UUID()
+        store.record(SessionSwapLayer([slot: machinePressID]), for: session)
+        // The row still holds the swap from before the refused write.
+        let seeded = store.seeded(from: SessionSwapLayer([slot: inclineID]), for: session)
+        XCTAssertEqual(seeded[slot], machinePressID)
+    }
+
+    @MainActor
+    func testSeedingKeepsEverySlotEitherSideKnowsAbout() {
+        let store = SessionSwapPendingStore()
+        let session = UUID(), mine = UUID(), theirs = UUID()
+        store.record(SessionSwapLayer([mine: machinePressID]), for: session)
+        let seeded = store.seeded(from: SessionSwapLayer([theirs: inclineID]), for: session)
+        XCTAssertEqual(seeded[mine], machinePressID)
+        XCTAssertEqual(seeded[theirs], inclineID)
+    }
+
+    @MainActor
+    func testAnEmptyStoreSeedsToExactlyTheRow() {
+        let store = SessionSwapPendingStore()
+        let session = UUID(), slot = UUID()
+        let row = SessionSwapLayer([slot: inclineID])
+        XCTAssertEqual(store.seeded(from: row, for: session), row)
+    }
+
+    @MainActor
+    func testOneSessionsOutboxIsNotAnothers() {
+        let store = SessionSwapPendingStore()
+        let a = UUID(), b = UUID(), slot = UUID()
+        store.record(SessionSwapLayer([slot: inclineID]), for: a)
+        XCTAssertTrue(store.layer(for: b).isEmpty)
+        XCTAssertFalse(store.isDirty(b))
+    }
+
+    @MainActor
+    func testFinishingASessionClearsItsOutbox() {
+        let store = SessionSwapPendingStore()
+        let session = UUID(), slot = UUID()
+        store.record(SessionSwapLayer([slot: inclineID]), for: session)
+        store.clear(session)
+        XCTAssertTrue(store.layer(for: session).isEmpty)
+        XCTAssertFalse(store.isDirty(session))
+        // And a cleared session seeds to the row alone, never to a ghost.
+        let row = SessionSwapLayer([slot: machinePressID])
+        XCTAssertEqual(store.seeded(from: row, for: session), row)
+    }
+
+    @MainActor
+    func testASecondSwapWhileStillDirtyRecordsTheWholeLayerNotJustTheNewSlot() {
+        // Both bodies hand `record` the whole layer, because `self_swaps` is
+        // a plain jsonb column with no server-side merge — a partial write
+        // would erase the slot it did not name.
+        let store = SessionSwapPendingStore()
+        let session = UUID(), first = UUID(), second = UUID()
+        store.record(SessionSwapLayer([first: inclineID]), for: session)
+        store.record(SessionSwapLayer([first: inclineID, second: machinePressID]), for: session)
+        XCTAssertTrue(store.isDirty(session))
+        XCTAssertEqual(store.layer(for: session).bySlot.count, 2)
+    }
+
     func testTodaysScaleStaysKeyedOnTheLiftNotTheSlot() {
         // Decision 2's last paragraph: the athlete accepted "one set fewer"
         // against a LIFT at the warm-up, and both slots naming that lift are

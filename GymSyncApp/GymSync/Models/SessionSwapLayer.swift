@@ -83,6 +83,107 @@ extension SessionSwapLayer: Codable {
     }
 }
 
+// MARK: - SessionSwapPendingStore
+//
+// THE LIFTER'S OWN LAYER IS NEVER ONLY IN THE VIEW (ruling F1).
+//
+// S1 replaced the 2026-09-18 hotfix's in-memory mirror with a durable row,
+// which is strictly better on every path the write SUCCEEDS on — and strictly
+// worse on the one it does not. With the mirror gone, a refused `self_swaps`
+// write left the swap in exactly one place, `@State soloSwapOverrides`, which
+// a swipe-down destroys; the lifter came back on the lift they had swapped
+// away and logged its sets a second time. That is the TestFlight-1031 report
+// this phase exists to end, re-opened through the failure leg.
+//
+// So the row is the truth and this is the OUTBOX. It is app-level and
+// in-memory — deliberately NOT the old `AppState.LiveSoloSession` field,
+// which was a snapshot of a view's state carried on a session handle. This is
+// keyed by session id, holds only THIS lifter's own layer, and carries the
+// one fact the view cannot: whether the row has caught up.
+//
+// THE LIFECYCLE, in one place:
+//   record   — before every write attempt. The layer is now pending: it
+//              applies on this phone whatever the network says.
+//   confirm  — the write landed. The layer stays as a read-through cache;
+//              `isDirty` goes false.
+//   flush    — re-attempt a dirty layer at the next natural opportunity
+//              (a seed/reload, a successful set log, a foreground) until it
+//              lands. Silent: a retry that fails is not news.
+//   clear    — the session finished or was discarded.
+//
+// IT IS NOT DURABLE ACROSS A PROCESS DEATH, and it does not need to be: the
+// row is, and a layer that never reached the row is one the lifter watched
+// fail. What it covers is the gap the row cannot — the minutes between a
+// refused write and the next connection, which is exactly when a lifter in a
+// basement gym swipes down.
+@MainActor
+final class SessionSwapPendingStore {
+    static let shared = SessionSwapPendingStore()
+    /// Public so a test can own its own store rather than mutate a singleton.
+    init() {}
+
+    private struct Entry {
+        var layer: SessionSwapLayer
+        var isDirty: Bool
+    }
+    private var bySession: [UUID: Entry] = [:]
+
+    /// What this phone believes MY layer to be — empty when it has never
+    /// been told.
+    func layer(for sessionID: UUID) -> SessionSwapLayer {
+        bySession[sessionID]?.layer ?? SessionSwapLayer()
+    }
+
+    /// True while a recorded layer has not been confirmed into the row.
+    func isDirty(_ sessionID: UUID) -> Bool { bySession[sessionID]?.isDirty ?? false }
+
+    /// Record BEFORE attempting the write, never after. A layer recorded and
+    /// then lost to a crash is a layer the row may already hold; a layer
+    /// written and then not recorded is the bug this store exists to close.
+    func record(_ layer: SessionSwapLayer, for sessionID: UUID) {
+        bySession[sessionID] = Entry(layer: layer, isDirty: true)
+    }
+
+    /// The row caught up. The layer is kept — it is what a FAILED read falls
+    /// back to — and only the dirty flag drops.
+    func confirm(_ sessionID: UUID) {
+        guard var entry = bySession[sessionID] else { return }
+        entry.isDirty = false
+        bySession[sessionID] = entry
+    }
+
+    func clear(_ sessionID: UUID) { bySession[sessionID] = nil }
+
+    /// THE SEED: the database value with a pending layer laid over it, slot
+    /// by slot, PENDING WINNING. A dirty entry outranks the row because the
+    /// row is behind by definition; a clean entry agrees with it, so the
+    /// merge is a union either way and neither can lose a decision (neither
+    /// body has an un-swap).
+    func seeded(from row: SessionSwapLayer, for sessionID: UUID) -> SessionSwapLayer {
+        layer(for: sessionID).merging(row)
+    }
+
+    /// Re-attempt a dirty layer. Silent on failure — this is a retry, not an
+    /// action the lifter just took, and the notice for the failure they DID
+    /// take has already been shown.
+    ///
+    /// - Returns: true when there is nothing outstanding.
+    @discardableResult
+    func flushIfDirty(_ sessionID: UUID) async -> Bool {
+        guard let entry = bySession[sessionID], entry.isDirty else { return true }
+        guard !entry.layer.isEmpty else { confirm(sessionID); return true }
+        do {
+            try await SessionSwapRepository.saveSelf(sessionID: sessionID, layer: entry.layer)
+            confirm(sessionID)
+            return true
+        } catch {
+            AppLogger.sessions.error(
+                "self_swaps retry failed: \(error, privacy: .public)")
+            return false
+        }
+    }
+}
+
 // MARK: - SessionSwapRepository
 //
 // The two homes' read and write paths, and the ONE RPC.

@@ -3683,15 +3683,22 @@ struct SessionLiveView: View {
     /// is only its survival of a relaunch. Surfaced in the body's one error
     /// line rather than swallowed — a quiet swap that did not persist is
     /// worth one sentence.
+    /// RECORDED BEFORE IT IS WRITTEN (ruling F1). The pending store is where
+    /// my layer lives when the row cannot have it yet; a refused write leaves
+    /// it dirty, the layer keeps applying, and the next seed, set log or
+    /// foreground re-attempts it. The notice says that, rather than claiming
+    /// a durability the write did not buy.
     @MainActor
     private func persistSelfSwaps(userID: UUID) async {
         let layer = SessionSwapLayer((selfScales[userID] ?? [:]).mapValues(\.id))
         guard !layer.isEmpty else { return }
+        SessionSwapPendingStore.shared.record(layer, for: liveSession.id)
         do {
             try await SessionSwapRepository.saveSelf(sessionID: liveSession.id, layer: layer)
+            SessionSwapPendingStore.shared.confirm(liveSession.id)
         } catch {
             AppLogger.sessions.error("self_swaps write failed: \(error, privacy: .public)")
-            errorText = ErrorMapping.map(error).errorDescription
+            errorText = "Couldn't save the swap — it applies on this phone; will retry."
         }
     }
 
@@ -3867,9 +3874,18 @@ struct SessionLiveView: View {
     @MainActor
     private func seedSwapLayers() async {
         for (participant, _) in participants {
-            guard let row = participant.selfSwaps, !row.isEmpty else { continue }
+            let isMe = participant.userID == selfID
+            // MY OWN row is laid under the pending store (ruling F1), so a
+            // swap whose write has not landed is not erased by the reload
+            // that races it. A crewmate's row is all there is to know about
+            // theirs.
+            let row = participant.selfSwaps ?? SessionSwapLayer()
+            let durable = isMe
+                ? SessionSwapPendingStore.shared.seeded(from: row, for: liveSession.id)
+                : row
+            guard !durable.isEmpty else { continue }
             var held = selfScales[participant.userID] ?? [:]
-            let merged = SessionSwapLayer(held.mapValues(\.id)).merging(row)
+            let merged = SessionSwapLayer(held.mapValues(\.id)).merging(durable)
             for (slotID, replacementID) in merged.bySlot
             where held[slotID]?.id != replacementID {
                 held[slotID] = SwapTarget(id: replacementID,
@@ -3877,9 +3893,12 @@ struct SessionLiveView: View {
             }
             selfScales[participant.userID] = held
         }
-        guard let row = try? await SessionSwapRepository.loadSquad(sessionID: session.id),
-              !row.isEmpty else { return }
-        let merged = SessionSwapLayer(squadSwaps.mapValues(\.id)).merging(row)
+        // A natural opportunity: the layer is in hand and the network just
+        // answered. Silent — see `flushIfDirty`.
+        await SessionSwapPendingStore.shared.flushIfDirty(liveSession.id)
+        guard let squadRow = try? await SessionSwapRepository.loadSquad(sessionID: session.id),
+              !squadRow.isEmpty else { return }
+        let merged = SessionSwapLayer(squadSwaps.mapValues(\.id)).merging(squadRow)
         for (slotID, replacementID) in merged.bySlot
         where squadSwaps[slotID]?.id != replacementID {
             squadSwaps[slotID] = SwapTarget(id: replacementID,
@@ -4914,6 +4933,9 @@ struct SessionLiveView: View {
                 try await SessionRepository.logSet(log)
                 stamp("logSet insert", tInsert)
                 Task { await OfflineSetLogQueue.shared.replay() }   // cheap drain
+                // The same opportunity for the swap outbox (ruling F1): a
+                // successful insert proves the connection.
+                Task { await SessionSwapPendingStore.shared.flushIfDirty(liveSession.id) }
             } catch let error as GymSyncError {
                 guard case .network = error else { throw error }
                 // Offline — queue for replay + optimistic local append. `feedSets`/
@@ -5278,6 +5300,10 @@ struct SessionLiveView: View {
         if appState.liveGroupSession?.sessionID == session.id {
             appState.liveGroupSession = nil
         }
+        // …and the swap outbox (ruling F1). Deliberate exit only, for the
+        // same reason the pill is cleared only here: a swipe-down is
+        // recoverable and its pending layer must survive it.
+        SessionSwapPendingStore.shared.clear(session.id)
         dismiss()
     }
 
