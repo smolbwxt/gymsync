@@ -27,7 +27,51 @@ import SwiftUI
 
 enum SoloSessionShape {
 
-    /// HIDE THE CREW'S FURNITURE. True for a roster of one.
+    /// WHO IS IN THIS SESSION, as far as anything can currently tell.
+    ///
+    /// THREE VALUES, BECAUSE THERE ARE THREE ANSWERS (fix round 1 / N1). The
+    /// two-valued law read `participants.count <= 1`, and `participants` is
+    /// `@State … = []` filled only by `reload()` — so it answered SOLO for
+    /// every session, crew included, on the render pass before the fetch
+    /// landed, and went on answering solo for as long as a reload kept
+    /// failing. A crew's chat door, presence count, mic rail, voice notices
+    /// and reaction strip popped in rather than being there; worse, on a bad
+    /// connection `joinVoiceIfEligible` declined to open the room for the
+    /// WHOLE CREW until a reload finally succeeded. An absent roster is not
+    /// evidence of an empty one.
+    enum Crew: Equatable {
+        /// Proved: solo by construction, or a roster that has loaded and
+        /// holds one.
+        case solo
+        /// Proved: a roster that has loaded and holds more than one.
+        case crew
+        /// NOT KNOWN YET — and the crew's behaviour is what an unknown gets,
+        /// because that is the shipped behaviour and the honest default: a
+        /// crew shown one frame of solo chrome is a flicker, while a crew
+        /// silently denied its voice dock is a broken session.
+        case unknown
+    }
+
+    /// The one derivation. `loadedParticipantCount` is nil while no roster
+    /// has arrived — an EMPTY array is exactly that, since a real session
+    /// always holds at least the viewer's own row.
+    static func crew(groupID: UUID?,
+                     roomCode: String?,
+                     scheduledFor: Date?,
+                     loadedParticipantCount: Int?) -> Crew {
+        // Construction beats the roster, and it is available first: the
+        // cover is raised the instant `startSolo` returns, long before any
+        // participants fetch, and this is the answer for every session that
+        // fetch could ever produce.
+        if isSoloByConstruction(groupID: groupID, roomCode: roomCode,
+                                scheduledFor: scheduledFor) {
+            return .solo
+        }
+        guard let count = loadedParticipantCount else { return .unknown }
+        return count <= 1 ? .solo : .crew
+    }
+
+    /// HIDE THE CREW'S FURNITURE. Only for a PROVED party of one.
     ///
     /// What the one body ALREADY hides for a party of one, verified by
     /// reading rather than assumed, so this gate covers only the remainder:
@@ -49,8 +93,22 @@ enum SoloSessionShape {
     /// strip, the chat and mixer doors, the roster count — and
     /// `joinVoiceIfEligible`, which is not furniture at all but a live
     /// connection to a voice room with nobody in it.
-    static func hidesCrewFurniture(participantCount: Int) -> Bool {
-        participantCount <= 1
+    ///
+    /// `.unknown` KEEPS THE CREW'S BEHAVIOUR (fix round 1 / N1) — see `Crew`.
+    static func hidesCrewFurniture(_ crew: Crew) -> Bool {
+        crew == .solo
+    }
+
+    /// The whole derivation in one call, which is what the view reads — so
+    /// the tests exercise the same function the gates do rather than a
+    /// predicate nothing calls (fix round 1 / N7).
+    static func hidesCrewFurniture(groupID: UUID?,
+                                   roomCode: String?,
+                                   scheduledFor: Date?,
+                                   loadedParticipantCount: Int?) -> Bool {
+        hidesCrewFurniture(crew(groupID: groupID, roomCode: roomCode,
+                                scheduledFor: scheduledFor,
+                                loadedParticipantCount: loadedParticipantCount))
     }
 
     /// SOLO BY CONSTRUCTION — decided from the SESSION ROW ALONE, with no

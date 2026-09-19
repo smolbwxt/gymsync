@@ -9,37 +9,94 @@ import XCTest
 /// places for the answer to drift, and none of them is reachable from a test.
 final class SoloSessionShapeTests: XCTestCase {
 
-    // MARK: - hidesCrewFurniture — the roster, and only the roster
+    // MARK: - crew(…) — the three-valued law the view actually reads
+    //
+    // Exercised through `hidesCrewFurniture(groupID:roomCode:scheduledFor:
+    // loadedParticipantCount:)`, the SAME function `SessionLiveView.crewShape`
+    // calls, rather than through a predicate nothing calls (fix round 1 / N7).
 
-    func testAPartyOfOneHidesTheCrewsFurniture() {
-        XCTAssertTrue(SoloSessionShape.hidesCrewFurniture(participantCount: 1))
+    /// The bug N1 names, pinned: a CREW whose roster has not arrived must NOT
+    /// be shown the solo shape. Before the fix this answered true for every
+    /// session on the first render pass, and went on answering true for as
+    /// long as `reload()` kept failing — which silently denied a whole crew
+    /// its voice dock on a bad connection.
+    func testACrewSessionWithNoRosterYetKeepsTheCrewsFurniture() {
+        XCTAssertEqual(
+            SoloSessionShape.crew(groupID: UUID(), roomCode: nil,
+                                  scheduledFor: Self.date(2099, 4, 1),
+                                  loadedParticipantCount: nil),
+            .unknown)
+        XCTAssertFalse(SoloSessionShape.hidesCrewFurniture(
+            groupID: UUID(), roomCode: nil,
+            scheduledFor: Self.date(2099, 4, 1), loadedParticipantCount: nil))
     }
 
-    func testAnEmptyRosterHidesItToo() {
-        // Not a real session, but it IS a real render: the live body's roster
-        // arrives asynchronously, and a talk dock that flashes on for one
-        // frame before the fetch lands is exactly the furniture this gate is
-        // meant to keep off a solo screen.
-        XCTAssertTrue(SoloSessionShape.hidesCrewFurniture(participantCount: 0))
+    func testAScheduledSessionWithNoRosterYetIsUNKNOWNNotSolo() {
+        // The `.friends` / scheduled-solo pair: indistinguishable at the row,
+        // so neither may be assumed solo before the roster proves it.
+        XCTAssertFalse(SoloSessionShape.hidesCrewFurniture(
+            groupID: nil, roomCode: nil,
+            scheduledFor: Self.date(2099, 4, 1), loadedParticipantCount: nil))
     }
 
-    func testTwoLiftersKeepIt() {
-        XCTAssertFalse(SoloSessionShape.hidesCrewFurniture(participantCount: 2))
+    func testAnAdHocSessionIsSOLOBEFOREAnyRosterArrives() {
+        // The other half of the same rule: construction is available before
+        // any fetch, and the cover is raised the instant `startSolo` returns.
+        // An ad-hoc lifter must never see one frame of crew chrome either.
+        XCTAssertEqual(
+            SoloSessionShape.crew(groupID: nil, roomCode: nil,
+                                  scheduledFor: nil, loadedParticipantCount: nil),
+            .solo)
+        XCTAssertTrue(SoloSessionShape.hidesCrewFurniture(
+            groupID: nil, roomCode: nil, scheduledFor: nil,
+            loadedParticipantCount: nil))
     }
 
-    func testAFullCrewKeepsIt() {
-        XCTAssertFalse(SoloSessionShape.hidesCrewFurniture(participantCount: 6))
+    func testALOADEDRosterOfOneIsSoloWhateverTheRowSays() {
+        // A scheduled solo session gets the solo shape the moment its roster
+        // of one arrives — item 2's "gate on the roster, and on nothing else,
+        // so a scheduled solo session gets the same treatment".
+        XCTAssertEqual(
+            SoloSessionShape.crew(groupID: nil, roomCode: nil,
+                                  scheduledFor: Self.date(2099, 4, 1),
+                                  loadedParticipantCount: 1),
+            .solo)
+        XCTAssertTrue(SoloSessionShape.hidesCrewFurniture(
+            groupID: nil, roomCode: nil,
+            scheduledFor: Self.date(2099, 4, 1), loadedParticipantCount: 1))
     }
 
-    func testItAsksNothingAboutTheSCHEDULE() {
-        // Item 2's rule, verbatim: gate on the roster "and on nothing else,
-        // so a scheduled solo session gets the same treatment, which is
-        // correct". The signature is the proof — there is no date to pass —
-        // and this case is the statement of intent a later reader needs.
-        XCTAssertEqual(SoloSessionShape.hidesCrewFurniture(participantCount: 1),
-                       SoloSessionShape.hidesCrewFurniture(participantCount: 1),
-                       "the answer depends on the roster alone")
-        XCTAssertTrue(SoloSessionShape.hidesCrewFurniture(participantCount: 1))
+    func testALOADEDRosterOfTwoOrMoreIsCrew() {
+        for count in [2, 6] {
+            XCTAssertEqual(
+                SoloSessionShape.crew(groupID: UUID(), roomCode: nil,
+                                      scheduledFor: Self.date(2099, 4, 1),
+                                      loadedParticipantCount: count),
+                .crew, "a roster of \(count) is a crew")
+            XCTAssertFalse(SoloSessionShape.hidesCrewFurniture(
+                groupID: UUID(), roomCode: nil,
+                scheduledFor: Self.date(2099, 4, 1), loadedParticipantCount: count))
+        }
+    }
+
+    func testZEROIsNotAROSTERAndCannotReachThisLawAsALoadedCount() {
+        // The view maps an empty array to nil rather than 0 — a real session
+        // always holds at least the viewer — but if a caller ever did pass 0
+        // for a crew session, "nobody is here" must not read as "you are
+        // alone with the crew's controls hidden": it is <= 1, so it answers
+        // solo, and this is the case that records the view's obligation.
+        XCTAssertEqual(
+            SoloSessionShape.crew(groupID: UUID(), roomCode: nil,
+                                  scheduledFor: Self.date(2099, 4, 1),
+                                  loadedParticipantCount: 0),
+            .solo)
+    }
+
+    func testOnlyAPROVEDPartyOfOneHidesTheFurniture() {
+        XCTAssertTrue(SoloSessionShape.hidesCrewFurniture(.solo))
+        XCTAssertFalse(SoloSessionShape.hidesCrewFurniture(.crew))
+        XCTAssertFalse(SoloSessionShape.hidesCrewFurniture(.unknown),
+                       "an unknown keeps the crew's shipped behaviour")
     }
 
     // MARK: - isSoloByConstruction — the session row alone, no roster

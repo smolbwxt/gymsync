@@ -257,6 +257,12 @@ struct SessionLiveView: View {
     /// Set in `reload()`'s catch, cleared on success. Gates the `GSErrorCard`
     /// replacement for the roster/spotlight block below (see `body`).
     @State private var rosterLoadFailed     = false
+    /// The one sentence `reload()`'s failure puts in the body's notice slot,
+    /// named so the success path can retire ITS OWN line and no other
+    /// writer's (fix round 1 / N1). It reads after `SessionCopy.verbFailed`,
+    /// so it is a whole sentence, not a clause.
+    private static let rosterFailedText =
+        "Couldn't load who's here — the crew's controls may be missing until it does."
     /// Canvas Completion Task 4 fix round 1 (proof p31-errors, "Set didn't
     /// save"): dedicated to `logSetAndAdvance`'s failure only — deliberately
     /// separate from the generic `errorText` above (which stays the small
@@ -473,16 +479,44 @@ struct SessionLiveView: View {
 
     /// THE SOLO FURNITURE GATE (plan task S4, brief item 7) — one law, read
     /// in every place the crew's furniture would otherwise reach a lifter who
-    /// is alone in a gym. `SoloSessionShape.hidesCrewFurniture` carries the
-    /// reasoning and the list of what the body ALREADY hides without it.
+    /// is alone in a gym. `SoloSessionShape` carries the reasoning and the
+    /// list of what the body ALREADY hides without it.
     ///
-    /// IT ASKS ABOUT THE ROSTER AND NOTHING ELSE, so a SCHEDULED solo session
-    /// is treated identically — which is correct: a party of one has nobody
-    /// to talk to whether or not a calendar said so. `rosterCount` is the
-    /// catalog-aware count, so a fixture world that names a crew still
-    /// renders the crew's furniture.
+    /// SOLO IS A FACT ABOUT THE SESSION, NOT ABOUT HOW MANY ROWS HAVE LOADED
+    /// (fix round 1 / N1). This used to read `rosterCount <= 1`, and
+    /// `participants` is `@State … = []` filled only by `reload()` — so it
+    /// answered SOLO for every session, crew included, on the render pass
+    /// before the fetch landed, and kept answering solo for as long as a
+    /// reload failed. A crew's chrome popped in rather than being there, and
+    /// on a bad connection the whole crew silently lost its voice dock.
+    ///
+    /// So construction decides first (an ad-hoc row is solo before any fetch
+    /// exists), an EMPTY roster means NOT KNOWN rather than empty, and an
+    /// unknown keeps the crew's shipped behaviour. A scheduled solo session
+    /// still gets the solo shape the moment its roster of one arrives.
+    private var crewShape: SoloSessionShape.Crew {
+        SoloSessionShape.crew(groupID: liveSession.groupID,
+                              roomCode: liveSession.roomCode,
+                              scheduledFor: liveSession.scheduledFor,
+                              loadedParticipantCount: loadedRosterCount)
+    }
+
     private var hidesCrewFurniture: Bool {
-        SoloSessionShape.hidesCrewFurniture(participantCount: rosterCount)
+        SoloSessionShape.hidesCrewFurniture(crewShape)
+    }
+
+    /// The roster count WHEN ONE IS KNOWN, nil otherwise. A real session
+    /// always holds at least the viewer's own row, so an empty array is the
+    /// honest signal for "the fetch has not landed (or failed)".
+    ///
+    /// The catalog's count is always known — a fixture world states its
+    /// roster rather than fetching one — which is what keeps a crew frame a
+    /// crew frame and lets a one-participant world get the solo shape.
+    private var loadedRosterCount: Int? {
+        #if DEBUG
+        if let catalog { return catalog.participantCount }
+        #endif
+        return participants.isEmpty ? nil : participants.count
     }
 
     /// The end confirmation's words (fix round 1 / B1). Solo for a roster of
@@ -3921,6 +3955,11 @@ struct SessionLiveView: View {
             let (fetchedParts, fetchedSets, fetchedSession) =
                 try await (pFetch, setsFetch, sessionRef)
             rosterLoadFailed = false
+            // …and retire its notice, but ONLY its own. Another writer's
+            // line — a refused swap, a failed leave — is a statement about
+            // something this fetch knows nothing about, and the lifter may
+            // not have read it yet.
+            if errorText == Self.rosterFailedText { errorText = nil }
             participants = fetchedParts
             if let s = fetchedSession { liveSession = s }
 
@@ -3944,6 +3983,17 @@ struct SessionLiveView: View {
         } catch {
             AppLogger.sessions.error("SessionLiveView reload: \(error, privacy: .public)")
             rosterLoadFailed = true
+            // AND IT IS SAID (fix round 1 / N1). `rosterLoadFailed` had no
+            // reader anywhere in this file: the fetch failed, the roster
+            // stayed empty, and the lifter was told nothing at all while the
+            // screen quietly behaved as though the session were empty. It now
+            // has two readers — `crewShape`, which treats an absent roster as
+            // UNKNOWN and keeps the crew's behaviour, and this line, which
+            // puts the failure in the body's one existing notice slot
+            // (`errorBannerOverlay`, tap to dismiss). No retry control: the
+            // next reload is already armed by every realtime nudge and every
+            // foreground, which is exactly what a retry button would trigger.
+            errorText = Self.rosterFailedText
         }
 
         // Routine
