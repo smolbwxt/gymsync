@@ -62,6 +62,84 @@ final class HomeCompositionTests: XCTestCase {
         XCTAssertTrue(state.isCrewState, "a crew primary keeps the solo escape under it")
     }
 
+    // MARK: - My own live workout is not a session I am late for (final
+    // review F4)
+    //
+    // R-C-1 stopped excluding live solo rows from `actionableSessions`, and
+    // `.joinSession` had no solo gate although `.checkIn` did — so a workout
+    // the lifter minimised seconds ago read "JOIN THE SESSION / STARTED 09:41
+    // · YOU'RE LATE" on the ONE button that is the way back into it. Every
+    // assertion below fails on that behaviour.
+
+    func testMyOwnLiveWorkoutResumesRatherThanJoining() {
+        let input = HomeOneButtonInput(isInProgress: true,
+                                       startedAtLabel: "9:41 AM",
+                                       isGroupSession: false,
+                                       isOwnSoloWorkout: true,
+                                       checkInAvailable: true,
+                                       routineName: "Pull A")
+        let state = HomeOneButtonResolver.state(next: input, todaysRoutineName: "Pull A")
+        XCTAssertEqual(state.line1, "RESUME WORKOUT")
+        XCTAssertEqual(state.line2, "STARTED 9:41 AM",
+                       "the started time, and no lateness line — there is nobody to be late for")
+        XCTAssertEqual(faceName(state), "accent")
+        XCTAssertFalse(state.isCrewState,
+                       "START SOLO WORKOUT under a workout already running is a second door")
+    }
+
+    /// THE MINIMISED WARM-UP, which is the leg this matters most on: there is
+    /// no live pill yet (`AppState.liveGroupSession` is registered by
+    /// `SessionLiveView.onAppear`, which has not run until lifting starts), so
+    /// this button is the only way back in.
+    ///
+    /// At the session row a warm-up and a lifting session are the same shape —
+    /// `lifting_started_at` never reaches this resolver — which is the point:
+    /// the answer is a fact about WHOSE workout it is, so both legs of the one
+    /// row land on the same honest door.
+    func testTheMinimisedWarmUpGetsTheSameResumeDoor() {
+        let warmUp = HomeOneButtonInput(isInProgress: true,
+                                        startedAtLabel: "6:02 PM",
+                                        isOwnSoloWorkout: true,
+                                        checkInAvailable: true,
+                                        routineName: "Push A")
+        let state = HomeOneButtonResolver.state(next: warmUp, todaysRoutineName: nil)
+        XCTAssertEqual(state.line1, "RESUME WORKOUT")
+        XCTAssertEqual(state.line2, "STARTED 6:02 PM")
+        XCTAssertFalse(state.isCrewState)
+    }
+
+    /// A crew session is untouched: it really did start without this lifter.
+    func testACrewSessionStillJoinsAndStillSaysYoureLate() {
+        let input = HomeOneButtonInput(isInProgress: true,
+                                       startedAtLabel: "5:12 PM",
+                                       isGroupSession: true,
+                                       isOwnSoloWorkout: false,
+                                       checkInAvailable: true,
+                                       crewName: "Push Crew",
+                                       routineName: "Push A",
+                                       timeLabel: "5:00 PM")
+        let state = HomeOneButtonResolver.state(next: input, todaysRoutineName: "Pull A")
+        XCTAssertEqual(state.line1, "JOIN THE SESSION")
+        XCTAssertEqual(state.line2, "STARTED 5:12 PM · YOU'RE LATE")
+        XCTAssertTrue(state.isCrewState)
+    }
+
+    /// A FRIEND'S session — no group id, so it is not a crew row, but it is
+    /// scheduled and somebody else organizes it, so it is not solo by
+    /// construction and not mine. Both halves of `isOwnSoloWorkout` are what
+    /// keep it a join.
+    func testAFriendsLiveSessionIsStillAJoin() {
+        let input = HomeOneButtonInput(isInProgress: true,
+                                       startedAtLabel: "7:30 AM",
+                                       isGroupSession: false,
+                                       isOwnSoloWorkout: false,
+                                       checkInAvailable: true,
+                                       routineName: "Legs")
+        let state = HomeOneButtonResolver.state(next: input, todaysRoutineName: nil)
+        XCTAssertEqual(state.line1, "JOIN THE SESSION")
+        XCTAssertEqual(state.line2, "STARTED 7:30 AM · YOU'RE LATE")
+    }
+
     /// `.joinSession` needs BOTH a live session and a start stamp — its copy
     /// reads "STARTED {time} · YOU'RE LATE", and there is no honest time to
     /// put there without one. A live session with no stamp is still a

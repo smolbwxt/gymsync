@@ -263,6 +263,14 @@ struct SessionLiveView: View {
     /// so it is a whole sentence, not a clause.
     private static let rosterFailedText =
         "Couldn't load who's here — the crew's controls may be missing until it does."
+    /// The sentence a refused `self_swaps` write puts in that same slot, named
+    /// for the same reason (final review N6): it PROMISES a retry, so when the
+    /// retry lands the promise is kept and the line must go. `flushSwapOutbox`
+    /// is the one place that happens, and it retires only this line — a roster
+    /// failure or a refused squad swap is a statement about something the
+    /// write knows nothing about.
+    private static let swapRetryText =
+        "Couldn't save the swap — it applies on this phone; will retry."
     /// Canvas Completion Task 4 fix round 1 (proof p31-errors, "Set didn't
     /// save"): dedicated to `logSetAndAdvance`'s failure only — deliberately
     /// separate from the generic `errorText` above (which stays the small
@@ -2022,9 +2030,19 @@ struct SessionLiveView: View {
     /// the turn-holder's; in Freestyle and Together there is no turn to
     /// hold, so it reads true for everyone. The readback says which, so a
     /// dead button is never a silent one.
+    ///
+    /// THE VERB IS THE STYLE'S, NOT THE ROTATION'S (frames 155-157). The
+    /// title was a literal here, so a Freestyle lifter — every ad-hoc solo
+    /// workout since C1 — was told to "PASS" to a crew that does not exist,
+    /// and so was every Together lifter, in a style that never had a turn.
+    /// `RoundCopy.logControlTitle` is that decision, pure and tested over
+    /// every `SessionStyle`.
     private var logControlFoot: LogControlFoot {
         LogControlFoot(
-            title: isLoggingSet ? "LOGGING…" : (logIsFailed ? "LOG FAIL & PASS" : "LOG SET & PASS"),
+            title: RoundCopy.logControlTitle(style: style,
+                                             isSolo: hidesCrewFurniture,
+                                             isFailed: logIsFailed,
+                                             isLogging: isLoggingSet),
             readback: isLoggingSet ? nil : turnCTAReadback,
             isFailed: logIsFailed,
             isDisabled: isLoggingSet || !logControlIsMine
@@ -3525,8 +3543,20 @@ struct SessionLiveView: View {
                 // successful replay. Without this guard, that echo would double
                 // -append the row (and double-count penaltyLogged) once reconnected.
                 // No-op for the ordinary online path — a fresh id is never already
-                // in feedSets.
-                guard !feedSets.contains(where: { $0.id == log.id }) else { return }
+                // in the session's rows.
+                //
+                // AGAINST `allSessionSets`, NEVER `feedSets` (final review
+                // NEW-3). The feed is capped at 30 and the guard was reading
+                // it, so a row that had aged out of the feed was invisible to
+                // the check and its echo appended a SECOND copy into the
+                // uncapped array — the one the cursor, the counts and the
+                // recap all read — and double-counted `penaltyLogged` with it.
+                // The merge re-seeds pending rows at the END of
+                // `allSessionSets` on every reload, so they normally survive
+                // `prefix(30)`; more than 30 rows logged offline at once is
+                // what made it reachable. Same "the feed caps at 30, so it
+                // undercounts" law `mySetCount` already states.
+                guard !allSessionSets.contains(where: { $0.id == log.id }) else { return }
                 // Prepend to feed (newest-first), cap 30
                 feedSets.insert(log, at: 0)
                 if feedSets.count > 30 { feedSets = Array(feedSets.prefix(30)) }
@@ -3901,8 +3931,28 @@ struct SessionLiveView: View {
             SessionSwapPendingStore.shared.confirm(liveSession.id, matching: layer)
         } catch {
             AppLogger.sessions.error("self_swaps write failed: \(error, privacy: .public)")
-            errorText = "Couldn't save the swap — it applies on this phone; will retry."
+            errorText = Self.swapRetryText
         }
+    }
+
+    /// THE RETRY, AND THE RETIREMENT OF THE NOTICE IT ANSWERS (final review
+    /// N6).
+    ///
+    /// `persistSelfSwaps`' line says "will retry", and nothing cleared it when
+    /// the retry succeeded — so a lifter could sit looking at "Couldn't save
+    /// the swap" for the rest of a workout in which it had long since saved.
+    /// Tap-to-dismiss was the only exit from a sentence that was no longer
+    /// true.
+    ///
+    /// ONLY WHEN THERE WAS SOMETHING TO FLUSH, and only ITS OWN line: a clean
+    /// outbox returns true without writing anything, which is not news about
+    /// any notice on screen.
+    @MainActor
+    private func flushSwapOutbox() async {
+        let wasDirty = SessionSwapPendingStore.shared.isDirty(liveSession.id)
+        let landed = await SessionSwapPendingStore.shared.flushIfDirty(liveSession.id)
+        guard wasDirty, landed, errorText == Self.swapRetryText else { return }
+        errorText = nil
     }
 
     @MainActor
@@ -3999,8 +4049,12 @@ struct SessionLiveView: View {
         async let setsFetch  = SessionRepository.sessionSets(sessionID: session.id)
         async let sessionRef = SessionRepository.session(id: session.id)
 
+        // nil MEANS THE FETCH FAILED, and that is not the same as "no sets"
+        // (final review F3): the merge below then builds on the rows this body
+        // already holds, so a reload that fails mid-session loses nothing.
+        var fetchedSets: [SetLog]?
         do {
-            let (fetchedParts, fetchedSets, fetchedSession) =
+            let (fetchedParts, sets, fetchedSession) =
                 try await (pFetch, setsFetch, sessionRef)
             rosterLoadFailed = false
             // …and retire its notice, but ONLY its own. Another writer's
@@ -4010,24 +4064,7 @@ struct SessionLiveView: View {
             if errorText == Self.rosterFailedText { errorText = nil }
             participants = fetchedParts
             if let s = fetchedSession { liveSession = s }
-
-            // Build feed: newest first, cap 30
-            feedSets = Array(fetchedSets.reversed().prefix(30))
-            // Uncapped mirror — powers rotation/roster derivations.
-            allSessionSets = fetchedSets
-
-            // Precount my penalty reps already logged (failed burpees don't clear debt)
-            penaltyLogged = fetchedSets
-                .filter { $0.userID == selfID && $0.isPenalty && !$0.isFailed }
-                .compactMap(\.reps)
-                .reduce(0, +)
-
-            // Populate exercise names
-            let exerciseIDs = Set(fetchedSets.map(\.exerciseID))
-            for id in exerciseIDs where exerciseNames[id] == nil {
-                let name = await ExerciseNameCache.name(for: id)
-                exerciseNames[id] = name
-            }
+            fetchedSets = sets
         } catch {
             AppLogger.sessions.error("SessionLiveView reload: \(error, privacy: .public)")
             rosterLoadFailed = true
@@ -4044,14 +4081,64 @@ struct SessionLiveView: View {
             errorText = Self.rosterFailedText
         }
 
+        // THE SETS THIS PHONE HAS NOT MANAGED TO SEND, ON BOTH LEGS (final
+        // review F3). They used to live only in `@State allSessionSets`, which
+        // MINIMISE destroys — so an offline re-entry showed none of them, the
+        // cursor rewound to slot 1 / set 1, and the lifter re-logged sets the
+        // queue was already holding. `PendingSetLogMerge` is that rule, and it
+        // is applied whether the fetch SUCCEEDED or FAILED: a queued row that
+        // has since landed is de-duplicated by the set's own id, so it appears
+        // once either way.
+        //
+        // The three derivations below moved out of the `do` block with it.
+        // They are recomputed from scratch from the merged array rather than
+        // incremented, so running them on the failure leg too is idempotent —
+        // and it is what puts a pending row's lift name in the feed after a
+        // re-entry that never reached the network.
+        allSessionSets = PendingSetLogMerge.merged(
+            fetched: fetchedSets ?? allSessionSets,
+            pending: OfflineSetLogQueue.shared.pendingLogs(sessionID: session.id),
+            sessionID: session.id)
+        // Build feed: newest first, cap 30
+        feedSets = Array(allSessionSets.reversed().prefix(30))
+        // Precount my penalty reps already logged (failed burpees don't clear debt)
+        penaltyLogged = allSessionSets
+            .filter { $0.userID == selfID && $0.isPenalty && !$0.isFailed }
+            .compactMap(\.reps)
+            .reduce(0, +)
+        // Populate exercise names
+        let exerciseIDs = Set(allSessionSets.map(\.exerciseID))
+        for id in exerciseIDs where exerciseNames[id] == nil {
+            let name = await ExerciseNameCache.name(for: id)
+            exerciseNames[id] = name
+        }
+
         // Routine
         if let routineID = liveSession.routineID {
+            // THE PLAN SURVIVES A LOST SIGNAL (final review NEW-1). The read
+            // has no cache of its own, so a re-entry with no network used to
+            // leave `routineExercises` empty — and an empty routine is what
+            // makes a restored swap layer invisible and a restored set
+            // slotless. A successful fetch always wins and is recorded; only
+            // a failed one falls back to what this process last saw.
+            var loadedNow: SessionRoutineCache.Loaded?
             if let (routine, exercises) = try? await RoutineRepository.fetch(id: routineID) {
-                routineName = routine.name
-                routineExercises = exercises
-                let exIDs = exercises.map(\.exerciseID)
+                loadedNow = SessionRoutineCache.Loaded(routine: routine, exercises: exercises)
+            }
+            if let loaded = SessionRoutineCache.shared.resolve(routineID: routineID,
+                                                              fetched: loadedNow) {
+                routineName = loaded.routine.name
+                routineExercises = loaded.exercises
+                let exIDs = loaded.exercises.map(\.exerciseID)
                 if allExercises.isEmpty || !exIDs.allSatisfy({ id in allExercises.contains(where: { $0.id == id }) }) {
-                    allExercises = (try? await ExerciseRepository.fetchAll()) ?? []
+                    // AND A FAILED CATALOG READ NO LONGER WIPES THE CATALOG
+                    // (same rule as the line above, on the same leg): this was
+                    // `(try? …) ?? []`, which answered a lost signal by
+                    // discarding every exercise name this session already had.
+                    // Assign only what a read actually returned.
+                    if let catalog = try? await ExerciseRepository.fetchAll() {
+                        allExercises = catalog
+                    }
                 }
             }
         } else if allExercises.isEmpty {
@@ -4085,6 +4172,9 @@ struct SessionLiveView: View {
     /// exact and not merely cautious: neither body has an un-swap, so the
     /// layer only grows within a session.
     ///
+    /// AND IT DOES NOT NEED THE ROSTER TO READ MY OWN (final review F2) —
+    /// see `SessionSwapSeeding`, which is that rule as a pure function.
+    ///
     /// THE NAME IS RE-RESOLVED, NEVER READ FROM THE ROW. Only ids are
     /// persisted — a name cached in a row goes stale the day the catalog
     /// renames a lift, and a swap's truth is the id. `SwapTarget` still
@@ -4092,29 +4182,34 @@ struct SessionLiveView: View {
     /// worded from it.
     @MainActor
     private func seedSwapLayers() async {
-        for (participant, _) in participants {
-            let isMe = participant.userID == selfID
-            // MY OWN row is laid under the pending store (ruling F1), so a
-            // swap whose write has not landed is not erased by the reload
-            // that races it. A crewmate's row is all there is to know about
-            // theirs.
-            let row = participant.selfSwaps ?? SessionSwapLayer()
-            let durable = isMe
-                ? SessionSwapPendingStore.shared.seeded(from: row, for: liveSession.id)
-                : row
-            guard !durable.isEmpty else { continue }
-            var held = selfScales[participant.userID] ?? [:]
+        // MY OWN LAYER IS NOT INSIDE THE ROSTER LOOP (final review F2). It
+        // used to be, and `participants` is `@State … = []` that `reload()`'s
+        // catch leaves empty — so offline, after MINIMISE, the loop body never
+        // ran and the pending layer the notice promised "applies on this
+        // phone" was silently dropped. `SessionSwapSeeding.layers` is that
+        // rule as a pure value: the outbox is keyed by session and holds only
+        // mine, so it needs no row to be readable.
+        let durableByUser = SessionSwapSeeding.layers(
+            roster: participants.map {
+                SessionSwapSeeding.Row(userID: $0.participant.userID,
+                                       layer: $0.participant.selfSwaps ?? SessionSwapLayer())
+            },
+            selfID: selfID,
+            pendingSelf: SessionSwapPendingStore.shared.layer(for: liveSession.id))
+        for (userID, durable) in durableByUser where !durable.isEmpty {
+            var held = selfScales[userID] ?? [:]
             let merged = SessionSwapLayer(held.mapValues(\.id)).merging(durable)
             for (slotID, replacementID) in merged.bySlot
             where held[slotID]?.id != replacementID {
                 held[slotID] = SwapTarget(id: replacementID,
                                           name: await swapName(for: replacementID))
             }
-            selfScales[participant.userID] = held
+            selfScales[userID] = held
         }
         // A natural opportunity: the layer is in hand and the network just
-        // answered. Silent — see `flushIfDirty`.
-        await SessionSwapPendingStore.shared.flushIfDirty(liveSession.id)
+        // answered. Silent on failure — see `flushIfDirty`; a SUCCESS retires
+        // the notice that promised it (N6).
+        await flushSwapOutbox()
         guard let squadRow = try? await SessionSwapRepository.loadSquad(sessionID: session.id),
               !squadRow.isEmpty else { return }
         let merged = SessionSwapLayer(squadSwaps.mapValues(\.id)).merging(squadRow)
@@ -4684,9 +4779,29 @@ struct SessionLiveView: View {
     }
 
     /// `PUSH CREW · FREESTYLE` — `togetherKicker`'s own pattern.
+    /// THE PAGE NAMES WHAT IT IS (frames 155-157). For a crew it is whose
+    /// session this is; for a party of one — where the rail draws no lifter
+    /// rows and the crew gates hide everything else that could carry a name —
+    /// it is the routine being run, because nothing else on the screen said
+    /// so. A session with no routine keeps the style's own word.
     private var freestyleKicker: String {
+        if hidesCrewFurniture {
+            return RoundCopy.freestyleSoloKicker(routineName: routineName)
+        }
         let crew = (ledgerGroup?.name ?? "").uppercased()
         return crew.isEmpty ? "FREESTYLE" : "\(crew) · FREESTYLE"
+    }
+
+    /// …and the title names THE LIFT, effective (frame 157 reads "Goblet
+    /// squat", not "Back squat"). `currentExerciseForSheet` is the lift of
+    /// the slot `currentRoutineExercise` landed on, resolved through
+    /// `effectiveRoutineExercises`, so the swap layer is already applied and
+    /// this cannot disagree with the entry card above it. The crew keeps
+    /// "Own pace": its lifter rows carry the names, and the header is about
+    /// the style.
+    private var freestyleTitle: String {
+        guard hidesCrewFurniture else { return RoundCopy.freestyleTitle }
+        return RoundCopy.freestyleSoloTitle(exerciseName: currentExerciseForSheet?.name)
     }
 
     /// The page, on a one-second tick — the rest clock is the biggest numeral
@@ -4736,8 +4851,17 @@ struct SessionLiveView: View {
 
         return FreestyleRailView(
             kicker: freestyleKicker,
-            title: RoundCopy.freestyleTitle,
+            title: freestyleTitle,
             rail: freestyleRailModel,
+            // A PROVED PARTY OF ONE READS THE CARD AS ITS OWN PROGRESS
+            // (frames 155-157). Non-nil is the whole switch: every crew call
+            // site — production `.unknown`/`.crew` and the catalog's frame
+            // 141 alike — leaves it nil and renders exactly as it does today.
+            // The count comes from `freestyleSetsDone`, which reads the
+            // session's own rows rather than the roster, so it is right on
+            // the leg where the participants fetch failed.
+            soloSetsDone: hidesCrewFurniture
+                ? selfID.map { freestyleSetsDone($0) } ?? 0 : nil,
             restElapsed: restElapsed,
             standing: standing,
             stretchSuggestion: stretch,
@@ -5185,7 +5309,7 @@ struct SessionLiveView: View {
                 Task { await OfflineSetLogQueue.shared.replay() }   // cheap drain
                 // The same opportunity for the swap outbox (ruling F1): a
                 // successful insert proves the connection.
-                Task { await SessionSwapPendingStore.shared.flushIfDirty(liveSession.id) }
+                Task { await flushSwapOutbox() }
             } catch let error as GymSyncError {
                 guard case .network = error else { throw error }
                 // Offline — queue for replay + optimistic local append. `feedSets`/
@@ -5698,25 +5822,52 @@ struct SessionLiveView: View {
     /// arrives as a realtime/poll echo (field 2026-08-01: the organizer's
     /// End only ended the session on the organizer's phone; members'
     /// screens just sat there).
+    ///
+    /// THE RECAP SEES WHAT THE CURSOR SEES (final review NEW-2, ruling 2's own
+    /// words: "the cursor and THE RECAP therefore see them").
+    ///
+    /// This fetched its own array and handed it, unmerged, to five consumers
+    /// at once — the HealthKit export, the group payload, the pump check, the
+    /// coach debrief and `RecapData`. A row still in `OfflineSetLogQueue` at
+    /// that instant was absent from all five, which is F3's harm with the sign
+    /// flipped: an UNDER-reported session. It is reachable without airplane
+    /// mode — reconnect and tap Finish before `replay()` (a fire-and-forget
+    /// `Task`) has drained, or while a pass has stopped on a `.network`
+    /// failure. The HealthKit export is a ONE-SHOT write, so its copy stays
+    /// short for good.
+    ///
+    /// AND A FAILED FETCH NOW YIELDS A RECAP RATHER THAN NOTHING. The fetch
+    /// was the only throwing call in the block, so its failure skipped the
+    /// export, the unsubscribe and the recap entirely and left the lifter with
+    /// one red line at the end of a workout they had just finished. It now
+    /// falls back to this body's own merged rows — the same
+    /// `fetched ?? allSessionSets` stance `reload()` takes — and the notice is
+    /// still shown, because the recap IS then built from what this phone knows
+    /// rather than from the server's record.
     @MainActor
     private func presentCompletion(_ completed: WorkoutSession) async {
         liveSession = completed
         pushWatchSessionState()
+        var fetchedSets: [SetLog]?
         do {
-            let allSets = try await SessionRepository.sessionSets(sessionID: session.id)
-            try? await HealthKitBridge.requestPermission()
-            try? await HealthKitBridge.exportWorkout(session: completed, setLogs: allSets)
-            await liveService.unsubscribe()
-            let groupPayload = await buildGroupRecapPayload(session: completed, sets: allSets)
-            let pumpCheck = await buildPumpCheckContext(session: completed, sets: allSets)
-            await assembleGroupDebrief(session: completed, allSets: allSets)
-            recapData = RecapData(session: completed, sets: allSets,
-                                  groupPayload: groupPayload, pumpCheck: pumpCheck)
+            fetchedSets = try await SessionRepository.sessionSets(sessionID: session.id)
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription
         }
+        let allSets = PendingSetLogMerge.merged(
+            fetched: fetchedSets ?? allSessionSets,
+            pending: OfflineSetLogQueue.shared.pendingLogs(sessionID: session.id),
+            sessionID: session.id)
+        try? await HealthKitBridge.requestPermission()
+        try? await HealthKitBridge.exportWorkout(session: completed, setLogs: allSets)
+        await liveService.unsubscribe()
+        let groupPayload = await buildGroupRecapPayload(session: completed, sets: allSets)
+        let pumpCheck = await buildPumpCheckContext(session: completed, sets: allSets)
+        await assembleGroupDebrief(session: completed, allSets: allSets)
+        recapData = RecapData(session: completed, sets: allSets,
+                              groupPayload: groupPayload, pumpCheck: pumpCheck)
     }
 
     @MainActor

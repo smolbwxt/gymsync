@@ -81,6 +81,17 @@ enum SoloResumeCursor {
     /// five rows against a target of three lands the lifter on set 4 of 3 —
     /// shipped behaviour for bonus sets — while `SlotProgress.count` still
     /// answers 5, which is what a display should say.
+    ///
+    /// THE WALK IS IN POSITION ORDER; THE ANSWER IS IN THE CALLER'S ORDER
+    /// (final review N4). This used to `enumerate` the array as handed in,
+    /// while everything it calls sorts by `position` — `SlotProgress.init` and
+    /// `RoutineProgression.currentSlot` both do. Every current caller happens
+    /// to pass position-ordered rows, so nothing was wrong on screen; but a
+    /// positional answer derived from an order the function does not establish
+    /// is one edit away from being wrong, and the edit would be silent.
+    /// `exerciseIndex` stays an index into the rows the CALLER handed in,
+    /// because that is the array `WorkoutSessionView.activeExercises` then
+    /// indexes with it.
     static func derive(rows: [RoutineExercise],
                        swapOverrides: [UUID: RoutineExercise],
                        logs: [SetLog]) -> Position {
@@ -88,9 +99,10 @@ enum SoloResumeCursor {
         let progress = SlotProgress(routine: layeredRows,
                                     logs: logs.filter { !$0.isPenalty })
         var position = Position(exerciseIndex: 0, setIndex: 1)
-        for (index, re) in layeredRows.enumerated() {
+        for re in layeredRows.sorted(by: { $0.position < $1.position }) {
             let target = max(re.targetSets ?? 1, 1)
             let done = progress.count(for: re)
+            let index = layeredRows.firstIndex(where: { $0.id == re.id }) ?? 0
             position = Position(exerciseIndex: index, setIndex: min(done, target) + 1)
             if done < target { break }
         }

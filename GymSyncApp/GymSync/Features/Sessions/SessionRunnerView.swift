@@ -340,9 +340,21 @@ struct SessionRunnerView: View {
     @MainActor
     private func loadPlan() async {
         guard warmingUp, planExercises.isEmpty,
-              let routineID = effective.routineID,
-              let (routine, exercises) = try? await RoutineRepository.fetch(id: routineID)
+              let routineID = effective.routineID else { return }
+        // THE PLAN SURVIVES A LOST SIGNAL (final review NEW-1) — the warm-up
+        // is where a minimised ad-hoc session comes back, and this read has no
+        // cache of its own. A successful fetch always wins and is recorded;
+        // only a failed one falls back to what this process last saw, so an
+        // edited routine can never be masked by a remembered copy.
+        var loadedNow: SessionRoutineCache.Loaded?
+        if let (routine, exercises) = try? await RoutineRepository.fetch(id: routineID) {
+            loadedNow = SessionRoutineCache.Loaded(routine: routine, exercises: exercises)
+        }
+        guard let loaded = SessionRoutineCache.shared.resolve(routineID: routineID,
+                                                             fetched: loadedNow)
         else { return }
+        let routine = loaded.routine
+        let exercises = loaded.exercises
         if exerciseCatalog == nil {
             exerciseCatalog = (try? await ExerciseRepository.fetchAll()) ?? []
         }

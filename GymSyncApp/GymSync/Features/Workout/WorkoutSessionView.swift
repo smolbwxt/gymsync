@@ -4165,7 +4165,15 @@ struct WorkoutSessionView: View {
     /// the top of the routine, which is the honest floor.
     @MainActor
     private func restoreLoggedProgress(sessionID: UUID) async {
-        let logs = (try? await SessionRepository.setLogs(sessionID: sessionID)) ?? []
+        // THE SAME MERGE THE ONE BODY MAKES (final review F3) — a set queued
+        // offline is part of this session's record whether or not the fetch
+        // reached the server, de-duplicated by the set's own id so a row that
+        // has since landed appears once. Two lines and the same function, so
+        // this body does not get a second answer for the rest of its life.
+        let logs = PendingSetLogMerge.merged(
+            fetched: (try? await SessionRepository.setLogs(sessionID: sessionID)) ?? [],
+            pending: OfflineSetLogQueue.shared.pendingLogs(sessionID: sessionID),
+            sessionID: sessionID)
         loggedSets = logs
         let workSets = logs.filter { !$0.isPenalty }
         if isFreeform {
@@ -4743,7 +4751,15 @@ struct WorkoutSessionView: View {
         guard let session else { return }
         do {
             let completedResult = try await SessionRepository.complete(sessionID: session.id)
-            let logs = try await SessionRepository.setLogs(sessionID: completedResult.id)
+            // THE FINISH PATH MERGES TOO (final review NEW-2) — these rows
+            // feed the recovery probes, the one-shot HealthKit export and the
+            // recap, so a set still in the outbox would be missing from all
+            // three. Same function, same two lines, as this body's resume read.
+            let fetchedLogs = try await SessionRepository.setLogs(sessionID: completedResult.id)
+            let logs = PendingSetLogMerge.merged(
+                fetched: fetchedLogs,
+                pending: OfflineSetLogQueue.shared.pendingLogs(sessionID: completedResult.id),
+                sessionID: completedResult.id)
             completedSession = completedResult
             // The session is durably over — retire the recovery pill.
             if appState.liveSoloSession?.id == session.id {

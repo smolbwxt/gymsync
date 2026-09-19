@@ -270,6 +270,75 @@ final class SessionSwapLayerTests: XCTestCase {
         XCTAssertEqual(store.layer(for: session).bySlot.count, 2)
     }
 
+    // MARK: - The seed, with and without a roster (final review F2)
+    //
+    // The live body consulted the outbox only INSIDE its roster loop, and a
+    // failed participants fetch leaves that roster empty — so the ONE
+    // connection state the outbox exists for was the one state it did not
+    // cover. `SessionSwapSeeding.layers` answers without a roster at all;
+    // written the old way (roster rows only), the first test below fails.
+
+    func testMyPendingLayerIsSeededWhenTheROSTERNeverLoaded() {
+        let me = UUID(), slot = UUID()
+        let layers = SessionSwapSeeding.layers(
+            roster: [],
+            selfID: me,
+            pendingSelf: SessionSwapLayer([slot: machinePressID]))
+        XCTAssertEqual(layers[me]?[slot], machinePressID,
+                       "airplane mode + MINIMISE + re-entry: the swap still applies on this phone")
+    }
+
+    func testAnEmptyRosterAndAnEmptyOutboxSeedNothing() {
+        let me = UUID()
+        let layers = SessionSwapSeeding.layers(roster: [], selfID: me,
+                                               pendingSelf: SessionSwapLayer())
+        XCTAssertEqual(layers[me], SessionSwapLayer())
+        XCTAssertTrue(layers[me]?.isEmpty ?? false,
+                      "an empty layer is skipped by the caller, never applied")
+    }
+
+    /// The roster ADDS what the database knows; pending still wins per slot,
+    /// because the row is behind by definition.
+    func testTheRosterADDSItsSlotsAndPendingStillWinsTheOnesItNames() {
+        let me = UUID(), pendingSlot = UUID(), rowOnlySlot = UUID()
+        let layers = SessionSwapSeeding.layers(
+            roster: [SessionSwapSeeding.Row(
+                userID: me,
+                layer: SessionSwapLayer([pendingSlot: inclineID,
+                                         rowOnlySlot: squatID]))],
+            selfID: me,
+            pendingSelf: SessionSwapLayer([pendingSlot: machinePressID]))
+        XCTAssertEqual(layers[me]?[pendingSlot], machinePressID,
+                       "the write that has not landed outranks the row it has not reached")
+        XCTAssertEqual(layers[me]?[rowOnlySlot], squatID,
+                       "and a slot only the row knows is still adopted")
+    }
+
+    func testACrewmatesLayerIsTheirOwnRowAndNothingOfMine() {
+        let me = UUID(), them = UUID(), mySlot = UUID(), theirSlot = UUID()
+        let layers = SessionSwapSeeding.layers(
+            roster: [SessionSwapSeeding.Row(userID: them,
+                                            layer: SessionSwapLayer([theirSlot: inclineID]))],
+            selfID: me,
+            pendingSelf: SessionSwapLayer([mySlot: machinePressID]))
+        XCTAssertEqual(layers[them], SessionSwapLayer([theirSlot: inclineID]))
+        XCTAssertEqual(layers[me]?[mySlot], machinePressID)
+        XCTAssertNil(layers[them]?[mySlot], "my outbox is mine — it is never laid over theirs")
+    }
+
+    /// No signed-in id yet: there is no "mine" to seed, and the roster is
+    /// still adopted exactly as it reads.
+    func testWithNoSelfIdTheRosterIsAdoptedUnchanged() {
+        let them = UUID(), slot = UUID()
+        let layers = SessionSwapSeeding.layers(
+            roster: [SessionSwapSeeding.Row(userID: them,
+                                            layer: SessionSwapLayer([slot: inclineID]))],
+            selfID: nil,
+            pendingSelf: SessionSwapLayer([UUID(): machinePressID]))
+        XCTAssertEqual(layers.count, 1)
+        XCTAssertEqual(layers[them]?[slot], inclineID)
+    }
+
     func testTodaysScaleStaysKeyedOnTheLiftNotTheSlot() {
         // Decision 2's last paragraph: the athlete accepted "one set fewer"
         // against a LIFT at the warm-up, and both slots naming that lift are

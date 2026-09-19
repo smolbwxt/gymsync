@@ -198,6 +198,56 @@ final class SessionSwapPendingStore {
     }
 }
 
+// MARK: - SessionSwapSeeding
+//
+// WHOSE LAYER IS WHAT, AT A SEED — and it is pure because the leg it exists
+// for is the one where there is no roster (final review F2).
+//
+// The live body used to consult the outbox INSIDE `for (participant, _) in
+// participants`, and `participants` is `@State … = []` that a failed fetch
+// leaves empty. So on the one connection state the outbox was built for —
+// airplane mode, a refused `self_swaps` write, MINIMISE, re-entry, still
+// offline — the loop body never ran and the pending layer was never applied.
+// The notice that produced it says "it applies on this phone", and it did
+// not.
+//
+// MY OWN LAYER IS THEREFORE SEEDED BEFORE AND INDEPENDENT OF THE ROSTER,
+// exactly as the retired `WorkoutSessionView.adoptSwapLayer` does it: the
+// outbox is keyed by SESSION and holds only MY layer, so it needs no row to
+// be readable. The roster then only ADDS what the database knows — for me
+// and for everyone else — and pending still wins per slot, because the row
+// is behind by definition.
+enum SessionSwapSeeding {
+
+    /// One roster row, reduced to the two things a seed reads.
+    struct Row: Equatable {
+        var userID: UUID
+        var layer: SessionSwapLayer
+
+        init(userID: UUID, layer: SessionSwapLayer) {
+            self.userID = userID
+            self.layer = layer
+        }
+    }
+
+    /// The durable layer to apply per lifter: every roster row's own, with MY
+    /// pending layer laid over mine whether or not the roster carries me.
+    ///
+    /// An EMPTY roster and a `nil` `selfID` are both ordinary, not errors: the
+    /// first is a failed fetch (and the whole point of this function), the
+    /// second is a body whose profile has not resolved, where there is no
+    /// "mine" to seed.
+    static func layers(roster: [Row],
+                       selfID: UUID?,
+                       pendingSelf: SessionSwapLayer) -> [UUID: SessionSwapLayer] {
+        var byUser: [UUID: SessionSwapLayer] = [:]
+        for row in roster { byUser[row.userID] = row.layer }
+        guard let selfID else { return byUser }
+        byUser[selfID] = pendingSelf.merging(byUser[selfID] ?? SessionSwapLayer())
+        return byUser
+    }
+}
+
 // MARK: - SessionSwapRepository
 //
 // The two homes' read and write paths, and the ONE RPC.

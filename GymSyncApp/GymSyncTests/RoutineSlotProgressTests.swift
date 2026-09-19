@@ -202,6 +202,60 @@ final class RoutineSlotProgressTests: XCTestCase {
                        "the by-lift lookup would have answered the FIRST slot's 5")
     }
 
+    /// FINAL REVIEW, ruling 5 — THE THIRD BEHAVIOURAL MOVE through a frozen
+    /// symbol's inputs, pinned explicitly rather than inherited.
+    ///
+    /// `prefillLogInputs`, `commitInlineLog`, `turnEntryCard` and
+    /// `LogFollowUp.calls(for:)` are byte-identical, but two of the values
+    /// that reach them moved with decision 3: `currentExerciseForSheet` now
+    /// reads the lift off `currentRoutineExercise`'s row instead of running
+    /// its own by-lift walk, and `turnEntryCard`'s prescription line is
+    /// resolved by slot. The push-1 review pinned only `defaultReps` (the test
+    /// above).
+    ///
+    /// WHAT CHANGED FOR A LIFTER, in the case that actually differs: a slot
+    /// whose lift was swapped MID-EXERCISE. Three sets are in the log for that
+    /// slot — one under the original lift, two under the substitute — so the
+    /// slot is done and the card moves to the next station. The by-lift walk
+    /// counts only the two sets naming the layered lift, so it asks for a
+    /// fourth set of a slot that is finished, and prints that slot's
+    /// prescription while doing it. Reading the slot is the intended
+    /// consequence of per-slot keying, and it is the same answer the plan list
+    /// and the station card already give.
+    func testTheCardFollowsTheSLOTAfterAMidExerciseSwapAndTheByLiftWalkDoesNot() {
+        var bench = slot(benchID, sets: 3, position: 0)
+        bench.targetReps = "8"
+        var squat = slot(squatID, sets: 3, position: 1)
+        squat.targetReps = "5"
+        let layered = RoutineLayering.apply([bench, squat],
+                                            selfScale: [bench.id: inclineID])
+        // One set of the original lift, then the swap, then two of the
+        // substitute — all three naming the one slot they were done at.
+        let logged = logs(benchID, 1, slot: bench.id)
+            + logs(inclineID, 2, slot: bench.id, from: 100)
+
+        let progress = SlotProgress(routine: layered, logs: logged)
+        let bySlot = RoutineProgression.currentSlot(
+            routine: layered,
+            completedSets: { re in progress.count(for: re) })
+        XCTAssertEqual(bySlot?.id, squat.id, "the swapped slot is finished; the walk moves on")
+        XCTAssertEqual(bySlot?.exerciseID, squatID,
+                       "`currentExerciseForSheet` reads the lift off THIS row")
+        XCTAssertEqual(bySlot?.targetReps, "5",
+                       "`turnEntryCard`'s prescription line rides the same row")
+
+        // The spelling both of those used before decision 3, stated as an
+        // assertion so the difference is on the record rather than implied.
+        let byLift = RoutineProgression.currentExercise(
+            routine: layered,
+            completedSets: { exerciseID in
+                logged.filter { $0.exerciseID == exerciseID }.count
+            })
+        XCTAssertEqual(byLift?.id, bench.id,
+                       "the by-lift walk sees two sets of the substitute and asks for a fourth "
+                       + "set of a slot that already holds three")
+    }
+
     // MARK: - No swap, and pre-column: unchanged
 
     func testANoSwapSessionIsExactlyWhatItAlwaysWas() {
@@ -246,6 +300,39 @@ final class RoutineSlotProgressTests: XCTestCase {
         XCTAssertEqual(count(layered[0], []), 0)
         XCTAssertEqual(SoloResumeCursor.derive(rows: rows, swapOverrides: [:], logs: []),
                        SoloResumeCursor.Position(exerciseIndex: 0, setIndex: 1))
+    }
+
+    // MARK: - The walk's own order (final review N4)
+    //
+    // `derive` used to enumerate the array exactly as handed in, while
+    // `SlotProgress.init` and `RoutineProgression.currentSlot` both sort by
+    // `position`. Every caller passes position-ordered rows today, so nothing
+    // was wrong on screen — but the answer is positional and the order was the
+    // caller's to get right. Both cases below fail on the enumerated spelling.
+
+    func testTheWalkIsInPositionOrderEvenWhenTheRowsArriveOutOfIt() {
+        let second = slot(squatID, sets: 3, position: 1)
+        let first = slot(benchID, sets: 3, position: 0)
+        // Handed in BACKWARDS, nothing logged: the lifter belongs on the
+        // routine's first movement, whose index in this array is 1.
+        XCTAssertEqual(
+            SoloResumeCursor.derive(rows: [second, first], swapOverrides: [:], logs: []),
+            SoloResumeCursor.Position(exerciseIndex: 1, setIndex: 1),
+            "the enumerated walk answered the array's first row, which is position 2")
+    }
+
+    /// A finished routine lands on the LAST slot BY POSITION — the one the
+    /// lifter finishes bonus sets from — not on whichever row the array
+    /// happened to end with.
+    func testAFinishedRoutineLandsOnTheLastSlotByPositionNotByArrayOrder() {
+        let second = slot(squatID, sets: 1, position: 1)
+        let first = slot(benchID, sets: 1, position: 0)
+        let logged = logs(benchID, 1, slot: first.id)
+            + logs(squatID, 1, slot: second.id, from: 100)
+        XCTAssertEqual(
+            SoloResumeCursor.derive(rows: [second, first], swapOverrides: [:], logs: logged),
+            SoloResumeCursor.Position(exerciseIndex: 0, setIndex: 2),
+            "index 0 IS position 2 in this array — the answer is the caller's index of the last slot")
     }
 
     // MARK: - Penalties, and the queue

@@ -675,16 +675,51 @@ struct HomeView: View {
 
     private func oneButtonInput(for session: WorkoutSession, now: Date) -> HomeOneButtonInput {
         let opensAt = checkInOpensAt(session)
+        // MY OWN live ad-hoc workout (final review F4). The shape comes from
+        // `SoloSessionShape.isSoloByConstruction` — the same triple
+        // `SessionPresentation.of` reads to decide this row opens as the cover
+        // — and the ownership from the organizer, which is the only thing at a
+        // session row that separates the workout I started from one I am
+        // merely a participant of.
+        let isSoloByConstruction = SoloSessionShape.isSoloByConstruction(
+            groupID: session.groupID,
+            roomCode: session.roomCode,
+            scheduledFor: session.scheduledFor)
+        let isMine = signedInUserID.map { session.organizerID == $0 } ?? false
         return HomeOneButtonInput(
             isInProgress: session.state == "in_progress",
             startedAtLabel: session.startedAt.map { $0.formatted(.dateTime.hour().minute()) },
             isGroupSession: session.groupID != nil,
+            isOwnSoloWorkout: isSoloByConstruction && isMine,
             checkInAvailable: checkInAvailable(session, now: now),
             opensInLabel: opensAt.flatMap { now < $0 ? compactCountdown(to: $0, from: now) : nil },
             crewName: crewName(for: session),
             routineName: routineLabel(for: session),
             timeLabel: session.scheduledFor.map { $0.formatted(.dateTime.hour().minute()) } ?? ""
         )
+    }
+
+    /// WHO IS SIGNED IN, from whichever source already knows (final review
+    /// NEW-4).
+    ///
+    /// `isOwnSoloWorkout` used to read `currentProfile?.id` alone, which is
+    /// `nil` until the profile fetch lands — and a `nil` there does not read
+    /// as "not yet known", it reads as "not mine", which is the WRONG verb
+    /// ("JOIN THE SESSION · YOU'RE LATE") rather than a cautious one. That is
+    /// the shape N1 taught this branch to avoid with a three-valued
+    /// `SoloSessionShape.Crew`.
+    ///
+    /// The auth session knows first and knows synchronously: `AuthService`'s
+    /// `state` is the same accessor `RootView` pattern-matches on for every
+    /// replay trigger and `AuthServiceCurrentUserIDProvider` reads for the
+    /// offline queue's user scoping. `RootView` already renders `MainTabView`
+    /// only in `.signedIn` WITH a loaded profile, so the flicker is not
+    /// reachable through that gate today — this removes the dependency on the
+    /// gate rather than on a fix for a bug that gate happens to hide.
+    private var signedInUserID: UUID? {
+        if let profileID = appState.currentProfile?.id { return profileID }
+        if case .signedIn(let userID) = AuthService.shared.state { return userID }
+        return nil
     }
 
     /// The crew a session belongs to, or `Solo`. Same lookup
@@ -715,7 +750,10 @@ struct HomeView: View {
     private func performOneButtonAction(_ state: HomeOneButtonState,
                                         session: WorkoutSession?) {
         switch state {
-        case .joinSession, .checkIn:
+        case .joinSession, .checkIn, .resumeWorkout:
+            // `.resumeWorkout` takes the SAME route (final review F4): a solo
+            // session is always the cover, and `present(_:)` is where that is
+            // decided, by the row rather than by the button that found it.
             if let session { present(session) }
         case .checkInOpens:
             guard let session else { return }

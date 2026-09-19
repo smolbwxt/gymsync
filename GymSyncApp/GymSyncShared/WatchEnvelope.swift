@@ -290,13 +290,23 @@ struct WatchSessionStatePayload: Codable, Sendable, Equatable {
     /// a set logged from the wrist is attributed to the same station a set
     /// logged on the phone would be.
     ///
-    /// It had to travel. A NULL slot on a row belonging to a slot that
-    /// already has attributed rows is NOT counted — the fallback serves a
-    /// slot with zero attributed rows only — so without this field a set
-    /// logged from the watch would vanish from that slot's count the moment
-    /// any set of it had been logged on the phone. `nil` for a freeform
-    /// session and for a Watch build predating this, which is exactly the
-    /// pre-column case the fallback exists for.
+    /// IT HAD TO TRAVEL, and the reason is not the one this comment used to
+    /// give (final review N1). It named the PRE-RULING fallback — "a slot that
+    /// already has attributed rows does not count NULL rows" — which ruling
+    /// R-F2-1 rejected. The shipped rule (`Models/RoutineProgression.swift`,
+    /// `SlotProgress`) is that NULL-slot rows are never dropped: they are
+    /// placed among the slots naming that lift, in routine order, each taking
+    /// only what its target still has room for, with any surplus going to the
+    /// last of them.
+    ///
+    /// So the field earns its place on the wire by the OTHER half of that
+    /// rule: a slot already at its target has no room left, so a wrist row
+    /// arriving with no slot would be pushed past it — onto a later slot
+    /// naming the same lift, or onto the last one as surplus — rather than
+    /// counting where the lifter actually was. Naming the slot is what puts it
+    /// at the station the phone was on. `nil` for a freeform session and for a
+    /// Watch build predating this, which is exactly the pre-column population
+    /// the placement rule exists for.
     let routineExerciseID: UUID?
 
     init(
