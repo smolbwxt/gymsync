@@ -149,9 +149,13 @@ final class SoloSessionShapeTests: XCTestCase {
         // the roster proves they are alone — and must still get Home's
         // ordinary push, because the row alone cannot prove it.
         let scheduled = Self.date(2099, 3, 14)
-        XCTAssertTrue(SoloSessionShape.hidesCrewFurniture(participantCount: 1))
+        XCTAssertTrue(SoloSessionShape.hidesCrewFurniture(
+            groupID: nil, roomCode: nil, scheduledFor: scheduled,
+            loadedParticipantCount: 1),
+            "once the roster proves a party of one, the furniture goes")
         XCTAssertFalse(SoloSessionShape.isSoloByConstruction(
-            groupID: nil, roomCode: nil, scheduledFor: scheduled))
+            groupID: nil, roomCode: nil, scheduledFor: scheduled),
+            "but the row alone could not have proved it")
     }
 
     // MARK: - Helper
