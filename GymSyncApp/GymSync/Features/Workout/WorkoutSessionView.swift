@@ -1291,19 +1291,23 @@ struct WorkoutSessionView: View {
         swapOptions = options
     }
 
-    private func applySwap(_ option: SwapOption) {
-        guard let re = currentRoutineExercise else { return }
-        var swapped = re
-        swapped = RoutineExercise(
-            id: re.id, routineID: re.routineID, exerciseID: option.id,
-            position: re.position, targetSets: re.targetSets,
-            targetReps: re.targetReps, targetWeight: nil,
-            restSeconds: re.restSeconds, notes: re.notes,
-            supersetGroup: re.supersetGroup,
-            targetRepsLow: re.targetRepsLow, targetRepsHigh: re.targetRepsHigh,
-            cardioZone: re.cardioZone, cardioMinutes: re.cardioMinutes)
-        soloSwapOverrides[re.id] = swapped
+    /// THE ONE REBUILD A SWAP PERFORMS now runs through
+    /// `RoutineLayering.swapped` (hotfix 2026-09-18, ruling H6). The
+    /// hand-written copy that used to live here listed fields by name and
+    /// silently dropped three that THIS screen renders: `targetFailure`
+    /// (an AMRAP row became a plain `3 × —`), `setType`, `dropSteps` and
+    /// `dropPercent` (a drop prescription was cancelled by swapping the
+    /// lift, and the drop-ladder sheet never armed). One spelling, one
+    /// test file — the second copy is how those three went missing.
+    private func applySwap(toExerciseID targetID: UUID) {
+        guard let re = currentRoutineExercise, targetID != re.exerciseID else {
+            showSwapSheet = false
+            return
+        }
+        soloSwapOverrides[re.id] = RoutineLayering.swapped(re, to: targetID)
         showSwapSheet = false
+        // The layer has to outlive this view — see `soloSwapOverrides`.
+        mirrorSwapLayer()
         soloPrefill()
     }
 
@@ -1316,7 +1320,7 @@ struct WorkoutSessionView: View {
                         .foregroundStyle(theme.neutral500)
                 }
                 ForEach(swapOptions) { option in
-                    Button { applySwap(option) } label: {
+                    Button { applySwap(toExerciseID: option.id) } label: {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(option.name)
                                 .font(GSFont.bold(15, relativeTo: .body))
