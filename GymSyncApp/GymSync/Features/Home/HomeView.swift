@@ -329,7 +329,15 @@ struct HomeView: View {
             .fullScreenCover(item: $adHocSession, onDismiss: {
                 Task { await refresh() }
             }) { session in
+                // S4: MINIMISE, the only way out (decision 6). The row was
+                // created by this screen a moment ago, so it is ad-hoc by
+                // construction — the predicate is asked anyway so the four
+                // covers read one law rather than four assumptions.
                 SessionEntryView(session: session)
+                    .soloMinimiseOverlay(SoloSessionShape.isAdHocSolo(
+                        participantCount: 1,
+                        roomCode: session.roomCode,
+                        scheduledFor: session.scheduledFor))
             }
             // The weekly-goal editor, moved off `weeklyGoalWidget` (deleted
             // with the wide streak card) and onto the page root — it is the

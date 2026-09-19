@@ -485,7 +485,14 @@ private struct MainTabView: View {
         // the swipe destroyed the view's `@State`, which is the defect this
         // phase exists to end.
         .fullScreenCover(item: $resumeTarget) { live in
+            // S4: MINIMISE, the only way out. Re-entering through the pill
+            // and minimising again is a loop the lifter may run as often as
+            // they like — nothing is torn down either way.
             SessionEntryView(session: live.session)
+                .soloMinimiseOverlay(SoloSessionShape.isAdHocSolo(
+                    participantCount: 1,
+                    roomCode: live.session.roomCode,
+                    scheduledFor: live.session.scheduledFor))
         }
         // Trainer arm T3: does this account coach? One light fetch at
         // launch; CoachingView/TrainerTabView keep it fresh after.

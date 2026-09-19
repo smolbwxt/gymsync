@@ -471,6 +471,20 @@ struct SessionLiveView: View {
     }
     private var isOrganizer: Bool { liveSession.organizerID == selfID }
 
+    /// THE SOLO FURNITURE GATE (plan task S4, brief item 7) — one law, read
+    /// in every place the crew's furniture would otherwise reach a lifter who
+    /// is alone in a gym. `SoloSessionShape.hidesCrewFurniture` carries the
+    /// reasoning and the list of what the body ALREADY hides without it.
+    ///
+    /// IT ASKS ABOUT THE ROSTER AND NOTHING ELSE, so a SCHEDULED solo session
+    /// is treated identically — which is correct: a party of one has nobody
+    /// to talk to whether or not a calendar said so. `rosterCount` is the
+    /// catalog-aware count, so a fixture world that names a crew still
+    /// renders the crew's furniture.
+    private var hidesCrewFurniture: Bool {
+        SoloSessionShape.hidesCrewFurniture(participantCount: rosterCount)
+    }
+
     /// WHOSE ACT THE LOG CONTROL IS — plan task S5's one behavioural change.
     ///
     /// Rounds is a rotation: the inline LOG THIS SET card belongs to whoever
@@ -509,6 +523,13 @@ struct SessionLiveView: View {
     @MainActor
     private func joinVoiceIfEligible() async {
         guard isVoiceEligible else { return }
+        // NOBODY TO TALK TO (plan task S4, brief item 7). This is the gate
+        // that matters most of the four: the others hide a control, this one
+        // declines to OPEN a live voice room — a real connection, and on a
+        // device that has never granted it, a microphone prompt — for a
+        // lifter who is the only person in the session. Same roster law as
+        // the rail the dock would have drawn.
+        guard !hidesCrewFurniture else { return }
         await VoiceRoomService.shared.join(sessionID: liveSession.id)
     }
 
@@ -1042,10 +1063,15 @@ struct SessionLiveView: View {
 
             Spacer(minLength: 8)
 
-            if case .connecting = VoiceRoomService.shared.state {
+            // THE RAIL'S CREW HALF (plan task S4, brief item 7). Three doors
+            // onto other people — the voice pill, the mixer, the chat — and
+            // the presence count, all of which a lifter alone in a gym must
+            // never see. Each is wrapped rather than removed, so the rail's
+            // child count is unchanged and nothing a crew sees moves.
+            if !hidesCrewFurniture, case .connecting = VoiceRoomService.shared.state {
                 GSConnectingVoicePill()
             }
-            if isVoiceConnected {
+            if !hidesCrewFurniture, isVoiceConnected {
                 Button { showVoiceMixerSheet = true } label: {
                     Image(systemName: "slider.horizontal.3")
                         .font(.system(size: 13, weight: .semibold))
@@ -1055,23 +1081,28 @@ struct SessionLiveView: View {
                 }
                 .buttonStyle(.plain)
             }
-            Button { showChatSheet = true } label: {
-                Image(systemName: "bubble.left.and.bubble.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(theme.neutral700)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+            if !hidesCrewFurniture {
+                Button { showChatSheet = true } label: {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(theme.neutral700)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
 
-            HStack(spacing: 4) {
-                Text("\(rosterCount)")
-                    .font(GSFont.bold(11, relativeTo: .caption2).monospacedDigit())
-                Image(systemName: "person.2.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                // A presence count of one is not presence, it is a reminder
+                // that you are on your own. The number answers "who else is
+                // here", and for a party of one the honest render is nothing.
+                HStack(spacing: 4) {
+                    Text("\(rosterCount)")
+                        .font(GSFont.bold(11, relativeTo: .caption2).monospacedDigit())
+                    Image(systemName: "person.2.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .foregroundStyle(theme.neutral700)
+                .frame(width: 56, height: 44)
             }
-            .foregroundStyle(theme.neutral700)
-            .frame(width: 56, height: 44)
         }
         .padding(.horizontal, 6)
         .frame(height: 44)
@@ -1889,7 +1920,13 @@ struct SessionLiveView: View {
             // my-turn page and Freestyle share, so this mount is two of the
             // three missing pages; Together's own foot carries the third.
             // Same order as the round wait's foot: notices, strip, dock.
-            if !reactionEmojis.isEmpty {
+            // …and not for a party of one (plan task S4). `tapReaction`
+            // broadcasts on the session channel; with a roster of one it
+            // reaches nobody, so the pills are a crew gesture offered to
+            // somebody with no crew. Same roster law, added to the existing
+            // condition rather than as a new child — this `VStack` holds
+            // exactly ten.
+            if !hidesCrewFurniture, !reactionEmojis.isEmpty {
                 ReactionStrip(emojis: reactionEmojis,
                               onTap: { emoji in Task { await tapReaction(emoji: emoji) } })
                 Color.clear.frame(height: 6)
@@ -1973,15 +2010,31 @@ struct SessionLiveView: View {
         return false
     }
 
+    /// Gated for a party of one (plan task S4): with `joinVoiceIfEligible`
+    /// declining to open a room there is nothing for these to report, and an
+    /// empty notices slot in the shared foot is one fewer crew shape on a
+    /// solo screen. `@ViewBuilder` rather than a child of `turnChrome`,
+    /// whose `VStack` is at the ten-child ceiling exactly.
+    @ViewBuilder
     private var voiceNotices: some View {
-        VoiceNotices(foot: voiceFoot)
+        if !hidesCrewFurniture {
+            VoiceNotices(foot: voiceFoot)
+        }
     }
 
     /// The mic rail: what is left of the plate dock (plan task S4) once the
     /// plates and the ALL door left with the soundboard. Push-to-talk is NOT
     /// collateral (plan constraint 21), and it sits exactly where it sat.
+    ///
+    /// NOT FOR A PARTY OF ONE (plan task S4, brief item 7). The dock was not
+    /// solo-gated at all — an ad-hoc lifter got a push-to-talk control for a
+    /// room with nobody in it, which is the plainest piece of crew furniture
+    /// on the freestyle rail's foot. Gated INSIDE the rail rather than at its
+    /// mount, because `turnChrome`'s `VStack` already carries exactly ten
+    /// children and an eleventh would break the ViewBuilder ceiling.
+    @ViewBuilder
     private var turnMicRail: some View {
-        Group {
+        if !hidesCrewFurniture {
             HStack(spacing: 8) {
                 Spacer(minLength: 4)
 
@@ -2203,13 +2256,23 @@ struct SessionLiveView: View {
         }
         // Rest buzz (owner 2026-08-14) — one observation point for the
         // self-rotation interlude, same shape as solo's restEndAt wire.
-        // The same point PERSISTS the window to LiveSessionTimerStore so a
-        // sheet swipe-down/rejoin can't erase a running rest.
+        // The same point carries the window into `LiveSessionTimerStore` so a
+        // dismiss/rejoin — a MINIMISE, since Phase C1 — can't erase a running
+        // rest.
+        //
+        // IT IS IN MEMORY, NOT ON DISK. This comment and the one below used
+        // to say "writes to disk", and the store's own header says the
+        // opposite in as many words: "Memory-only on purpose: anchors are
+        // meaningless across app launches". So a rest window survives a
+        // minimise and a lock, and does NOT survive a relaunch — the lifter
+        // comes back to the next set with the countdown gone, which is the
+        // documented limit rather than a bug to report (decision 5's table).
         .onChange(of: selfRotationRestUntil) { _, _ in
             // A capture never enters the rest interlude (nothing logs), so
             // this cannot fire — the guard is here so that stays true if
             // something later seeds the window (`RestNotifier` schedules a
-            // local notification, and `LiveSessionTimerStore` writes to disk).
+            // local notification, and `LiveSessionTimerStore` records an
+            // in-memory anchor).
             guard !catalogSkipLoad else { return }
             if let end = selfRotationRestUntil {
                 RestNotifier.schedule(at: end)
@@ -3162,13 +3225,19 @@ struct SessionLiveView: View {
     }
 
     /// Re-seed the self-rotation rest window + recovery-drop history from
-    /// the store after a sheet swipe-down/rejoin (owner bug 2026-08-14).
-    /// The window only restores while still in the future, and its
-    /// auto-clear task is RE-ARMED here — the original died with the view.
+    /// the store after a dismiss/rejoin — a MINIMISE, since Phase C1 (owner
+    /// bug 2026-08-14). The window only restores while still in the future,
+    /// and its auto-clear task is RE-ARMED here — the original died with the
+    /// view.
+    ///
+    /// WHAT THIS DOES AND DOES NOT BRING BACK. The store is IN MEMORY (its
+    /// own header: "Memory-only on purpose"), so it survives the cover being
+    /// minimised and the phone being locked, and it does not survive the app
+    /// being relaunched — nothing here reads a file. The swap layer and the
+    /// cursor do survive a relaunch, because they live in the row.
     private func restoreTimersFromStore() {
         // Guarded here as well as at its one `.onAppear` call site (plan task
-        // S4): a store read is a disk read, and a re-armed clear `Task` is a
-        // clock.
+        // S4): a re-armed clear `Task` is a clock, and a capture owns none.
         guard !catalogSkipLoad else { return }
         guard let snap = LiveSessionTimerStore.shared.snapshot(for: session.id) else { return }
         if selfRotationRestDrops.isEmpty, !snap.restDrops.isEmpty {

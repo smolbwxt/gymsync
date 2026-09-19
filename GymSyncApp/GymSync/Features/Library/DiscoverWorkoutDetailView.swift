@@ -188,7 +188,14 @@ struct DiscoverWorkoutDetailView: View {
         // is the order `WorkoutSessionView.startIfNeeded()` kept when it
         // owned both.
         .fullScreenCover(item: $attemptSession) { session in
+            // S4: MINIMISE, the only way out of the cover. Minimising an
+            // attempt leaves the leaderboard run standing — `start_attempt`
+            // already landed and nothing here ends it.
             SessionEntryView(session: session)
+                .soloMinimiseOverlay(SoloSessionShape.isAdHocSolo(
+                    participantCount: 1,
+                    roomCode: session.roomCode,
+                    scheduledFor: session.scheduledFor))
         }
         // Attempt with Friends — Flow 2's schedule sheet, pre-loaded with
         // this routine (Flow 4: "launches Flow 2 schedule sheet
