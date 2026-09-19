@@ -110,12 +110,21 @@ final class OfflineSetLogQueueTests: XCTestCase {
                             userIDProvider: FakeCurrentUserIDProvider(currentUserID: userID ?? defaultUserID))
     }
 
+    /// `sessionID`, `exerciseID`, `loggedAt` and the two Phase C1 columns are
+    /// DEFAULTED additions (final review F3): every call site written before
+    /// the session-scoped reader existed still reads exactly as it did, and
+    /// the tests that care about one session name it.
     private func makeSetLog(id: UUID = UUID(), userID: UUID? = nil, reps: Int = 5, weight: Decimal = 100,
-                             isFailed: Bool = false, isPenalty: Bool = false) -> SetLog {
+                             isFailed: Bool = false, isPenalty: Bool = false,
+                             sessionID: UUID = UUID(), exerciseID: UUID = UUID(),
+                             setIndex: Int = 1, loggedAt: Date = Date(),
+                             bodyWeightLbs: Decimal? = nil,
+                             routineExerciseID: UUID? = nil) -> SetLog {
         SetLog(
-            id: id, userID: userID ?? defaultUserID, sessionID: UUID(), exerciseID: UUID(),
-            setIndex: 1, reps: reps, weight: weight, rpe: 7,
-            isFailed: isFailed, isPenalty: isPenalty, note: nil, loggedAt: Date()
+            id: id, userID: userID ?? defaultUserID, sessionID: sessionID, exerciseID: exerciseID,
+            setIndex: setIndex, reps: reps, weight: weight, rpe: 7,
+            isFailed: isFailed, isPenalty: isPenalty, note: nil, loggedAt: loggedAt,
+            bodyWeightLbs: bodyWeightLbs, routineExerciseID: routineExerciseID
         )
     }
 
@@ -870,5 +879,118 @@ final class OfflineSetLogQueueTests: XCTestCase {
         submitter.resume()
         await firstPass.value
         XCTAssertEqual(submitter.callCount, 1)
+    }
+
+    // MARK: - What is still queued for ONE session (final review F3)
+    //
+    // Nothing read this queue back into a session: a body that re-entered
+    // offline fetched nothing, showed nothing, rewound its cursor to slot 1 /
+    // set 1, and the lifter logged the same sets again under fresh ids — so
+    // the replay landed both copies. These pin the reader and the pure merge
+    // that close it. Every one of them describes a state today's code gets
+    // wrong (today there is no reader at all, and the merge does not exist).
+
+    private func slot(_ exerciseID: UUID, sets: Int, position: Int) -> RoutineExercise {
+        RoutineExercise(id: UUID(), routineID: UUID(), exerciseID: exerciseID,
+                        position: position, targetSets: sets, targetReps: "8",
+                        targetWeight: "135", restSeconds: 90, notes: nil)
+    }
+
+    /// The airplane leg: three sets logged offline, MINIMISE, re-entry with a
+    /// fetch that throws. The rows come back, and the cursor sits AFTER them
+    /// rather than at set 1 — which is what stops the lifter re-logging them.
+    func testAFailedFetchStillShowsTheThreeSetsThisPhoneQueued() {
+        let sessionID = UUID(), benchID = UUID()
+        let bench = slot(benchID, sets: 5, position: 0)
+        let queued = (0..<3).map { i in
+            makeSetLog(sessionID: sessionID, exerciseID: benchID, setIndex: i + 1,
+                       loggedAt: Date(timeIntervalSince1970: Double(i)),
+                       routineExerciseID: bench.id)
+        }
+
+        let rows = PendingSetLogMerge.merged(fetched: [], pending: queued,
+                                             sessionID: sessionID)
+        XCTAssertEqual(rows.count, 3)
+        XCTAssertEqual(rows.map(\.id), queued.map(\.id),
+                       "and in the order they were performed")
+        XCTAssertEqual(
+            SoloResumeCursor.derive(rows: [bench], swapOverrides: [:], logs: rows),
+            SoloResumeCursor.Position(exerciseIndex: 0, setIndex: 4),
+            "the cursor is past the queued work, not back at set 1")
+    }
+
+    /// Reconnected mid-replay: two of the three have landed and come back in
+    /// the fetch, one is still queued. Three rows, never five.
+    func testASetThatHasSinceLandedIsNotCountedTwice() {
+        let sessionID = UUID(), benchID = UUID()
+        let queued = (0..<3).map { i in
+            makeSetLog(sessionID: sessionID, exerciseID: benchID, setIndex: i + 1,
+                       loggedAt: Date(timeIntervalSince1970: Double(i)))
+        }
+        let landed = Array(queued.prefix(2))
+
+        let rows = PendingSetLogMerge.merged(fetched: landed, pending: queued,
+                                             sessionID: sessionID)
+        XCTAssertEqual(rows.count, 3, "de-duplicated by the set's own id")
+        XCTAssertEqual(Set(rows.map(\.id)), Set(queued.map(\.id)))
+        XCTAssertEqual(rows.prefix(2).map(\.id), landed.map(\.id),
+                       "the server's rows keep their place and their content")
+    }
+
+    /// A set queued in yesterday's workout is not a row of this one.
+    func testAPendingRowForAnotherSessionIsIgnored() {
+        let mine = UUID()
+        let rows = PendingSetLogMerge.merged(
+            fetched: [],
+            pending: [makeSetLog(sessionID: UUID()), makeSetLog(sessionID: mine)],
+            sessionID: mine)
+        XCTAssertEqual(rows.count, 1)
+        XCTAssertEqual(rows.first?.sessionID, mine)
+    }
+
+    /// The queue mirrors `SetLog`'s fields BY HAND, so the two Phase C1
+    /// columns have to survive the store round trip AND the merge — without
+    /// the slot, a restored row would rewind its own slot to the fallback
+    /// count; without the body weight, a bodyweight set contributes no
+    /// tonnage.
+    func testTheSlotAndTheBodyWeightSurviveTheRoundTripAndTheMerge() {
+        let sessionID = UUID(), slotID = UUID()
+        let original = makeSetLog(weight: 0, sessionID: sessionID,
+                                  bodyWeightLbs: 183, routineExerciseID: slotID)
+        let restored = PendingSetLog(setLog: original).asSetLog
+
+        let rows = PendingSetLogMerge.merged(fetched: [], pending: [restored],
+                                             sessionID: sessionID)
+        XCTAssertEqual(rows.first?.routineExerciseID, slotID)
+        XCTAssertEqual(rows.first?.bodyWeightLbs, 183)
+        XCTAssertEqual(rows.first?.effectiveWeightPounds, 183)
+    }
+
+    /// The reader itself: this session's rows, this user's rows, in
+    /// performed order.
+    func testPendingLogsReadsOnlyThisSessionsRowsForThisUser() throws {
+        let context = try makeInMemoryContext()
+        let queue = makeQueue(submitter: FakeSetLogSubmitter())
+        queue.configure(modelContext: context)
+
+        let sessionID = UUID()
+        let second = makeSetLog(sessionID: sessionID,
+                                loggedAt: Date(timeIntervalSince1970: 200))
+        let first = makeSetLog(sessionID: sessionID,
+                               loggedAt: Date(timeIntervalSince1970: 100))
+        queue.enqueue(second)
+        queue.enqueue(first)
+        queue.enqueue(makeSetLog(sessionID: UUID()))                    // another session
+        queue.enqueue(makeSetLog(userID: UUID(), sessionID: sessionID)) // another lifter
+
+        XCTAssertEqual(queue.pendingLogs(sessionID: sessionID).map(\.id),
+                       [first.id, second.id])
+    }
+
+    /// Never configured — the same "must not crash, answers nothing" contract
+    /// every other member of this class keeps.
+    func testPendingLogsIsEmptyWhenNeverConfigured() {
+        let queue = makeQueue(submitter: FakeSetLogSubmitter())
+        XCTAssertTrue(queue.pendingLogs(sessionID: UUID()).isEmpty)
     }
 }

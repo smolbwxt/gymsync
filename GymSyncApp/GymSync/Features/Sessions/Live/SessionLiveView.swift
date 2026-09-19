@@ -3999,8 +3999,12 @@ struct SessionLiveView: View {
         async let setsFetch  = SessionRepository.sessionSets(sessionID: session.id)
         async let sessionRef = SessionRepository.session(id: session.id)
 
+        // nil MEANS THE FETCH FAILED, and that is not the same as "no sets"
+        // (final review F3): the merge below then builds on the rows this body
+        // already holds, so a reload that fails mid-session loses nothing.
+        var fetchedSets: [SetLog]?
         do {
-            let (fetchedParts, fetchedSets, fetchedSession) =
+            let (fetchedParts, sets, fetchedSession) =
                 try await (pFetch, setsFetch, sessionRef)
             rosterLoadFailed = false
             // …and retire its notice, but ONLY its own. Another writer's
@@ -4010,24 +4014,7 @@ struct SessionLiveView: View {
             if errorText == Self.rosterFailedText { errorText = nil }
             participants = fetchedParts
             if let s = fetchedSession { liveSession = s }
-
-            // Build feed: newest first, cap 30
-            feedSets = Array(fetchedSets.reversed().prefix(30))
-            // Uncapped mirror — powers rotation/roster derivations.
-            allSessionSets = fetchedSets
-
-            // Precount my penalty reps already logged (failed burpees don't clear debt)
-            penaltyLogged = fetchedSets
-                .filter { $0.userID == selfID && $0.isPenalty && !$0.isFailed }
-                .compactMap(\.reps)
-                .reduce(0, +)
-
-            // Populate exercise names
-            let exerciseIDs = Set(fetchedSets.map(\.exerciseID))
-            for id in exerciseIDs where exerciseNames[id] == nil {
-                let name = await ExerciseNameCache.name(for: id)
-                exerciseNames[id] = name
-            }
+            fetchedSets = sets
         } catch {
             AppLogger.sessions.error("SessionLiveView reload: \(error, privacy: .public)")
             rosterLoadFailed = true
@@ -4042,6 +4029,38 @@ struct SessionLiveView: View {
             // next reload is already armed by every realtime nudge and every
             // foreground, which is exactly what a retry button would trigger.
             errorText = Self.rosterFailedText
+        }
+
+        // THE SETS THIS PHONE HAS NOT MANAGED TO SEND, ON BOTH LEGS (final
+        // review F3). They used to live only in `@State allSessionSets`, which
+        // MINIMISE destroys — so an offline re-entry showed none of them, the
+        // cursor rewound to slot 1 / set 1, and the lifter re-logged sets the
+        // queue was already holding. `PendingSetLogMerge` is that rule, and it
+        // is applied whether the fetch SUCCEEDED or FAILED: a queued row that
+        // has since landed is de-duplicated by the set's own id, so it appears
+        // once either way.
+        //
+        // The three derivations below moved out of the `do` block with it.
+        // They are recomputed from scratch from the merged array rather than
+        // incremented, so running them on the failure leg too is idempotent —
+        // and it is what puts a pending row's lift name in the feed after a
+        // re-entry that never reached the network.
+        allSessionSets = PendingSetLogMerge.merged(
+            fetched: fetchedSets ?? allSessionSets,
+            pending: OfflineSetLogQueue.shared.pendingLogs(sessionID: session.id),
+            sessionID: session.id)
+        // Build feed: newest first, cap 30
+        feedSets = Array(allSessionSets.reversed().prefix(30))
+        // Precount my penalty reps already logged (failed burpees don't clear debt)
+        penaltyLogged = allSessionSets
+            .filter { $0.userID == selfID && $0.isPenalty && !$0.isFailed }
+            .compactMap(\.reps)
+            .reduce(0, +)
+        // Populate exercise names
+        let exerciseIDs = Set(allSessionSets.map(\.exerciseID))
+        for id in exerciseIDs where exerciseNames[id] == nil {
+            let name = await ExerciseNameCache.name(for: id)
+            exerciseNames[id] = name
         }
 
         // Routine

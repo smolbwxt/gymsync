@@ -4165,7 +4165,15 @@ struct WorkoutSessionView: View {
     /// the top of the routine, which is the honest floor.
     @MainActor
     private func restoreLoggedProgress(sessionID: UUID) async {
-        let logs = (try? await SessionRepository.setLogs(sessionID: sessionID)) ?? []
+        // THE SAME MERGE THE ONE BODY MAKES (final review F3) — a set queued
+        // offline is part of this session's record whether or not the fetch
+        // reached the server, de-duplicated by the set's own id so a row that
+        // has since landed appears once. Two lines and the same function, so
+        // this body does not get a second answer for the rest of its life.
+        let logs = PendingSetLogMerge.merged(
+            fetched: (try? await SessionRepository.setLogs(sessionID: sessionID)) ?? [],
+            pending: OfflineSetLogQueue.shared.pendingLogs(sessionID: sessionID),
+            sessionID: sessionID)
         loggedSets = logs
         let workSets = logs.filter { !$0.isPenalty }
         if isFreeform {
