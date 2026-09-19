@@ -206,11 +206,35 @@ struct SessionLiveView: View {
     @State private var routineExercises: [RoutineExercise] = []
     @State private var allExercises: [Exercise] = []
     @State private var routineName: String? = nil
+    /// The stored routine itself, kept beside its rows because the
+    /// end-of-workout write needs the `Routine` value and not only its name
+    /// (plan task S1). `reload()` already fetched it — this holds on to it
+    /// instead of discarding everything but the name. Nil for a FREEFORM
+    /// session (no `routine_id`), which is exactly the gate that keeps
+    /// `persistSessionEdits` from ever writing one.
+    @State private var routine: Routine? = nil
+
+    /// THE MID-SESSION EDIT, MIRRORED (plan task S1, decision 2).
+    ///
+    /// The truth is `SessionRoutineEditStore.shared` — app-level and keyed by
+    /// session, because MINIMISE destroys this view and an edit lost on
+    /// minimise is live-session data loss. This is the render mirror: seeded
+    /// from the store in `reload()`, written THROUGH to the store on every
+    /// Done, and read in exactly one place (`effectiveRoutineExercises`).
+    ///
+    /// Nil means "not edited" and an EMPTY array means "every slot removed" —
+    /// the fallback below is `??`, not `isEmpty`, precisely so a freeform
+    /// workout emptied back out does not silently resurrect the stored plan.
+    @State private var soloEditedList: [RoutineExercise]? = nil
 
     // MARK: - UI flags
 
     @State private var showLogSetSheet      = false   // now penalty-only (see logSetSheetContent)
     @State private var showEndConfirmation  = false
+    /// `SessionRoutineEditor`'s sheet (plan task S1). Solo only — spec §3.4
+    /// gives a crew the consent card as its mode of exercise change, so the
+    /// door itself is gated on `crewShape == .solo` at both its mounts.
+    @State private var showSessionEditor    = false
     /// Task 3, Phase F — no canvas frame depicts a chat affordance on either
     /// live-session layout (proof-frame-06/07's headers show only LIVE +
     /// routine name + timer + X). System-designed: a bordered icon-button
@@ -721,9 +745,16 @@ struct SessionLiveView: View {
     /// layering needs only the replacement's id — so the two dictionaries are
     /// mapped down here rather than dragging a view's nested type into a
     /// model.
+    ///
+    /// EDIT FIRST, LAYER SECOND (plan task S1, decision 2), and THIS IS THE
+    /// ONE READER OF THE EDIT OVERLAY. A slot the lifter removed has no layer
+    /// to apply; a slot they added has no swap yet. The property's own claim
+    /// above — that it is the one place the layering happens — is what makes
+    /// one expression here enough: progression, logging, the rail's
+    /// denominator and every display already read this and nothing else.
     private var effectiveRoutineExercises: [RoutineExercise] {
         RoutineLayering.apply(
-            routineExercises,
+            soloEditedList ?? routineExercises,
             squadSwaps: squadSwaps.mapValues(\.id),
             selfScale: selfID.flatMap { selfScales[$0] }?.mapValues(\.id) ?? [:],
             todaysScale: todaysScale)
@@ -1586,6 +1617,33 @@ struct SessionLiveView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Swap exercise")
+                // THE MID-SESSION EDITOR'S DOOR, SOLO ONLY (plan task S1,
+                // decision 2). A crew's mode of exercise change is the
+                // consent card (spec §3.4), so `crewShape == .solo` — not
+                // `isSoloByConstruction`, which answers false for a SCHEDULED
+                // solo session and would give the same lifter an editor on
+                // Tuesday's ad-hoc workout and none on Wednesday's booked one.
+                //
+                // Tinted when an overlay is held, the old screen's own signal
+                // that this session is no longer running the stored plan. It
+                // spends no second accent: `theme.accent` here is the state
+                // of a glyph, and the screen's one accent act is still the
+                // LOG card (design rule 2) — unchanged from `WorkoutSessionView`'s
+                // identical control, which is what "moves, keeps the UI it
+                // has" means.
+                if crewShape == .solo {
+                    Button {
+                        showSessionEditor = true
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(soloEditedList == nil ? theme.neutral700 : theme.accent)
+                            .frame(width: 36, height: 36)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Edit this session's routine")
+                }
             }
             .padding(.top, 12)
 
@@ -2749,6 +2807,60 @@ struct SessionLiveView: View {
             .sheet(isPresented: $showCoachPaywall) {
                 PaywallView()
             }
+            // THE MID-SESSION ROUTINE EDITOR (plan task S1, decision 2). On
+            // THIS layer rather than on `body`, for the same reason Coach's
+            // room is: `body`'s modifier chain has blown the type-checker's
+            // budget twice (constraint 22), so every new sheet joins an
+            // extracted layer instead.
+            .sheet(isPresented: $showSessionEditor) { sessionEditorSheet }
+    }
+
+    /// The editor, seeded from the list the session is ACTUALLY running —
+    /// edited rows if there are any, the stored routine otherwise — so a
+    /// second visit starts from the first visit's answer.
+    ///
+    /// SWAPS ARE DELIBERATELY NOT LAYERED IN. `effectiveRoutineExercises`
+    /// would hand the editor the SUBSTITUTE as though the lifter had planned
+    /// it, and "Update this routine" would then write a hot-swap into the
+    /// stored plan — a quiet, permanent change nobody asked for. The overlay
+    /// is the plan; the swap is what is being done instead, today.
+    @ViewBuilder
+    private var sessionEditorSheet: some View {
+        SessionRoutineEditor(
+            exercises: soloEditedList ?? routineExercises,
+            nameByID: Dictionary(allExercises.map { ($0.id, $0.name) },
+                                 uniquingKeysWith: { first, _ in first }),
+            routineID: editorRoutineID,
+            onDone: { edited in
+                // WRITE THROUGH FIRST, then the mirror — a list recorded and
+                // then lost to a crash is a list the store already holds;
+                // a list mirrored and not recorded is the data loss this
+                // store exists to close (`SessionSwapPendingStore.record`'s
+                // own ordering rule).
+                SessionRoutineEditStore.shared.record(edited, for: session.id)
+                soloEditedList = edited
+                // The cursor is DERIVED (`currentRoutineExercise` →
+                // `RoutineProgression.currentSlot`), so there is no index to
+                // clamp the way the old screen had to, and the existing
+                // `.onChange(of: currentExerciseForSheet?.id)` re-prefills
+                // the entry if the edit moved the lifter to another slot.
+            })
+    }
+
+    /// The routine id the editor mints ADDED rows against.
+    ///
+    /// A FREEFORM WORKOUT HAS NO STORED ROUTINE (`routineExercises.isEmpty`
+    /// and `routineID == nil` — the old screen's `isFreeform`), and its rows
+    /// are never persisted: `persistSessionEdits` guards on `routine`, which
+    /// is nil for exactly that session, and every set logged under an empty
+    /// routine already writes `routine_exercise_id = NULL` because
+    /// `currentRoutineExercise` is nil. So the session's own id is a stable,
+    /// session-local namespace that cannot collide with a real routine's rows
+    /// and cannot reach the database — and it is what makes the editor the
+    /// freeform workout's exercise picker, exactly as it was on the old
+    /// screen.
+    private var editorRoutineID: UUID {
+        liveSession.routineID ?? routineExercises.first?.routineID ?? session.id
     }
 
     /// The pinned bottom chrome (extracted from the safeAreaInset closure).
@@ -4128,6 +4240,10 @@ struct SessionLiveView: View {
             if let loaded = SessionRoutineCache.shared.resolve(routineID: routineID,
                                                               fetched: loadedNow) {
                 routineName = loaded.routine.name
+                // The routine VALUE, kept for the end-of-workout write (plan
+                // task S1) — the same resolved copy the rows come from, so
+                // the two can never describe two different routines.
+                routine = loaded.routine
                 routineExercises = loaded.exercises
                 let exIDs = loaded.exercises.map(\.exerciseID)
                 if allExercises.isEmpty || !exIDs.allSatisfy({ id in allExercises.contains(where: { $0.id == id }) }) {
@@ -4144,6 +4260,18 @@ struct SessionLiveView: View {
         } else if allExercises.isEmpty {
             allExercises = (try? await ExerciseRepository.fetchAll()) ?? []
         }
+
+        // THE MID-SESSION EDIT, SEEDED BACK FROM THE STORE (plan task S1,
+        // decision 2) — AFTER the routine, so a fetch that landed cannot
+        // overwrite the overlay with the stored plan.
+        //
+        // THIS IS THE MINIMISE PATH. `reload()` runs on mount, on every
+        // realtime nudge and on every foreground, so a lifter who minimised
+        // mid-workout and came back finds the list they left rather than the
+        // routine as stored. The assignment is unconditional because the
+        // store is written THROUGH on every Done — it is never behind the
+        // mirror — and because nil there genuinely means "not edited".
+        soloEditedList = SessionRoutineEditStore.shared.edited(for: session.id)
 
         // THE DURABLE SWAP LAYER, AFTER THE ROUTINE AND THE CATALOG, because
         // the names it re-resolves come from them (plan task S1).
@@ -4240,6 +4368,152 @@ struct SessionLiveView: View {
         if let fetched = try? await SessionRepository.participants(sessionID: session.id) {
             participants = fetched
         }
+    }
+
+    // MARK: - The mid-session routine edit's writers (plan task S1, decision 2)
+    //
+    // Carried from `WorkoutSessionView` with the editor. NEITHER HAS A CALLER
+    // YET, and that is stated rather than hidden (constraint 12): the "Keep
+    // your mid-session edits?" dialog that raises `persistSessionEdits` fires
+    // at COMPLETION and belongs to plan task S6, and the Apply card that calls
+    // `applyCoachRoutineEdit` is Coach's, which is plan task S5. The writers
+    // move with the editor because they are the same decision — which ids
+    // survive an edit — and splitting that across three tasks is how a rule
+    // ends up spelled three ways.
+
+    /// The end-of-workout three-way's write half (spec 2026-08-22 §2).
+    /// Update-in-place rewrites the stored rows, ids preserved; save-as-new
+    /// clones the routine with fresh ids and leaves the original untouched.
+    /// Best effort — a failed write leaves the stored routine exactly as it
+    /// was, and the session's own set rows are unaffected either way.
+    ///
+    /// THE ROW-BUILDING IS PURE AND LIVES IN `SessionRoutineEdit`, so the one
+    /// rule that matters about these two branches — which ids survive — is
+    /// asserted by a test rather than by reading a view.
+    ///
+    /// A FREEFORM SESSION NEVER REACHES EITHER BRANCH: `routine` is nil for a
+    /// session with no `routine_id`, so the guard returns and the edited list
+    /// stays what it always was — session-local, never persisted.
+    @MainActor
+    private func persistSessionEdits(asNew: Bool) async {
+        guard let edited = soloEditedList, let routine else { return }
+        if asNew {
+            let newRoutineID = UUID()
+            let clone = Routine(
+                id: newRoutineID, ownerID: routine.ownerID,
+                name: "\(routine.name) (edited)",
+                description: routine.description,
+                visibility: "private",
+                createdAt: Date(), updatedAt: Date())
+            try? await RoutineRepository.save(
+                clone,
+                exercises: SessionRoutineEdit.rowsForNewRoutine(edited,
+                                                                routineID: newRoutineID))
+        } else {
+            try? await RoutineRepository.save(
+                routine,
+                exercises: SessionRoutineEdit.rowsForUpdate(edited))
+        }
+    }
+
+    /// The Apply card's writer (owner 2026-08-22: "want me to edit your
+    /// routine to reflect this?" — and then it actually does). Fuzzy name
+    /// match, display-unit → pounds conversion, full-list save. Trainer
+    /// prescriptions are never edited — a human wrote those.
+    ///
+    /// THE ID IS PRESERVED (ruling R-C-5, Phase C1) and that is the whole
+    /// reason this function is worth reading twice. It edits the LIVE
+    /// session's routine IN PLACE, mid-session. A fresh `UUID()` on the
+    /// replaced row silently orphans every entry keyed to that slot — the
+    /// durable swap layer (`self_swaps` / `squad_swaps`) and every
+    /// `set_logs.routine_exercise_id` already written against it. Neither
+    /// column has a foreign key, so nothing would raise: the sets would
+    /// simply stop counting.
+    ///
+    /// THE UNIT IS `turnUnit` (`ThemeStore.shared.weightUnit`), which is this
+    /// body's one weight-unit source — the old screen read a per-view
+    /// `sessionSettings` fetch that the one body does not make.
+    @MainActor
+    private func applyCoachRoutineEdit(_ proposal: RoutineEditProposal) async -> String? {
+        guard let routine, routine.prescribedBy == nil else { return nil }
+        let nameByID = Dictionary(allExercises.map { ($0.id, $0.name.lowercased()) },
+                                  uniquingKeysWith: { first, _ in first })
+        let target = proposal.exerciseName.lowercased()
+        // THE STORED ROWS, MOVED UNCHANGED. It is `routineExercises` and not
+        // `soloEditedList ?? routineExercises` because that is exactly what
+        // the old screen did, and this capability moves rather than changes
+        // (plan task S1). The consequence is worth naming and is NOT fixed
+        // here: an Apply tap made while a mid-session edit is held overwrites
+        // the overlay with the stored routine plus Coach's change, so the
+        // lifter's own adds and removals are dropped. Pre-existing on the old
+        // screen, unchanged by the move, and docketed rather than repaired in
+        // a task whose job is to carry it across.
+        guard let index = routineExercises.firstIndex(where: { re in
+            guard let name = nameByID[re.exerciseID] else { return false }
+            return name == target || name.contains(target) || target.contains(name)
+        }) else { return nil }
+        var rows = routineExercises
+        var summary: [String] = []
+        // THE SWAP, first — so any weight/reps in the same proposal land on
+        // the replacement.
+        if let swapName = proposal.swapToExerciseName {
+            let needle = swapName.lowercased()
+            let replacement = allExercises.first { $0.name.lowercased() == needle }
+                ?? allExercises
+                    .filter { $0.aliasOf == nil }
+                    .filter { $0.name.lowercased().contains(needle) || needle.contains($0.name.lowercased()) }
+                    .min { $0.name.count < $1.name.count }
+            guard let replacement, replacement.id != rows[index].exerciseID else { return nil }
+            let old = rows[index]
+            // `exerciseID` is immutable by design — a swap is a REPLACEMENT
+            // row carrying the old prescription. `save()` deletes and
+            // re-inserts the full array, so position survives by copying.
+            // AND SO MUST THE ID (R-C-5).
+            rows[index] = RoutineExercise(
+                id: old.id, routineID: old.routineID, exerciseID: replacement.id,
+                position: old.position,
+                targetSets: old.targetSets,
+                targetReps: old.targetReps,
+                targetWeight: nil,   // the old load belongs to the old movement
+                restSeconds: old.restSeconds,
+                notes: old.notes,
+                setType: old.setType,
+                supersetGroup: old.supersetGroup,
+                dropSteps: old.dropSteps,
+                dropPercent: old.dropPercent,
+                targetFailure: old.targetFailure,
+                targetRepsLow: old.targetRepsLow,
+                targetRepsHigh: old.targetRepsHigh,
+                cardioZone: old.cardioZone,
+                cardioMinutes: old.cardioMinutes)
+            summary.append("swapped to \(replacement.name)")
+        }
+        if let weight = proposal.weight {
+            let pounds = Units.toPounds(Decimal(weight), from: turnUnit)
+            rows[index].targetWeight = "\(pounds)"
+            summary.append(Units.format(pounds: pounds, unit: turnUnit,
+                                        rounded: false, includeUnit: true))
+        }
+        if let lo = proposal.repsLow {
+            rows[index].targetRepsLow = lo
+            rows[index].targetRepsHigh = proposal.repsHigh ?? max(lo, rows[index].targetRepsHigh ?? lo)
+            rows[index].targetReps = "\(lo)"
+            summary.append("\(lo)–\(rows[index].targetRepsHigh ?? lo) reps")
+        } else if let hi = proposal.repsHigh {
+            rows[index].targetRepsHigh = hi
+            summary.append("up to \(hi) reps")
+        }
+        guard !summary.isEmpty else { return nil }
+        do {
+            try await RoutineRepository.save(routine, exercises: rows)
+        } catch { return nil }
+        // …and the session-local overlay carries the update for the rest of
+        // this session, THROUGH THE STORE so MINIMISE cannot lose it.
+        SessionRoutineEditStore.shared.record(rows, for: session.id)
+        soloEditedList = rows
+        let name = allExercises.first(where: { $0.id == rows[index].exerciseID })?.name
+            ?? proposal.exerciseName
+        return "Done — \(name) is now \(summary.joined(separator: " × ")). It'll load that way next session."
     }
 
     // MARK: - The round wait (spec §2 and §3.3, plan task S6)
@@ -4884,7 +5158,23 @@ struct SessionLiveView: View {
             // Freestyle had none, so an ad-hoc solo workout could not be
             // finished. `SessionEndAffordance` is the law that says this
             // page owes one, and `endAction(for:)` is its reader.
-            onEnd: endAction(for: .freestyleRail))
+            onEnd: endAction(for: .freestyleRail),
+            // THE MID-SESSION EDITOR (plan task S1, decision 2), solo only —
+            // nil for a crew and for the catalog, so frame 141 is unchanged.
+            onEditRoutine: editRoutineAction)
+    }
+
+    /// The editor door's action, or nil when this lifter is not PROVED solo
+    /// — spelled as a property rather than inline so it reads exactly like
+    /// `endAction(for:)` beside it, and so the optional's type is stated
+    /// rather than inferred through a ternary.
+    ///
+    /// `.unknown` KEEPS THE CREW'S BEHAVIOUR (the whole point of the third
+    /// case): no editor while the roster is in flight, so a crew never sees
+    /// the door flicker in.
+    private var editRoutineAction: (() -> Void)? {
+        guard crewShape == .solo else { return nil }
+        return { showSessionEditor = true }
     }
 
     private func freestyleAcknowledgeAccessory() {
@@ -5678,6 +5968,10 @@ struct SessionLiveView: View {
         // same reason the pill is cleared only here: a swipe-down is
         // recoverable and its pending layer must survive it.
         SessionSwapPendingStore.shared.clear(session.id)
+        // …and the mid-session edit overlay (plan task S1, decision 2), for
+        // exactly the same reason and at exactly the same moment: a MINIMISE
+        // must not reach either, and a deliberate exit must clear both.
+        SessionRoutineEditStore.shared.clear(session.id)
         dismiss()
     }
 

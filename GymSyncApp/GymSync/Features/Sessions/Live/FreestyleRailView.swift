@@ -199,6 +199,26 @@ struct FreestyleRailView: View {
     /// `SessionEndAffordance.pageMountsItsOwnEnd(.freestyleRail)`.
     var onEnd: (() -> Void)?
 
+    /// THE MID-SESSION ROUTINE EDITOR'S DOOR (Phase C2, plan task S1,
+    /// decision 2).
+    ///
+    /// Every ad-hoc solo workout is `.freestyle` (`SessionRepository.startSolo`
+    /// writes `style: .freestyle`), so THIS is the page a solo lifter is on
+    /// and the my-turn card's own editor glyph never renders for them. The
+    /// capability the old solo screen had — add, remove, reorder, retune,
+    /// mid-workout — lands here.
+    ///
+    /// OPTIONAL, AND NIL IS BOTH THE CREW'S AND THE CATALOG'S ANSWER, the
+    /// same idiom `onEnd` above already establishes: a crew's mode of
+    /// exercise change is the consent card (spec §3.4), and
+    /// `SessionLiveView` passes this only for `crewShape == .solo`, so frame
+    /// 141 and every crew session render exactly as they do today.
+    ///
+    /// A `RoundDoor` beside the End door rather than a new composition, and
+    /// neutral rather than accent, for the reason `onEnd`'s comment gives:
+    /// the LOG card beneath is this screen's one accent act (rule 2).
+    var onEditRoutine: (() -> Void)?
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
@@ -219,6 +239,11 @@ struct FreestyleRailView: View {
                 }
                 if let entryCard {
                     entryCard
+                }
+                if let onEditRoutine {
+                    RoundDoor(glyph: "slider.horizontal.3",
+                              title: RoundCopy.editThisWorkout,
+                              onTap: onEditRoutine)
                 }
                 if let onEnd {
                     RoundDoor(glyph: "xmark", title: RoundCopy.endSession, onTap: onEnd)

@@ -183,6 +183,12 @@ enum RoundCopy {
     /// raises.
     static let endSession = "End"
 
+    /// The mid-session routine editor's door, solo only (Phase C2, plan task
+    /// S1). Design rule 9 — a button says exactly what happens: this one
+    /// opens the editor for THIS workout, and the stored routine is not
+    /// touched until the workout ends and the lifter answers for it.
+    static let editThisWorkout = "Edit this workout"
+
     /// What "I need a minute" puts on the wire.
     ///
     /// The EXISTING reaction channel (plan task S7: "no new channel"), so
