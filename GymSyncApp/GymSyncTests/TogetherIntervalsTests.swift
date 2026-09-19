@@ -288,7 +288,7 @@ final class TogetherIntervalsTests: XCTestCase {
 
     // MARK: - The log control (fix round 3 / F6, ruling R-B17)
 
-    /// `TogetherClockView.logControl`'s default: `LOG SET & PASS`, no
+    /// `TogetherClockView.logControl`'s default: `LOG SET` (Together has no turns to pass), no
     /// readback line, not failed, not disabled — the shape `logControlFoot`
     /// (`SessionLiveView`, private) builds from live state, unset here only
     /// because this default exists for the type to be constructible at
@@ -307,7 +307,7 @@ final class TogetherIntervalsTests: XCTestCase {
     /// plus a re-capture.
     func testLogControlFootDefaultsToTheOrdinaryButton() {
         let foot = LogControlFoot()
-        XCTAssertEqual(foot.title, "LOG SET & PASS")
+        XCTAssertEqual(foot.title, "LOG SET")
         XCTAssertNil(foot.readback)
         XCTAssertFalse(foot.isFailed)
         XCTAssertFalse(foot.isDisabled)

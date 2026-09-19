@@ -1219,7 +1219,7 @@ struct LogControlButton: View {
 /// the two voice notices (fix round 1 / F2's own precedent) — Together's
 /// foot takes one parameter instead of four.
 struct LogControlFoot {
-    var title: String = "LOG SET & PASS"
+    var title: String = "LOG SET"
     var readback: String? = nil
     var isFailed: Bool = false
     var isDisabled: Bool = false
