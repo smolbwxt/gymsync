@@ -2356,7 +2356,9 @@ struct WorkoutSessionView: View {
     /// calling it rather than restating it.
     private var soloCurrentExerciseSets: [SetLog] {
         guard let re = currentRoutineExercise else { return [] }
-        return RoutineProgression.completedRows(forSlot: re, in: loggedSets)
+        return SlotProgress(routine: activeExercises,
+                            logs: loggedSets.filter { !$0.isPenalty })
+            .rows(for: re)
             .sorted { $0.loggedAt < $1.loggedAt }
     }
 

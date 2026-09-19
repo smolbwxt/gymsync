@@ -657,14 +657,17 @@ struct SessionLiveView: View {
     /// knows which row it landed on; asking it is both correct and one
     /// fewer place for the two answers to disagree.
     ///
-    /// COUNTED PER SLOT since Phase C1 (decision 3): `mySlotSetCount` applies
-    /// `RoutineProgression`'s one fallback rule, so a slot whose lift was
-    /// swapped mid-exercise counts both halves, and a pre-column session
-    /// walks exactly as it did before the column existed.
+    /// COUNTED PER SLOT since Phase C1 (decision 3), through a `SlotProgress`
+    /// built ONCE here and read per slot as a dictionary lookup (review F6).
+    /// It carries the one fallback rule, so a slot whose lift was swapped
+    /// mid-exercise counts both halves and a pre-column session walks exactly
+    /// as it did before the column existed.
     private var currentRoutineExercise: RoutineExercise? {
-        RoutineProgression.currentSlot(
-            routine: effectiveRoutineExercises,
-            completedSets: { re in mySlotSetCount(re) })
+        let rows = effectiveRoutineExercises
+        let progress = SlotProgress(routine: rows, logs: mySets)
+        return RoutineProgression.currentSlot(
+            routine: rows,
+            completedSets: { re in progress.count(for: re) })
     }
 
     /// The CURRENT exercise's venue equipment class, or `nil` when there is no
@@ -2965,16 +2968,10 @@ struct SessionLiveView: View {
         allSessionSets.filter { $0.userID == selfID && $0.exerciseID == exerciseID && !$0.isPenalty }.count
     }
 
-    /// MY sets at ONE SLOT (Phase C1, decision 3). The counterpart of
-    /// `mySetCount(for:)` above, which counts by lift and is still what
-    /// `logSetAndAdvance` numbers a set with — `set_index` has always been
-    /// "my nth set of this lift" and stays so.
-    private func mySlotSetCount(_ re: RoutineExercise) -> Int {
-        RoutineProgression.completedSets(forSlot: re, in: mySets)
-    }
-
     /// My own non-penalty sets, uncapped — the input every slot count is
-    /// taken from, filtered once rather than per slot.
+    /// taken from. `mySetCount(for:)` above counts by LIFT and stays: it is
+    /// what `logSetAndAdvance` numbers a set with, and `set_index` has always
+    /// meant "my nth set of this lift".
     private var mySets: [SetLog] {
         allSessionSets.filter { $0.userID == selfID && !$0.isPenalty }
     }
@@ -4091,7 +4088,13 @@ struct SessionLiveView: View {
     /// question nobody asked. Spec §2's "is the plan still achievable" is
     /// about the exercises that are LEFT, which is what these rows show.
     private var roundPlanRows: [SessionPlanRow] {
-        effectiveRoutineExercises.map { re in
+        // HOISTED, both of them (review F6). `currentRoutineExercise` is a
+        // full progression walk and `SlotProgress` a full pass over the logs;
+        // read per row they made one body pass roughly O(slots² × logs).
+        let current = currentRoutineExercise
+        let rows = effectiveRoutineExercises
+        let progress = SlotProgress(routine: rows, logs: mySets)
+        return rows.map { re in
             SessionPlanRow(
                 id: re.id,
                 name: allExercises.first(where: { $0.id == re.exerciseID })?.name
@@ -4100,8 +4103,8 @@ struct SessionLiveView: View {
                 // BY SLOT (Phase C1, decision 3): a routine naming one lift
                 // twice drew BOTH rows as current and gave both the same
                 // set count — the whole plan lighting up at once.
-                isCurrent: re.id == currentRoutineExercise?.id,
-                setsDone: mySlotSetCount(re),
+                isCurrent: re.id == current?.id,
+                setsDone: progress.count(for: re),
                 sets: re.targetSets ?? 0)
         }
     }

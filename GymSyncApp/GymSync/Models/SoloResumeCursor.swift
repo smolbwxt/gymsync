@@ -30,9 +30,9 @@ import Foundation
 // counts both halves as the one slot they are.
 //
 // The pre-column fallback — `routine_exercise_id IS NULL`, matched by
-// exercise id — lives in `RoutineProgression.completedSets(forSlot:in:)`
-// and is applied here PER SLOT, so a session logged entirely before the
-// column lands on exactly the cursor it landed on yesterday.
+// exercise id — lives in `SlotProgress` and is applied there PER SLOT, in
+// routine order and capped at each target, so a session logged entirely
+// before the column lands on exactly the cursor it landed on yesterday.
 enum SoloResumeCursor {
 
     /// Exercise index + the 1-based set number to log next.
@@ -69,41 +69,30 @@ enum SoloResumeCursor {
     ///     through the plan, and that rule belongs with the walk.
     /// - Returns: `(0, 1)` for an empty routine — the honest floor.
     ///
-    /// TWO PASSES PER SLOT, AND THE SECOND ONLY WHEN THE FIRST FOUND NOTHING
-    /// — `RoutineProgression.completedSets(forSlot:in:)`'s rule, applied
-    /// here inside the greedy walk rather than by counting the whole log for
-    /// each slot, because the FALLBACK pass still has to be greedy: two
-    /// pre-column slots naming one lift share one undifferentiated pile of
-    /// rows, and the first slot must take its target before the second sees
-    /// any. Rows that DO name a slot need no such arbitration and can never
-    /// be eaten by another slot's fallback, which is the whole point.
+    /// THE DIVISION OF THE LOGS IS `SlotProgress`'s, not this function's
+    /// (review F2/F6): built ONCE, in one pass, and the walk below is then a
+    /// dictionary lookup per slot. The two-pass loop that used to live here
+    /// was a second expression of the same rule, and it carried the version
+    /// of it the review rejected — a slot that had started naming itself
+    /// stopped counting its own pre-column rows, so a session straddling the
+    /// app update rewound the lifter into work already logged.
+    ///
+    /// THE SET NUMBER IS CAPPED AT THE TARGET, the count is not. A slot with
+    /// five rows against a target of three lands the lifter on set 4 of 3 —
+    /// shipped behaviour for bonus sets — while `SlotProgress.count` still
+    /// answers 5, which is what a display should say.
     static func derive(rows: [RoutineExercise],
                        swapOverrides: [UUID: RoutineExercise],
                        logs: [SetLog]) -> Position {
-        var remaining = logs.filter { !$0.isPenalty }
+        let layeredRows = layered(rows, swapOverrides: swapOverrides)
+        let progress = SlotProgress(routine: layeredRows,
+                                    logs: logs.filter { !$0.isPenalty })
         var position = Position(exerciseIndex: 0, setIndex: 1)
-        for (index, re) in layered(rows, swapOverrides: swapOverrides).enumerated() {
+        for (index, re) in layeredRows.enumerated() {
             let target = max(re.targetSets ?? 1, 1)
-            var consumed = 0
-            remaining.removeAll { log in
-                if consumed < target && log.routineExerciseID == re.id {
-                    consumed += 1
-                    return true
-                }
-                return false
-            }
-            if consumed == 0 {
-                remaining.removeAll { log in
-                    if consumed < target, log.routineExerciseID == nil,
-                       log.exerciseID == re.exerciseID {
-                        consumed += 1
-                        return true
-                    }
-                    return false
-                }
-            }
-            position = Position(exerciseIndex: index, setIndex: consumed + 1)
-            if consumed < target { break }
+            let done = progress.count(for: re)
+            position = Position(exerciseIndex: index, setIndex: min(done, target) + 1)
+            if done < target { break }
         }
         return position
     }

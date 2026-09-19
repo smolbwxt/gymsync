@@ -42,35 +42,74 @@ final class RoutineSlotProgressTests: XCTestCase {
         }
     }
 
+    /// `SlotProgress` over a one-slot routine — the shorthand most cases
+    /// here want.
+    private func count(_ re: RoutineExercise, _ logged: [SetLog],
+                       routine: [RoutineExercise]? = nil) -> Int {
+        SlotProgress(routine: routine ?? [re], logs: logged).count(for: re)
+    }
+
     // MARK: - The rule, stated once and asserted once
 
     func testASlotCountsTheRowsThatNameIt() {
         let bench = slot(benchID, sets: 3, position: 0)
-        let counted = RoutineProgression.completedSets(
-            forSlot: bench,
-            in: logs(benchID, 2, slot: bench.id) + logs(squatID, 5, slot: UUID(), from: 100))
-        XCTAssertEqual(counted, 2)
+        XCTAssertEqual(
+            count(bench, logs(benchID, 2, slot: bench.id)
+                         + logs(squatID, 5, slot: UUID(), from: 100)),
+            2)
     }
 
-    func testASlotWithNoNamedRowsFallsBackToTheLiftButOnlyForUNNAMEDRows() {
+    func testARowNamingADIFFERENTSlotIsNeverClaimedBackByLift() {
         let bench = slot(benchID, sets: 3, position: 0)
         let otherSlot = UUID()
-        let counted = RoutineProgression.completedSets(
-            forSlot: bench,
-            in: logs(benchID, 2, slot: nil)               // pre-column: mine
-                + logs(benchID, 4, slot: otherSlot, from: 100))  // another slot's
-        XCTAssertEqual(counted, 2,
-                       "a row that names a DIFFERENT slot is that slot's, "
-                       + "and the fallback must not claim it back by lift")
+        XCTAssertEqual(
+            count(bench, logs(benchID, 2, slot: nil)                     // pre-column: mine
+                         + logs(benchID, 4, slot: otherSlot, from: 100)), // another slot's
+            2)
     }
 
-    func testOnceASlotHasANamedRowTheUnnamedOnesStopCounting() {
-        // Decision 3's rule, verbatim: "plus — ONLY when the slot has zero
-        // such rows". The session that straddles the deploy keeps the old
-        // behaviour until the first attributed row lands, then switches.
+    /// REVIEW F2. Decision 3 said "plus — ONLY when the slot has zero such
+    /// rows", and that LOSES SETS: a session straddling the app update
+    /// counted the one attributed row and dropped the two logged minutes
+    /// earlier, rewinding the lifter into work already in the log — a
+    /// one-session instance of the failure this phase exists to end.
+    func testTheStraddlingSessionCountsBothItsHalves() {
         let bench = slot(benchID, sets: 3, position: 0)
-        let straddling = logs(benchID, 2, slot: nil) + logs(benchID, 1, slot: bench.id, from: 100)
-        XCTAssertEqual(RoutineProgression.completedSets(forSlot: bench, in: straddling), 1)
+        let straddling = logs(benchID, 2, slot: nil)
+            + logs(benchID, 1, slot: bench.id, from: 100)
+        XCTAssertEqual(count(bench, straddling), 3)
+        // …and the cursor therefore does not send them back to set 2.
+        XCTAssertEqual(
+            SoloResumeCursor.derive(rows: [bench, slot(squatID, sets: 3, position: 1)],
+                                    swapOverrides: [:], logs: straddling),
+            SoloResumeCursor.Position(exerciseIndex: 1, setIndex: 1))
+    }
+
+    /// The same rule from the other side: a wrist tap from a Watch build
+    /// predating the column writes a NULL slot, and it must still count at
+    /// the slot the phone was on rather than vanish because the phone had
+    /// already attributed a set there.
+    func testAWatchLoggedNullRowStillCountsAtTheSlotThePhoneWasOn() {
+        let bench = slot(benchID, sets: 4, position: 0)
+        XCTAssertEqual(
+            count(bench, logs(benchID, 2, slot: bench.id)
+                         + logs(benchID, 1, slot: nil, from: 100)),
+            3)
+    }
+
+    /// Nothing is dropped, ever. A pile bigger than every target's room —
+    /// bonus sets logged before the column existed — lands on the LAST slot
+    /// naming that lift, which is where the shipped walk left the lifter.
+    func testSurplusPreColumnRowsLandOnTheLastSlotRatherThanVanishing() {
+        let first = slot(benchID, sets: 3, position: 0)
+        let second = slot(benchID, sets: 3, position: 1)
+        let routine = [first, second]
+        let logged = logs(benchID, 10, slot: nil)
+        XCTAssertEqual(count(first, logged, routine: routine), 3)
+        XCTAssertEqual(count(second, logged, routine: routine), 7)
+        XCTAssertEqual(count(first, logged, routine: routine)
+                       + count(second, logged, routine: routine), 10,
+                       "every logged set belongs to exactly one slot")
     }
 
     // MARK: - The root-cause report
@@ -112,7 +151,7 @@ final class RoutineSlotProgressTests: XCTestCase {
         let bench = slot(benchID, sets: 4, position: 0)
         let logged = logs(benchID, 2, slot: bench.id)
             + logs(inclineID, 2, slot: bench.id, from: 100)
-        XCTAssertEqual(RoutineProgression.completedSets(forSlot: bench, in: logged), 4)
+        XCTAssertEqual(count(bench, logged), 4)
 
         let rows = [bench, slot(squatID, sets: 3, position: 1)]
         XCTAssertEqual(SoloResumeCursor.derive(rows: rows, swapOverrides: [:], logs: logged),
@@ -126,35 +165,41 @@ final class RoutineSlotProgressTests: XCTestCase {
         let second = slot(benchID, sets: 3, position: 1)
         let logged = logs(benchID, 3, slot: first.id)
 
-        XCTAssertEqual(RoutineProgression.completedSets(forSlot: first, in: logged), 3)
-        XCTAssertEqual(RoutineProgression.completedSets(forSlot: second, in: logged), 0)
+        let progress = SlotProgress(routine: [first, second], logs: logged)
+        XCTAssertEqual(progress.count(for: first), 3)
+        XCTAssertEqual(progress.count(for: second), 0)
 
         // The walk therefore opens the second slot at set 1 — and the
         // progression returns the SECOND row, not the first.
         let current = RoutineProgression.currentSlot(
             routine: [first, second],
-            completedSets: { re in RoutineProgression.completedSets(forSlot: re, in: logged) })
+            completedSets: { re in progress.count(for: re) })
         XCTAssertEqual(current?.id, second.id)
         XCTAssertEqual(SoloResumeCursor.derive(rows: [first, second],
                                                swapOverrides: [:], logs: logged),
                        SoloResumeCursor.Position(exerciseIndex: 1, setIndex: 1))
     }
 
-    /// The shipped answer for the same routine, for contrast: counting by
-    /// LIFT gives the second slot its neighbour's three sets and walks
-    /// straight past it.
-    func testCountingByLiftIsWhatSkippedTheSecondSlot() {
-        let first = slot(benchID, sets: 3, position: 0)
-        let second = slot(benchID, sets: 3, position: 1)
-        let byLift = RoutineProgression.currentExercise(
+    /// REVIEW F5. `prefillLogInputs`' body is byte-identical, but its SEAM
+    /// moved: `defaultReps(for:)` now answers from the slot the progression
+    /// landed on rather than the first layered row naming that lift. The
+    /// difference is visible only on a routine naming one lift twice with
+    /// DIFFERENT rep targets — where the old answer was the first slot's, on
+    /// every set of both. Pinned at the level a pure test can reach: the slot
+    /// the walk selects, and the prescription that rides on it.
+    func testTheSlotTheWalkSelectsCarriesItsOWNRepTarget() {
+        var first = slot(benchID, sets: 3, position: 0)
+        first.targetReps = "5"
+        var second = slot(benchID, sets: 3, position: 1)
+        second.targetReps = "12"
+        let logged = logs(benchID, 3, slot: first.id)
+        let progress = SlotProgress(routine: [first, second], logs: logged)
+        let current = RoutineProgression.currentSlot(
             routine: [first, second],
-            completedSets: { exerciseID in exerciseID == benchID ? 3 : 0 })
-        XCTAssertEqual(byLift?.id, second.id,
-                       "both slots read as done; the walk parks on the last")
-        // …and it reports the second slot as three sets in, which is the
-        // set counter climbing past its target on a lift nobody has touched.
-        XCTAssertEqual(RoutineProgression.completedSets(
-            forSlot: second, in: logs(benchID, 3, slot: first.id)), 0)
+            completedSets: { re in progress.count(for: re) })
+        XCTAssertEqual(current?.id, second.id)
+        XCTAssertEqual(current?.targetReps, "12",
+                       "the by-lift lookup would have answered the FIRST slot's 5")
     }
 
     // MARK: - No swap, and pre-column: unchanged
@@ -187,10 +232,7 @@ final class RoutineSlotProgressTests: XCTestCase {
         // rebuild, so stamping one would name a slot that exists only inside
         // one view instance. NULL is the permanent, correct answer.
         let synthesized = slot(benchID, sets: nil, position: 0)
-        XCTAssertEqual(
-            RoutineProgression.completedSets(forSlot: synthesized,
-                                             in: logs(benchID, 2, slot: nil)),
-            2)
+        XCTAssertEqual(count(synthesized, logs(benchID, 2, slot: nil)), 2)
     }
 
     // MARK: - A swap with nothing logged yet
@@ -201,7 +243,7 @@ final class RoutineSlotProgressTests: XCTestCase {
         let layered = RoutineLayering.apply(rows, selfScale: [rows[0].id: inclineID])
         XCTAssertEqual(layered[0].exerciseID, inclineID)
         XCTAssertEqual(layered[0].id, rows[0].id, "the slot's identity is the row")
-        XCTAssertEqual(RoutineProgression.completedSets(forSlot: layered[0], in: []), 0)
+        XCTAssertEqual(count(layered[0], []), 0)
         XCTAssertEqual(SoloResumeCursor.derive(rows: rows, swapOverrides: [:], logs: []),
                        SoloResumeCursor.Position(exerciseIndex: 0, setIndex: 1))
     }

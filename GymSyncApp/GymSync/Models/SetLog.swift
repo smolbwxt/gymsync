@@ -38,8 +38,8 @@ struct SetLog: Codable, Identifiable, Sendable {
     /// know its slot) and every FREEFORM ad-hoc set, whose synthesized rows
     /// are never persisted and so have no slot to name.
     ///
-    /// `RoutineProgression.completedSets(forSlot:in:)` is the ONE place the
-    /// fallback for those rows is written down.
+    /// `SlotProgress` (`Models/RoutineProgression.swift`) is the ONE place
+    /// the fallback for those rows is written down.
     ///
     /// Trailing default keeps every construction site compiling — the same
     /// idiom `bodyWeightLbs` above used.
