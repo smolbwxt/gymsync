@@ -485,6 +485,13 @@ struct SessionLiveView: View {
         SoloSessionShape.hidesCrewFurniture(participantCount: rosterCount)
     }
 
+    /// The end confirmation's words (fix round 1 / B1). Solo for a roster of
+    /// one — the same law the furniture reads — crew otherwise.
+    private var endDialog: SessionEndCopy.Dialog {
+        SessionEndCopy.dialog(isSolo: hidesCrewFurniture,
+                              isLastPresent: presentRotation.count <= 1)
+    }
+
     /// WHOSE ACT THE LOG CONTROL IS — plan task S5's one behavioural change.
     ///
     /// Rounds is a rotation: the inline LOG THIS SET card belongs to whoever
@@ -2187,24 +2194,37 @@ struct SessionLiveView: View {
         // non-organizers the RPC refused, stranding them in the session).
         // Leave = drop out of the rotation; End = the last present lifter
         // (or the organizer) closing it out for the crew's records.
+        //
+        // AND IT READS AS A SOLO WORKOUT FOR A ROSTER OF ONE (fix round 1 /
+        // B1, ruling R-C-7). "Leave session" and "End for everyone" both
+        // describe other people; a lifter alone in a gym has none, and is
+        // finishing their workout. ONE action, worded for that, calling the
+        // very same `endSession()` — `complete()`, the recap, the streak,
+        // the week, the pump post — as a crew end does. `SessionEndCopy`
+        // owns both branches' words so they are asserted rather than
+        // eyeballed.
         .confirmationDialog(
-            "Leave the session?",
+            endDialog.title,
             isPresented: $showEndConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Leave session") {
-                Task { await leaveSession() }
-            }
-            if isOrganizer || presentRotation.count <= 1 {
-                Button("End for everyone", role: .destructive) {
+            if let soloPrimary = endDialog.soloPrimary {
+                Button(soloPrimary) {
                     Task { await endSession() }
+                }
+            } else {
+                Button("Leave session") {
+                    Task { await leaveSession() }
+                }
+                if isOrganizer || presentRotation.count <= 1 {
+                    Button("End for everyone", role: .destructive) {
+                        Task { await endSession() }
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(presentRotation.count <= 1
-                 ? "You're the last one lifting — leaving completes the session."
-                 : "Leaving removes you from the rotation; the crew keeps lifting.")
+            Text(endDialog.message)
         }
         // Realtime lifecycle — SessionLiveService + SessionBroadcastService
         //
@@ -4617,7 +4637,14 @@ struct SessionLiveView: View {
             onAcceptStretch: { freestyleStretchAcknowledged = true },
             onDeclineStretch: { freestyleStretchAcknowledged = true },
             onAcceptAccessory: { freestyleAcknowledgeAccessory() },
-            onDeclineAccessory: { freestyleAcknowledgeAccessory() })
+            onDeclineAccessory: { freestyleAcknowledgeAccessory() },
+            // THE WAY OUT (fix round 1 / B1). The same hook, the same
+            // control and the same confirmation `togetherPage` raises —
+            // Freestyle had none, so an ad-hoc solo workout could not be
+            // finished. `SessionEndAffordance` is the law that says this
+            // page owes one, and `showsEnd` is its reader.
+            onEnd: { showEndConfirmation = true },
+            showsEnd: SessionEndAffordance.pageMountsItsOwnEnd(style))
     }
 
     private func freestyleAcknowledgeAccessory() {

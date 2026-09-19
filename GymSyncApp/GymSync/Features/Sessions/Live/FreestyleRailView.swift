@@ -160,6 +160,26 @@ struct FreestyleRailView: View {
     var onAcceptAccessory: () -> Void = {}
     var onDeclineAccessory: () -> Void = {}
 
+    /// THE WAY OUT (fix round 1 / B1, ruling R-C-7). This page drew no
+    /// header rail and no foot of its own, and the pinned `turnChrome`
+    /// beneath it carries LOG and nothing else — so a Freestyle session
+    /// could not be ended at all. Shipped for CREW Freestyle since Phase B1;
+    /// Phase C1 made every ad-hoc solo workout `.freestyle` and so made it
+    /// everybody's.
+    ///
+    /// The SAME hook and the SAME control `TogetherClockView` already takes
+    /// (`onEnd` → `RoundDoor(glyph: "xmark", title: RoundCopy.endSession)`,
+    /// last in its foot), for the same reason its own comment gives:
+    /// neutral, never accent, because the LOG card above is this screen's
+    /// one accent act and ending is not what the lifter came to do. No new
+    /// composition.
+    var onEnd: () -> Void = {}
+    /// Whether to draw it. `SessionLiveView` passes
+    /// `SessionEndAffordance.pageMountsItsOwnEnd(style)`, so the law that
+    /// says every style page has an end has a real reader here; the catalog
+    /// passes false and draws the rail alone.
+    var showsEnd: Bool = false
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
@@ -180,6 +200,9 @@ struct FreestyleRailView: View {
                 }
                 if let entryCard {
                     entryCard
+                }
+                if showsEnd {
+                    RoundDoor(glyph: "xmark", title: RoundCopy.endSession, onTap: onEnd)
                 }
             }
             .padding(.horizontal, 16)
