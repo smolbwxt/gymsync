@@ -403,5 +403,20 @@
     "frame": 158,
     "title": "Rounds, the round wait - the end door on it",
     "note": "Phase C1 S6 (2026-09-19). The same production RoundWaitView over the SAME LiveFixtures.roundWait world session-round-wait (frame 137) captures, with a no-op onEnd closure - the onSetRackCount/session-round-rack-chip (frame 154) precedent, one property over. RoundWaitView.onEnd (fix round 2 / N9-N10) mounts a RoundDoor last in the foot only when non-nil; content_sessionRoundWait passes nothing, so frame 137 stays byte-identical (constraint 14)."
+  },
+  "session-solo-rest": {
+    "frame": 156,
+    "title": "The same solo world at rest",
+    "note": "Phase C1 S6 (2026-09-19). SessionLiveView(catalog: LiveFixtures.soloRest) - the same one-participant .freestyle world session-solo-live (frame 155) renders, with a fixture LiveWorld.restElapsedOverride (\"3:15\") read by SessionLiveView.freestyleScreen(now:) in place of the live RoundCopy.elapsed(since:now:) reading. A literal string rather than a Date, because the freestyle rest card ticks off a TimelineView(.periodic(from: .now, by: 1)) - the one fixture value that cannot drift with the day the screenshot is taken is the rendered string itself, the same idiom RoundWaitWorld.rest.elapsed already uses. Every other world leaves the override nil, so frames 137-145 and 155 are unchanged."
+  },
+  "session-solo-swap": {
+    "frame": 157,
+    "title": "The same solo world with slot 1 swapped to Goblet squat",
+    "note": "Phase C1 S6 (2026-09-19). SessionLiveView(catalog: LiveFixtures.soloSwap) - the RESULT of a swap on the live page, not the swap sheet (groupSwapSheet's suggestions come from a live ExerciseSubstitutionRepository call and are never reached by this builder). LiveWorld.selfSwaps ([squatRowID: SwapTarget(gobletSquatID, \"Goblet squat\")]) is seeded into selfScales[selfID] at SessionLiveView.init(catalog:) exactly the way a durable row's self_swaps seeds it in reload() - the same RoutineLayering.apply effectiveRoutineExercises already calls. Every other world leaves selfSwaps empty, so frames 137-145, 155 and 156 are unchanged."
+  },
+  "session-solo-warmup-cover": {
+    "frame": 159,
+    "title": "The solo warm-up inside the real cover, MINIMISE mounted",
+    "note": "Phase C1 S6 (2026-09-19). The SAME WarmUpFixtures.solo world session-warmup-solo (frame 132) renders, this time inside the real SoloSessionCover with MINIMISE mounted - SoloSessionCover.catalogContent is a new DEBUG-only property (nil in every production call site, unchanged) that body renders instead of building SessionEntryView(session:), whose resolve() is a live SessionRepository.participants fetch this builder never reaches. The cover's own isSoloByConstruction check runs unchanged against LiveFixtures.soloLive's fixture session (groupID/roomCode/scheduledFor all nil), so MINIMISE shows exactly as it would in production. Accepted-unknown N3: this is the frame that shows whether MINIMISE (top-trailing, no background) overlaps the warm-up plan card's top padding - not fixed here."
   }
 }

@@ -167,12 +167,38 @@ enum SoloSessionShape {
 struct SoloSessionCover: View {
     let session: WorkoutSession
 
+    #if DEBUG
+    /// The catalog's entry point (plan task S6, frame 159), and ONLY the
+    /// catalog's — mirrors `SessionLiveView.catalog`'s own `#if DEBUG`
+    /// idiom. Every production call site's `SoloSessionCover(session:)`
+    /// leaves this nil via the synthesized memberwise init, unchanged; the
+    /// real `SessionEntryView(session:)` below is what those sites get.
+    ///
+    /// `SessionEntryView.resolve()` always calls
+    /// `SessionRepository.participants(sessionID:)` — a live fetch with no
+    /// catalog bypass of its own — so a catalog frame that wants MINIMISE
+    /// over a KNOWN screen (the warm-up `session-warmup-solo` already
+    /// photographs) hands that screen in directly instead of asking the
+    /// cover to resolve one.
+    var catalogContent: AnyView?
+    #endif
+
     var body: some View {
-        SessionEntryView(session: session)
-            .soloMinimiseOverlay(SoloSessionShape.isSoloByConstruction(
-                groupID: session.groupID,
-                roomCode: session.roomCode,
-                scheduledFor: session.scheduledFor))
+        Group {
+            #if DEBUG
+            if let catalogContent {
+                catalogContent
+            } else {
+                SessionEntryView(session: session)
+            }
+            #else
+            SessionEntryView(session: session)
+            #endif
+        }
+        .soloMinimiseOverlay(SoloSessionShape.isSoloByConstruction(
+            groupID: session.groupID,
+            roomCode: session.roomCode,
+            scheduledFor: session.scheduledFor))
     }
 }
 

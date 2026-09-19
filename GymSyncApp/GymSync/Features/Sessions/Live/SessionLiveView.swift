@@ -869,6 +869,16 @@ struct SessionLiveView: View {
         _logReps = State(initialValue: catalog.logReps)
         _logWeight = State(initialValue: catalog.logWeight)
         _logRPE = State(initialValue: catalog.logRPE)
+        // Plan task S6, frame 157: a fixture's own quiet swap, seeded the
+        // same way a durable row's `self_swaps` seeds `selfScales` in
+        // `reload()` — `effectiveRoutineExercises` reads it through the
+        // same `RoutineLayering.apply` either way. Empty in every other
+        // world, so `selfScales` stays `[:]` (its own declared default) and
+        // this line changes nothing for `session-your-turn`/`session-solo-
+        // live`.
+        if !catalog.selfSwaps.isEmpty {
+            _selfScales = State(initialValue: [catalog.selfID: catalog.selfSwaps])
+        }
     }
     #endif
 
@@ -4695,6 +4705,17 @@ struct SessionLiveView: View {
         var stretch: FreestyleSuggestion?
         var accessory: FreestyleSuggestion?
         var behind: String?
+        // Plan task S6, frame 156: a fixture's own rest-elapsed string,
+        // read only in DEBUG and only for a catalog world that names one
+        // (`nil` everywhere else, including production). `RoundCopy.elapsed`
+        // ticks off `now`, which this page's own `TimelineView` — not this
+        // override — drives; the override exists so a catalog frame can
+        // show a rest reading that does not grow with the day it is
+        // captured.
+        var restElapsed = RoundCopy.elapsed(since: myLastLoggedAt, now: now)
+        #if DEBUG
+        if let override = catalog?.restElapsedOverride { restElapsed = override }
+        #endif
 
         if case .ahead(let by) = standing {
             if !freestyleStretchAcknowledged {
@@ -4717,7 +4738,7 @@ struct SessionLiveView: View {
             kicker: freestyleKicker,
             title: RoundCopy.freestyleTitle,
             rail: freestyleRailModel,
-            restElapsed: RoundCopy.elapsed(since: myLastLoggedAt, now: now),
+            restElapsed: restElapsed,
             standing: standing,
             stretchSuggestion: stretch,
             accessorySuggestion: accessory,

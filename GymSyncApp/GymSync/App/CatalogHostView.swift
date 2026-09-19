@@ -211,19 +211,28 @@ enum CatalogScreen: String, CaseIterable {
     // frame 155 — the one body for a roster of ONE, over a new one-
     // participant `.freestyle` world. See `content_sessionSoloLive` below.
     case sessionSoloLive = "session-solo-live"
+    // Phase C1 S6, frame 156: the same solo world at rest — a fixture rest-
+    // elapsed string on the same freestyle rail. See `content_sessionSoloRest`
+    // below and `LiveWorld.restElapsedOverride`'s own doc comment.
+    case sessionSoloRest = "session-solo-rest"
+    // Phase C1 S6, frame 157: the same solo world with slot 1 swapped to
+    // Goblet squat — the RESULT on the live page, not the swap sheet (which
+    // needs a live repository call). See `content_sessionSoloSwap` below
+    // and `LiveWorld.selfSwaps`'s own doc comment.
+    case sessionSoloSwap = "session-solo-swap"
     // Phase C1 S6, frame 158: the round wait with the new N9/N10 `onEnd`
     // door photographed — the SAME `LiveFixtures.roundWait` world frame 137
     // captures, with a no-op `onEnd` closure. Frame 137 itself passes
     // nothing and stays byte-identical (constraint 14). See
     // `content_sessionRoundWaitDoor` below.
-    //
-    // `session-solo-rest`, `session-solo-swap` and `session-solo-warmup-
-    // cover` (the dispatch's other two ids, frames 156/157/159) are NOT
-    // added here — each needs either a live repository call or a change to
-    // `SessionLiveView.swift`/`SessionEntryView.swift` outside this task's
-    // catalog/fixture/test/frame-map boundary. See the task's own report
-    // for the three blockers, file:line.
     case sessionRoundWaitDoor = "session-round-wait-door"
+    // Phase C1 S6, frame 159: the solo warm-up as the ad-hoc lifter meets
+    // it, inside the real `SoloSessionCover` with MINIMISE mounted — the
+    // SAME `WarmUpFixtures.solo` world `session-warmup-solo` (frame 132)
+    // renders, handed to `SoloSessionCover`'s DEBUG-only `catalogContent`
+    // seam rather than through `SessionEntryView.resolve()` (a live fetch).
+    // See `content_sessionSoloWarmupCover` below.
+    case sessionSoloWarmupCover = "session-solo-warmup-cover"
 }
 
 struct CatalogHostView: View {
@@ -347,7 +356,10 @@ struct CatalogHostView: View {
             case .sessionRoundRackChip:       content_sessionRoundRackChip
             case .sessionLobbyRackAsk:        content_sessionLobbyRackAsk
             case .sessionSoloLive:            content_sessionSoloLive
+            case .sessionSoloRest:            content_sessionSoloRest
+            case .sessionSoloSwap:            content_sessionSoloSwap
             case .sessionRoundWaitDoor:       content_sessionRoundWaitDoor
+            case .sessionSoloWarmupCover:     content_sessionSoloWarmupCover
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2901,11 +2913,14 @@ struct CatalogHostView: View {
         NavigationStack { SessionLiveView(catalog: LiveFixtures.yourTurn) }
     }
 
-    // MARK: - Phase C1 S6 (2026-09-19): the ad-hoc solo session's proof
-    // frames — five requested, two buildable inside this task's
-    // catalog/fixture/test/frame-map boundary (constraint 11's "no live
-    // repository, no Date.now reachable from a catalog builder" rules out
-    // the other three; see each one's own note below).
+    // MARK: - Phase C1 S6 (2026-09-19): the ad-hoc solo session's five proof
+    // frames. Each reaches its screen without a repository call or a
+    // `Date.now` (constraint 11): 156 and 157 seed new DEBUG-only fields on
+    // `LiveWorld` that `SessionLiveView.init(catalog:)` applies exactly the
+    // way it already applies `logReps`/`logWeight`/`logRPE`; 159 hands
+    // `SoloSessionCover` prebuilt content through a DEBUG-only property
+    // instead of letting it resolve one. Every existing world leaves the
+    // new fields nil/empty, so frames 137-145 and 155 are unaffected.
 
     /// `session-solo-live` (frame 155): an ad-hoc solo session in the one
     /// body — `.freestyle`, a roster of one, the entry card up, and the end
@@ -2918,6 +2933,31 @@ struct CatalogHostView: View {
     /// why `sets` is empty.
     private var content_sessionSoloLive: some View {
         NavigationStack { SessionLiveView(catalog: LiveFixtures.soloLive) }
+    }
+
+    /// `session-solo-rest` (frame 156): the SAME solo world at rest —
+    /// `LiveFixtures.soloRest` names a fixture `restElapsedOverride`, which
+    /// `SessionLiveView.freestyleScreen(now:)` reads (in `#if DEBUG` only)
+    /// in place of the live `RoundCopy.elapsed(since:now:)` reading. See
+    /// `LiveWorld.restElapsedOverride`'s own doc comment for why a literal
+    /// string, not a `Date`, is the fixture-safe way to show it.
+    private var content_sessionSoloRest: some View {
+        NavigationStack { SessionLiveView(catalog: LiveFixtures.soloRest) }
+    }
+
+    /// `session-solo-swap` (frame 157): the SAME solo world with slot 1
+    /// (Back squat) swapped to Goblet squat — the RESULT on the live page,
+    /// not the swap sheet. `LiveFixtures.soloSwap` names a fixture
+    /// `selfSwaps`, which `SessionLiveView.init(catalog:)` seeds into
+    /// `selfScales[selfID]` — the SAME in-memory cache a durable row's
+    /// `self_swaps` seeds in `reload()`, read by the SAME
+    /// `RoutineLayering.apply` `effectiveRoutineExercises` already calls.
+    /// No repository, no broadcast, and `groupSwapSheet` itself is never
+    /// opened (`showGroupSwapSheet` stays false) — its suggestions come from
+    /// a live `ExerciseSubstitutionRepository` call this builder never
+    /// reaches.
+    private var content_sessionSoloSwap: some View {
+        NavigationStack { SessionLiveView(catalog: LiveFixtures.soloSwap) }
     }
 
     /// `session-round-wait-door` (frame 158): the SAME `RoundWaitView` over
@@ -2939,38 +2979,37 @@ struct CatalogHostView: View {
                              onEnd: {})
     }
 
-    // NOT BUILT — reported to the dispatching task rather than forced:
-    //
-    // `session-solo-rest` (frame 156, "the personal rest window ... and the
-    // swap door on it"). `SessionLiveView`'s `selfRotationRestUntil` family
-    // is a `.rounds`-only mechanic (`commitInlineLog`'s "solo-in-a-rotation:
-    // the pass came straight back" branch, gated on
-    // `liveSession.currentTurnUserID == selfID` — Freestyle carries no
-    // turn, decision 1) and is never seeded from `LiveWorld`/`init(catalog:)`
-    // in the first place. Building it needs a new fixture-seeded field on
-    // `SessionLiveView` itself, which is outside catalog/fixture/test/
-    // frame-map.
-    //
-    // `session-solo-swap` (frame 157, "the graph suggestions, and the
-    // 'Search all exercises' row"). `SessionLiveView.groupSwapSheet`'s
-    // suggestions come from `loadGroupSwapOptions()`, an async
-    // `ExerciseSubstitutionRepository.forExercise` call gated off entirely
-    // by `catalogSkipLoad` (constraint 11) — with it skipped the sheet shows
-    // only "Looking for swaps…". The "Search all exercises" row does not
-    // exist on this sheet at all; it is `WorkoutSessionView.swapCatalogRow`
-    // only (`WorkoutSessionView.swift:1434-1454`), never ported to the one
-    // body. And `showGroupSwapSheet` is a private `@State` with no fixture
-    // toggle to present it. All three close only by editing
-    // `SessionLiveView.swift`.
-    //
-    // `session-solo-warmup-cover` (frame 159, "the solo warm-up ... INSIDE
-    // SoloSessionCover with MINIMISE mounted"). `SoloSessionCover.body` is
-    // `SessionEntryView(session:).soloMinimiseOverlay(...)`, and
-    // `SessionEntryView.resolve()` (`SessionEntryView.swift:142-150`) always
-    // calls `SessionRepository.participants(sessionID:)` — a real network
-    // fetch with no `#if DEBUG`/catalog bypass anywhere in that view. There
-    // is no way to reach the warm-up screen through the real cover from a
-    // catalog builder without adding one.
+    /// `session-solo-warmup-cover` (frame 159): the solo warm-up as the
+    /// ad-hoc lifter meets it — the SAME `WarmUpFixtures.solo` world
+    /// `session-warmup-solo` (frame 132) renders, this time INSIDE the real
+    /// `SoloSessionCover` with MINIMISE mounted. `SoloSessionCover`'s
+    /// production path always builds `SessionEntryView(session:)`, whose
+    /// `resolve()` is a live `SessionRepository.participants` fetch this
+    /// builder must never reach — so this hands the SAME warm-up screen in
+    /// through the cover's DEBUG-only `catalogContent`, and the cover's
+    /// unchanged `isSoloByConstruction` check (the fixture session's
+    /// `groupID`/`roomCode`/`scheduledFor` all nil, `LiveFixtures.soloLive`'s
+    /// own session) still decides MINIMISE the same way production does.
+    ///
+    /// N3 (owner-accepted unknown): MINIMISE is `.overlay(alignment:
+    /// .topTrailing)` with no background; this frame is what shows whether
+    /// it overlaps the warm-up plan card's top padding — not fixed here.
+    private var content_sessionSoloWarmupCover: some View {
+        let world = WarmUpFixtures.solo
+        let warmUp = AnyView(
+            WarmUpScreen(warmthRows: world.warmthRows,
+                        isSolo: world.isSolo,
+                        isOrganizer: world.isOrganizer,
+                        planRows: world.planRows,
+                        rungHeadline: world.rungHeadline,
+                        rungDetail: world.rungDetail,
+                        coachSuggestion: world.coachSuggestion,
+                        blockWeek: world.blockWeek,
+                        blockWeeks: world.blockWeeks,
+                        blockMilestone: world.blockMilestone,
+                        elapsed: world.elapsed))
+        return SoloSessionCover(session: LiveFixtures.soloLive.session, catalogContent: warmUp)
+    }
 }
 
 // MARK: - Profile fixture

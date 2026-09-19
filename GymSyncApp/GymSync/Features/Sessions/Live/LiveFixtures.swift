@@ -112,6 +112,28 @@ struct LiveWorld {
     let logWeight: String
     let logRPE: Double
 
+    /// DEBUG-only rest-window override (plan task S6, frame 156) for
+    /// `SessionLiveView.freestyleScreen`'s rest card. `RoundCopy.elapsed
+    /// (since:now:)` computes against a live `TimelineView` tick — the
+    /// engine every `.freestyle` catalog frame ticks on, not something this
+    /// world can seed away — so the one fixture value that cannot drift with
+    /// the day the screenshot is taken is the RENDERED STRING itself: the
+    /// same idiom `RoundWaitWorld.rest.elapsed`/`FreestyleWorld.restElapsed`
+    /// already use. `nil` in every existing world, which keeps
+    /// `session-your-turn` and `session-solo-live` byte-identical.
+    let restElapsedOverride: String? = nil
+
+    /// DEBUG-only self-swap seed (plan task S6, frame 157): `[slotID:
+    /// SessionLiveView.SwapTarget]`, seeded into `selfScales[selfID]` at
+    /// `init(catalog:)` — the same idiom `logReps`/`logWeight`/`logRPE`
+    /// already use to seed other `@State`. `RoutineLayering.apply` (the pure
+    /// function `effectiveRoutineExercises` already delegates to) reads it
+    /// exactly as it reads a durable row's `self_swaps`; no repository, no
+    /// broadcast, no production seam. Empty in every existing world, which
+    /// keeps `effectiveRoutineExercises` resolving the UNSWAPPED routine for
+    /// `session-your-turn` and `session-solo-live`.
+    let selfSwaps: [UUID: SessionLiveView.SwapTarget] = [:]
+
     struct Reading: Equatable {
         let bpm: Int
         let zone: HeartRateZone?
@@ -693,6 +715,87 @@ enum LiveFixtures {
         logReps: "5",
         logWeight: "225",
         logRPE: 7.0)
+
+    /// `session-solo-rest` (frame 156): the SAME solo world at rest — the
+    /// rest card reading a fixture elapsed time instead of "0:00".
+    /// `restElapsedOverride` is the only difference from `soloLive`; see its
+    /// own doc comment on `LiveWorld` for why a literal string, not a
+    /// `Date`, is the fixture-safe way to show it.
+    static let soloRest = LiveWorld(
+        session: WorkoutSession(
+            id: soloLiveSessionID,
+            routineID: liveRoutineID,
+            organizerID: alexID,
+            state: "in_progress",
+            startedAt: nil,
+            completedAt: nil,
+            createdAt: utcDate(year: 2026, month: 9, day: 16),
+            groupID: nil,
+            roomCode: nil,
+            scheduledFor: nil,
+            seriesID: nil,
+            currentTurnUserID: nil,
+            currentTurnStartedAt: nil,
+            style: .freestyle),
+        selfID: alexID,
+        routineName: "Push A",
+        routineExercises: liveRoutineExercises,
+        allExercises: liveExercises,
+        sets: [],
+        participantCount: 1,
+        heartRate: nil,
+        logReps: "5",
+        logWeight: "225",
+        logRPE: 7.0,
+        restElapsedOverride: "3:15")
+
+    /// The goblet squat `Exercise` the swap below substitutes in — a real
+    /// object, not just the `SwapConsentCard.Door` text `swapConsent`
+    /// already carries, so `allExercises.first(where:)` resolves a name
+    /// for the swapped slot exactly as it would for a durable row.
+    static let gobletSquatExercise = Exercise(
+        id: gobletSquatID, name: "Goblet squat", slug: "goblet-squat",
+        category: "compound", primaryMuscle: "quads",
+        secondaryMuscles: ["glutes", "core"], equipment: "dumbbell",
+        defaultUnit: "lb", demoVideoURL: nil)
+
+    /// `session-solo-swap` (frame 157): the same solo world with slot 1
+    /// (Back squat) swapped to Goblet squat — the RESULT, not the sheet:
+    /// `groupSwapSheet`'s suggestions come from a live
+    /// `ExerciseSubstitutionRepository` call (constraint 11), so this
+    /// photographs what a completed swap looks like on the page itself,
+    /// exactly the way `content_sessionScaleDown`'s "one lifter on a
+    /// different exercise, nothing announced" already reads for the crew.
+    /// `selfSwaps` is seeded into `selfScales[selfID]` at `init(catalog:)`
+    /// and read by the SAME `RoutineLayering.apply` a durable row goes
+    /// through — no repository, no broadcast.
+    static let soloSwap = LiveWorld(
+        session: WorkoutSession(
+            id: soloLiveSessionID,
+            routineID: liveRoutineID,
+            organizerID: alexID,
+            state: "in_progress",
+            startedAt: nil,
+            completedAt: nil,
+            createdAt: utcDate(year: 2026, month: 9, day: 16),
+            groupID: nil,
+            roomCode: nil,
+            scheduledFor: nil,
+            seriesID: nil,
+            currentTurnUserID: nil,
+            currentTurnStartedAt: nil,
+            style: .freestyle),
+        selfID: alexID,
+        routineName: "Push A",
+        routineExercises: liveRoutineExercises,
+        allExercises: liveExercises + [gobletSquatExercise],
+        sets: [],
+        participantCount: 1,
+        heartRate: nil,
+        logReps: "5",
+        logWeight: "225",
+        logRPE: 7.0,
+        selfSwaps: [squatRowID: SessionLiveView.SwapTarget(id: gobletSquatID, name: "Goblet squat")])
 
     /// `session-freestyle-rail` (frame 141): the rail, the stretched rest,
     /// and Coach's accessory — both suggestions, because the frame is built
