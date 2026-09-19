@@ -4751,7 +4751,15 @@ struct WorkoutSessionView: View {
         guard let session else { return }
         do {
             let completedResult = try await SessionRepository.complete(sessionID: session.id)
-            let logs = try await SessionRepository.setLogs(sessionID: completedResult.id)
+            // THE FINISH PATH MERGES TOO (final review NEW-2) — these rows
+            // feed the recovery probes, the one-shot HealthKit export and the
+            // recap, so a set still in the outbox would be missing from all
+            // three. Same function, same two lines, as this body's resume read.
+            let fetchedLogs = try await SessionRepository.setLogs(sessionID: completedResult.id)
+            let logs = PendingSetLogMerge.merged(
+                fetched: fetchedLogs,
+                pending: OfflineSetLogQueue.shared.pendingLogs(sessionID: completedResult.id),
+                sessionID: completedResult.id)
             completedSession = completedResult
             // The session is durably over — retire the recovery pill.
             if appState.liveSoloSession?.id == session.id {

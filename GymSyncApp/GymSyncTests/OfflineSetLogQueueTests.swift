@@ -987,6 +987,52 @@ final class OfflineSetLogQueueTests: XCTestCase {
                        [first.id, second.id])
     }
 
+    // MARK: - The finish path (final review NEW-2)
+    //
+    // `presentCompletion` fed five consumers at once — the one-shot HealthKit
+    // export, the group payload, the pump check, the coach debrief and the
+    // recap — from its own unmerged fetch, so a row still queued at the moment
+    // Finish was tapped was missing from all five. The view method is not
+    // reachable from a test; these pin the two arrays it now composes.
+
+    /// The success leg: the server does not yet carry the row the replay has
+    /// not drained, so the recap must still count it — once.
+    func testTheRecapCountsARowTheServerHasNotSeenYet() {
+        let sessionID = UUID(), benchID = UUID()
+        let landed = (0..<2).map { i in
+            makeSetLog(sessionID: sessionID, exerciseID: benchID, setIndex: i + 1,
+                       loggedAt: Date(timeIntervalSince1970: Double(i)))
+        }
+        let stillQueued = makeSetLog(sessionID: sessionID, exerciseID: benchID,
+                                     setIndex: 3,
+                                     loggedAt: Date(timeIntervalSince1970: 2))
+
+        let recapRows = PendingSetLogMerge.merged(fetched: landed,
+                                                  pending: [stillQueued],
+                                                  sessionID: sessionID)
+        XCTAssertEqual(recapRows.count, 3)
+        XCTAssertEqual(recapRows.last?.id, stillQueued.id)
+    }
+
+    /// The failure leg, which is the one this round added: the fetch throws,
+    /// so the recap is built from this body's own rows — and those ALREADY
+    /// hold the optimistic copy of every queued set, under the same id. The
+    /// merge must fall back without doubling them.
+    func testTheFinishPathFallsBackToTheInMemoryRowsWithoutDoublingThem() {
+        let sessionID = UUID(), benchID = UUID()
+        let optimistic = (0..<3).map { i in
+            makeSetLog(sessionID: sessionID, exerciseID: benchID, setIndex: i + 1,
+                       loggedAt: Date(timeIntervalSince1970: Double(i)))
+        }
+        // `fetched: fetchedSets ?? allSessionSets` with the same rows in the
+        // outbox — the exact pair `presentCompletion` composes when the fetch
+        // fails.
+        let rows = PendingSetLogMerge.merged(fetched: optimistic, pending: optimistic,
+                                             sessionID: sessionID)
+        XCTAssertEqual(rows.count, 3, "a recap, not a doubled one")
+        XCTAssertEqual(rows.map(\.id), optimistic.map(\.id))
+    }
+
     /// Never configured — the same "must not crash, answers nothing" contract
     /// every other member of this class keeps.
     func testPendingLogsIsEmptyWhenNeverConfigured() {

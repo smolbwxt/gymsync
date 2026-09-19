@@ -5753,25 +5753,51 @@ struct SessionLiveView: View {
     /// arrives as a realtime/poll echo (field 2026-08-01: the organizer's
     /// End only ended the session on the organizer's phone; members'
     /// screens just sat there).
+    /// THE RECAP SEES WHAT THE CURSOR SEES (final review NEW-2, ruling 2's own
+    /// words: "the cursor and THE RECAP therefore see them").
+    ///
+    /// This fetched its own array and handed it, unmerged, to five consumers
+    /// at once — the HealthKit export, the group payload, the pump check, the
+    /// coach debrief and `RecapData`. A row still in `OfflineSetLogQueue` at
+    /// that instant was absent from all five, which is F3's harm with the sign
+    /// flipped: an UNDER-reported session. It is reachable without airplane
+    /// mode — reconnect and tap Finish before `replay()` (a fire-and-forget
+    /// `Task`) has drained, or while a pass has stopped on a `.network`
+    /// failure. The HealthKit export is a ONE-SHOT write, so its copy stays
+    /// short for good.
+    ///
+    /// AND A FAILED FETCH NOW YIELDS A RECAP RATHER THAN NOTHING. The fetch
+    /// was the only throwing call in the block, so its failure skipped the
+    /// export, the unsubscribe and the recap entirely and left the lifter with
+    /// one red line at the end of a workout they had just finished. It now
+    /// falls back to this body's own merged rows — the same
+    /// `fetched ?? allSessionSets` stance `reload()` takes — and the notice is
+    /// still shown, because the recap IS then built from what this phone knows
+    /// rather than from the server's record.
     @MainActor
     private func presentCompletion(_ completed: WorkoutSession) async {
         liveSession = completed
         pushWatchSessionState()
+        var fetchedSets: [SetLog]?
         do {
-            let allSets = try await SessionRepository.sessionSets(sessionID: session.id)
-            try? await HealthKitBridge.requestPermission()
-            try? await HealthKitBridge.exportWorkout(session: completed, setLogs: allSets)
-            await liveService.unsubscribe()
-            let groupPayload = await buildGroupRecapPayload(session: completed, sets: allSets)
-            let pumpCheck = await buildPumpCheckContext(session: completed, sets: allSets)
-            await assembleGroupDebrief(session: completed, allSets: allSets)
-            recapData = RecapData(session: completed, sets: allSets,
-                                  groupPayload: groupPayload, pumpCheck: pumpCheck)
+            fetchedSets = try await SessionRepository.sessionSets(sessionID: session.id)
         } catch let error as GymSyncError {
             errorText = error.errorDescription
         } catch {
             errorText = error.localizedDescription
         }
+        let allSets = PendingSetLogMerge.merged(
+            fetched: fetchedSets ?? allSessionSets,
+            pending: OfflineSetLogQueue.shared.pendingLogs(sessionID: session.id),
+            sessionID: session.id)
+        try? await HealthKitBridge.requestPermission()
+        try? await HealthKitBridge.exportWorkout(session: completed, setLogs: allSets)
+        await liveService.unsubscribe()
+        let groupPayload = await buildGroupRecapPayload(session: completed, sets: allSets)
+        let pumpCheck = await buildPumpCheckContext(session: completed, sets: allSets)
+        await assembleGroupDebrief(session: completed, allSets: allSets)
+        recapData = RecapData(session: completed, sets: allSets,
+                              groupPayload: groupPayload, pumpCheck: pumpCheck)
     }
 
     @MainActor
