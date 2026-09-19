@@ -22,23 +22,46 @@ import Foundation
 //      so adopting somebody else's was unreachable rather than refused. The
 //      check is now stated: `organizerID == me`.
 //
-//   2. `liveForCurrentUser`'s six-hour floor meant a solo row older than six
-//      hours was not adopted and a second was minted — and the first stayed
-//      `in_progress` FOREVER, because nothing in this app ever ends a session
-//      on its own (there is no reaper; `20260716000003_push_cron.sql:169-199`
-//      notifies at 30 and 60 minutes idle and never transitions the row). B1
-//      made that the ordinary outcome rather than the exception: a Freestyle
-//      session could not be ended at all, so every ad-hoc workout was leaving
-//      one behind. Those rows are now CLOSED.
+//   2. `liveForCurrentUser`'s six-hour floor is applied HERE rather than in
+//      SQL, so the window the law turns on is written down in one place a
+//      test can read instead of being split between a query and a function.
 //
-// CLOSED MEANS `complete()`, NOT "abandoned", and that is what the completion
-// path honestly supports: `sessions.state` admits `'abandoned'` but NO
-// repository function writes it (grep: the only `"abandoned"` literal in the
-// app is `ProgramRepository.end(reason:)`, an unrelated column). `complete()`
-// is the shipped write — `state = 'completed'`, `completed_at = now` — and it
-// is also the truthful one: a workout whose sets are in `set_logs` happened,
-// and the streak and week credit those rows earn should not be voided because
-// the lifter walked away without tapping anything.
+// A STALE ROW IS IGNORED, NOT CLOSED — AND THAT IS A WITHDRAWN RULING
+// (fix round 2 / B3). This function briefly returned a list of stale ad-hoc
+// rows for `startOrAdoptSolo` to `complete()`, on the argument that a row
+// nothing ever ends stays `in_progress` forever (true: there is no reaper,
+// and `20260716000003_push_cron.sql:169-199` notifies at 30 and 60 minutes
+// idle without ever transitioning the row). The argument was right about the
+// problem and wrong about the remedy, because `complete()` IS NOT A QUIET
+// WRITE. `AFTER UPDATE OF state ON public.sessions` fires:
+//
+//   * `leaderboard_recompute_on_session_completion` (`20260723000001:245-307`)
+//     — marks EVERY `workout_attempts` row for the session complete, opted in
+//     or not, and INSERTs a `leaderboard_entries` row whose `time_seconds` is
+//     `completed_at - started_at`: the whole wall-clock gap since the lifter
+//     walked away, published as a finished run.
+//   * `zzleaderboard_social_effects_on_completion` (`20260723000002:309`) —
+//     ranks the opted-in ones and `enqueue_push(..., 'leaderboard_passed')`,
+//     a notification sent to ANOTHER USER because this lifter tapped START on
+//     something unrelated.
+//   * `campaign_progress_on_session_completion` (`20260728000002:346`) —
+//     credits a session against any campaign whose `curated_routine_ids`
+//     holds this routine, and on crossing the target INSERTs a
+//     `system_campaign` chat row into EVERY GROUP the lifter belongs to.
+//
+// None of that is a thing a tap on START WORKOUT may do on the lifter's
+// behalf, to a session they never asked to close. So the stale row is left
+// exactly as master leaves it: ignored, and a fresh session is started
+// beside it.
+//
+// THE OPEN ROW IS A REAL RESIDUAL AND IT NEEDS A SERVER-SIDE ABANDON, WHICH
+// IS C2's. `sessions.state` already admits `'abandoned'` but NO repository
+// function writes it (grep: the app's only `"abandoned"` literal is
+// `ProgramRepository.end(reason:)`, an unrelated column), and `'abandoned'`
+// is not `'completed'`, so none of the three triggers above would fire for
+// it — which is precisely why it, and not `complete()`, is the right shape
+// for this. C2 owns discard/abandon; until it lands, an ad-hoc row the lifter
+// walked away from stays `in_progress` and is simply never offered again.
 //
 // PURE, so the decision is a value a test can read rather than a sequence of
 // awaits nobody can reach.
@@ -59,11 +82,13 @@ enum AdHocSessionAdoption {
         let startedAt: Date?
     }
 
-    struct Decision: Equatable {
-        /// The row to run, or nil to start a new one.
-        var adopt: UUID?
-        /// Rows to close first: this lifter's own stale ad-hoc sessions.
-        var end: [UUID]
+    /// TWO OUTCOMES, AND ONLY TWO (fix round 2 / B3). There is deliberately
+    /// no third that writes anything to a row the lifter did not act on.
+    enum Decision: Equatable {
+        /// Run this row — the workout already in progress.
+        case adopt(UUID)
+        /// Begin a new one, and touch nothing that is already there.
+        case startFresh
     }
 
     /// Six hours, the same bound `liveForCurrentUser` applies to what Home
@@ -72,9 +97,8 @@ enum AdHocSessionAdoption {
 
     /// - Parameters:
     ///   - rows: every `in_progress` session this user participates in, with
-    ///     NO age floor applied — the floor is this function's to interpret,
-    ///     because a stale row is something to close rather than something to
-    ///     hide.
+    ///     no age floor applied in SQL — the window is this function's, so
+    ///     that the one law is in one place and a test can read it.
     ///   - routineID: the routine the lifter just tapped; nil is freeform,
     ///     and a freeform session adopts only another freeform one.
     static func decide(rows: [Candidate],
@@ -82,10 +106,9 @@ enum AdHocSessionAdoption {
                        me: UUID,
                        now: Date,
                        staleAfter: TimeInterval = AdHocSessionAdoption.staleAfter) -> Decision {
-        // MINE, AND AD-HOC. A crew session is never adopted and never closed
-        // by this path, whoever organizes it: ending somebody else's session
-        // — or your own crew's, from a solo Start button — is not a thing a
-        // tap on START WORKOUT may do.
+        // MINE, AND AD-HOC. Somebody else's session is never adopted, and
+        // neither is a crew session of my own — resuming either from a solo
+        // Start button is not a thing a tap on START WORKOUT may do.
         let mine = rows.filter { row in
             row.organizerID == me
                 && row.groupID == nil
@@ -100,6 +123,13 @@ enum AdHocSessionAdoption {
             ($0.startedAt ?? .distantPast) > ($1.startedAt ?? .distantPast)
         }
 
+        // WITHIN THE WINDOW. A row older than the floor is not resumed, and
+        // is not touched either (see the header): no real gym session
+        // outlasts six hours, so what is on the other side of that line is
+        // something the lifter walked away from, not something to drop them
+        // back into mid-set. A row that cannot say when it began is a data
+        // anomaly rather than a live session and is left alone for the same
+        // reason `liveForCurrentUser`'s own floor excludes it.
         let fresh = byRecency.filter { row in
             guard let startedAt = row.startedAt else { return false }
             return now.timeIntervalSince(startedAt) < staleAfter
@@ -109,17 +139,9 @@ enum AdHocSessionAdoption {
         // lifter tapped a pull routine is the 2026-08-22 bug from the other
         // direction — a fragmented history, arrived at by adopting too
         // eagerly rather than too little.
-        let adopt = fresh.first { $0.routineID == routineID }?.id
-
-        // Everything else of mine that is stale gets closed. A FRESH row for
-        // a DIFFERENT routine is deliberately left alone: the lifter may
-        // genuinely be running two things this hour, and six hours from now
-        // this same function will close it if they were not.
-        let end = byRecency.filter { row in
-            guard row.id != adopt, let startedAt = row.startedAt else { return false }
-            return now.timeIntervalSince(startedAt) >= staleAfter
-        }.map(\.id)
-
-        return Decision(adopt: adopt, end: end)
+        guard let adopt = fresh.first(where: { $0.routineID == routineID }) else {
+            return .startFresh
+        }
+        return .adopt(adopt.id)
     }
 }

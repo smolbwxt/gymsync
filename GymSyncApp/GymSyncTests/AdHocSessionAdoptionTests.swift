@@ -1,13 +1,21 @@
 import XCTest
 @testable import GymSync
 
-/// ADOPT, OR BEGIN — AND CLOSE WHAT WAS LEFT OPEN (fix round 1 / N6).
+/// ADOPT THE WORKOUT ALREADY RUNNING, OR BEGIN ONE (fix round 1 / N6, fix
+/// round 2 / B3).
 ///
 /// The law under test is the 2026-08-22 one ("weight not carrying forward":
 /// swipe-down + Start again minted a brand-new session with an empty carry),
 /// moved out of `WorkoutSessionView.startIfNeeded()` when Phase C1 moved the
-/// capability. These pin the two things the move lost — the organizer check
-/// the old law had by construction, and the stale row nothing ever ended.
+/// capability.
+///
+/// THERE ARE TWO OUTCOMES AND ONLY TWO. A third — closing a stale row with
+/// `complete()` — was written in fix round 1 and withdrawn in fix round 2
+/// (B3): `complete()` publishes a leaderboard entry, pushes
+/// `leaderboard_passed` to another user and can post a campaign message into
+/// every group the lifter belongs to, none of which a tap on START WORKOUT
+/// may do to a session nobody asked to close. Several cases below assert
+/// `.startFresh` precisely because the tempting answer is to write something.
 final class AdHocSessionAdoptionTests: XCTestCase {
 
     private let me = UUID()
@@ -15,8 +23,8 @@ final class AdHocSessionAdoptionTests: XCTestCase {
     private let pushDay = UUID()
     private let pullDay = UUID()
 
-    /// Fixed, built from components — never `Date()`, or this suite answers a
-    /// different question tomorrow.
+    /// Fixed — never `Date()`, or this suite answers a different question
+    /// tomorrow.
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
     private func row(_ id: UUID = UUID(),
@@ -41,126 +49,138 @@ final class AdHocSessionAdoptionTests: XCTestCase {
 
     func testAFreshAdHocSessionForTheSameRoutineIsAdopted() {
         let running = UUID()
-        let decision = decide([row(running, routine: pushDay, minutesAgo: 20)],
-                              routineID: pushDay)
-        XCTAssertEqual(decision.adopt, running)
-        XCTAssertEqual(decision.end, [])
+        XCTAssertEqual(decide([row(running, routine: pushDay, minutesAgo: 20)],
+                              routineID: pushDay),
+                       .adopt(running))
     }
 
-    func testAFRESHSessionForADIFFERENTRoutineIsNeitherAdoptedNorEnded() {
+    func testAFRESHSessionForADIFFERENTRoutineIsLeftAlone() {
         // The 2026-08-22 bug from the other direction: resuming yesterday's
         // push day because the lifter tapped pull would fragment the history
         // just as badly. And the lifter may genuinely be running two things
-        // this hour, so it is left alone rather than closed.
-        let decision = decide([row(routine: pushDay, minutesAgo: 20)],
-                              routineID: pullDay)
-        XCTAssertNil(decision.adopt)
-        XCTAssertEqual(decision.end, [])
+        // this hour, so it is left standing, untouched.
+        XCTAssertEqual(decide([row(routine: pushDay, minutesAgo: 20)],
+                              routineID: pullDay),
+                       .startFresh)
     }
 
     func testAFreeformStartAdoptsOnlyAnotherFreeformSession() {
         let freeform = UUID()
-        let decision = decide([row(routine: pushDay, minutesAgo: 10),
+        XCTAssertEqual(decide([row(routine: pushDay, minutesAgo: 10),
                                row(freeform, routine: nil, minutesAgo: 30)],
-                              routineID: nil)
-        XCTAssertEqual(decision.adopt, freeform)
+                              routineID: nil),
+                       .adopt(freeform))
     }
 
     func testTheNEWESTMatchingSessionIsTheOneOffered() {
         // `liveForCurrentUser` orders this way and the reasoning is its own:
         // when two are live, the one that just started is worth resuming.
         let newest = UUID()
-        let decision = decide([row(routine: pushDay, minutesAgo: 200),
+        XCTAssertEqual(decide([row(routine: pushDay, minutesAgo: 200),
                                row(newest, routine: pushDay, minutesAgo: 5)],
-                              routineID: pushDay)
-        XCTAssertEqual(decision.adopt, newest)
+                              routineID: pushDay),
+                       .adopt(newest))
     }
 
     func testNoRowsAtAllStartsANewOne() {
-        let decision = decide([], routineID: pushDay)
-        XCTAssertNil(decision.adopt)
-        XCTAssertEqual(decision.end, [])
+        XCTAssertEqual(decide([], routineID: pushDay), .startFresh)
     }
 
     // MARK: - N6(a): only a session I ORGANIZE
 
-    func testSomebodyElsesAdHocSessionIsNeitherAdoptedNorEnded() {
+    func testSomebodyElsesAdHocSessionIsNeverAdopted() {
         // The old law read a handle this device had written, so this was true
         // by construction; the moved version asked only "is it ad-hoc and for
         // this routine", and its safety was incidental. Stated now.
         let theirs = row(routine: pushDay, organizer: someoneElse, minutesAgo: 20)
-        let stale = row(routine: pushDay, organizer: someoneElse, minutesAgo: 60 * 24)
-        let decision = decide([theirs, stale], routineID: pushDay)
-        XCTAssertNil(decision.adopt)
-        XCTAssertEqual(decision.end, [], "ending somebody else's session is not a thing START may do")
+        let theirStale = row(routine: pushDay, organizer: someoneElse, minutesAgo: 60 * 24)
+        XCTAssertEqual(decide([theirs, theirStale], routineID: pushDay), .startFresh)
     }
 
-    func testACREWSessionIsNeverAdoptedAndNeverEnded() {
+    func testACREWSessionIsNeverAdopted() {
         // Even one I organize. Three shapes, each disqualifying on its own.
-        let group = row(routine: pushDay, group: UUID(), minutesAgo: 60 * 24)
-        let code = row(routine: pushDay, roomCode: "PX4K9Z", minutesAgo: 60 * 24)
+        let group = row(routine: pushDay, group: UUID(), minutesAgo: 20)
+        let code = row(routine: pushDay, roomCode: "PX4K9Z", minutesAgo: 20)
         let booked = row(routine: pushDay,
-                         scheduledFor: now.addingTimeInterval(-3600), minutesAgo: 60 * 24)
-        let decision = decide([group, code, booked], routineID: pushDay)
-        XCTAssertNil(decision.adopt)
-        XCTAssertEqual(decision.end, [])
+                         scheduledFor: now.addingTimeInterval(-3600), minutesAgo: 20)
+        XCTAssertEqual(decide([group, code, booked], routineID: pushDay), .startFresh)
     }
 
-    // MARK: - N6(b): the stale row is CLOSED, not left running
+    // MARK: - B3: a stale row is IGNORED, never written to
 
-    func testAStaleAdHocSessionIsEndedAndANewOneIsStarted() {
-        // Before B1 a Freestyle session could not be ended at all, so this
-        // was the ORDINARY outcome of every ad-hoc workout: a row left
-        // `in_progress` forever, because nothing in this app ever ends a
-        // session on its own.
-        let abandoned = UUID()
-        let decision = decide([row(abandoned, routine: pushDay, minutesAgo: 60 * 9)],
-                              routineID: pushDay)
-        XCTAssertNil(decision.adopt, "too old to resume")
-        XCTAssertEqual(decision.end, [abandoned], "and therefore old enough to close")
+    func testAStaleAdHocSessionIsNotResumedAndANewOneIsStarted() {
+        // Master's behaviour, restored. The row stays `in_progress` — nothing
+        // in this app ends a session on its own — and that residual is real,
+        // but the remedy is a server-side ABANDON (C2's discard/abandon
+        // capability), not `complete()`, whose three completion triggers
+        // publish a leaderboard entry, push to another user and can post a
+        // campaign message into every group.
+        XCTAssertEqual(decide([row(routine: pushDay, minutesAgo: 60 * 9)],
+                              routineID: pushDay),
+                       .startFresh)
     }
 
-    func testEveryStaleAdHocRowIsClosedWhateverItsRoutine() {
-        let a = UUID(), b = UUID()
-        let decision = decide([row(a, routine: pushDay, minutesAgo: 60 * 9),
-                               row(b, routine: pullDay, minutesAgo: 60 * 30),
-                               row(routine: pushDay, minutesAgo: 5)],
-                              routineID: pushDay)
-        XCTAssertEqual(Set(decision.end), Set([a, b]))
+    func testSeveralStaleRowsAreALLLeftStanding() {
+        let fresh = UUID()
+        XCTAssertEqual(decide([row(routine: pushDay, minutesAgo: 60 * 9),
+                               row(routine: pullDay, minutesAgo: 60 * 30),
+                               row(fresh, routine: pushDay, minutesAgo: 5)],
+                              routineID: pushDay),
+                       .adopt(fresh),
+                       "the fresh match is taken and the two stale rows are untouched")
     }
 
-    func testTheADOPTEDRowIsNeverAlsoEnded() {
-        let running = UUID()
-        let decision = decide([row(running, routine: pushDay, minutesAgo: 20),
-                               row(routine: pushDay, minutesAgo: 60 * 9)],
-                              routineID: pushDay)
-        XCTAssertEqual(decision.adopt, running)
-        XCTAssertFalse(decision.end.contains(running))
-        XCTAssertEqual(decision.end.count, 1)
+    /// THE N4 INTERACTION, PINNED. "Not now" on the refused-leaderboard dialog
+    /// deliberately leaves an attempt session standing
+    /// (`DiscoverWorkoutDetailView`), and `start_attempt` has already written
+    /// the `workout_attempts` row the completion triggers read. Six hours
+    /// later this function must not finalize it: the attempt would be
+    /// published as a finished run whose `time_seconds` is the whole
+    /// wall-clock gap since the lifter walked away.
+    func testAStaleATTEMPTSessionIsNotFinalizedByTheNextStart() {
+        let attempt = row(routine: pushDay, minutesAgo: 60 * 7)
+        XCTAssertEqual(decide([attempt], routineID: pushDay), .startFresh)
+        XCTAssertEqual(decide([attempt], routineID: pullDay), .startFresh)
     }
 
     func testTheBoundaryIsSixHoursAndIsNotOffByOne() {
-        let justInside = UUID(), justOutside = UUID()
-        let inside = decide([row(justInside, routine: pushDay,
-                                 minutesAgo: (6 * 60) - 1)], routineID: pushDay)
-        XCTAssertEqual(inside.adopt, justInside)
-        XCTAssertEqual(inside.end, [])
+        let justInside = UUID()
+        XCTAssertEqual(decide([row(justInside, routine: pushDay,
+                                   minutesAgo: (6 * 60) - 1)], routineID: pushDay),
+                       .adopt(justInside))
+        XCTAssertEqual(decide([row(routine: pushDay,
+                                   minutesAgo: (6 * 60) + 1)], routineID: pushDay),
+                       .startFresh)
+    }
 
-        let outside = decide([row(justOutside, routine: pushDay,
-                                  minutesAgo: (6 * 60) + 1)], routineID: pushDay)
-        XCTAssertNil(outside.adopt)
-        XCTAssertEqual(outside.end, [justOutside])
+    func testAStaleRowNeverSHADOWSAFreshMatch() {
+        // Ordering is newest-first, but the stale filter is what must decide
+        // — a stale row sorted ahead of a fresh one must not be adopted, and
+        // must not stop the fresh one being adopted either.
+        let fresh = UUID()
+        XCTAssertEqual(decide([row(routine: pushDay, minutesAgo: 60 * 20),
+                               row(fresh, routine: pushDay, minutesAgo: 60)],
+                              routineID: pushDay),
+                       .adopt(fresh))
     }
 
     func testARowThatCannotSayWhenItBeganIsLeftALONE() {
         // `in_progress` with a NULL `started_at` is a data anomaly, not a
-        // live session — it cannot be aged out, so it is neither resumed nor
-        // closed. The same reading `liveForCurrentUser`'s floor already takes.
+        // live session — it cannot be aged, so it is never resumed. The same
+        // reading `liveForCurrentUser`'s own floor takes.
         let anomaly = AdHocSessionAdoption.Candidate(
             id: UUID(), routineID: pushDay, organizerID: me, groupID: nil,
             roomCode: nil, scheduledFor: nil, startedAt: nil)
-        let decision = decide([anomaly], routineID: pushDay)
-        XCTAssertNil(decision.adopt)
-        XCTAssertEqual(decision.end, [])
+        XCTAssertEqual(decide([anomaly], routineID: pushDay), .startFresh)
+    }
+
+    func testTheDecisionHasNoOutcomeTHATWRITESToARowTheLifterDidNotActOn() {
+        // B3, as a statement rather than a comment: every case in this file
+        // answers `.adopt` or `.startFresh`, and the type admits nothing
+        // else. If a third case is ever added, this stops compiling and the
+        // author has to come and read the header's trigger walk first.
+        switch decide([], routineID: nil) {
+        case .adopt, .startFresh: break
+        }
     }
 }

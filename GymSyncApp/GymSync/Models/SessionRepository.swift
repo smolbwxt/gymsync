@@ -141,24 +141,29 @@ enum SessionRepository {
     /// the same question.
     ///
     /// THE DECISION IS `AdHocSessionAdoption.decide`, which is pure and
-    /// tested — see that file for the two things this function lost when the
-    /// law moved out of `WorkoutSessionView` and which fix round 1 restored:
-    /// the row must be one this lifter ORGANIZES (the old law had that by
-    /// construction, since it read a handle the view itself had written), and
-    /// a stale ad-hoc row is CLOSED rather than left `in_progress` forever
-    /// beside the new one.
+    /// tested — see that file for the check fix round 1 restored (the row
+    /// must be one this lifter ORGANIZES; the old law had that by
+    /// construction, since it read a handle the view itself had written) and
+    /// for why a STALE row is ignored rather than closed.
     ///
-    /// THE AGE FLOOR IS DROPPED HERE ON PURPOSE (`since: nil`). Home's read
-    /// applies it to decide what to OFFER, which is right; this call has the
-    /// opposite obligation — a row too old to offer is precisely the row that
-    /// needs ending, and filtering it out in SQL is what left it open.
+    /// IT WRITES NOTHING BUT THE NEW ROW (fix round 2 / B3). A brief version
+    /// of this function `complete()`d stale ad-hoc rows on the way past;
+    /// `complete()` is not a quiet write — three `AFTER UPDATE OF state`
+    /// triggers publish a leaderboard entry, push a `leaderboard_passed`
+    /// notification to another user, and can post a campaign message into
+    /// every group the lifter belongs to. That ruling is withdrawn and the
+    /// stale row is left exactly as master leaves it.
     ///
-    /// ENDING IS BEST-EFFORT AND NEVER BLOCKS THE START. Each `complete()`
-    /// is its own `try?`: a lifter standing in a gym must be able to begin,
-    /// and a row that failed to close will be offered again on the next start
-    /// (nothing removes it from the read).
+    /// THE AGE FLOOR IS DROPPED HERE ON PURPOSE (`since: nil`), and it is a
+    /// placement decision rather than a behavioural one: the window the
+    /// adoption law turns on belongs in the pure function beside the rest of
+    /// the law, where a test can read it, not split between a SQL predicate
+    /// and a Swift one. `limit: 20` still bounds the read.
     ///
-    /// A FAILED READ SIMPLY STARTS ONE, for the same reason.
+    /// A FAILED READ SIMPLY STARTS ONE. The adopt is an optimisation over
+    /// correctness-of-history, not a gate: a lifter standing in a gym with no
+    /// connection must still be able to begin, and `startSolo`'s own error is
+    /// the one worth surfacing.
     static func startOrAdoptSolo(routineID: UUID?) async throws -> WorkoutSession {
         if let userID = await SupabaseService.shared.currentUserID(),
            let live = try? await liveForCurrentUser(since: nil) {
@@ -172,10 +177,7 @@ enum SessionRepository {
                 },
                 routineID: routineID, me: userID, now: Date())
 
-            for staleID in decision.end {
-                _ = try? await complete(sessionID: staleID)
-            }
-            if let adoptID = decision.adopt,
+            if case .adopt(let adoptID) = decision,
                let running = live.first(where: { $0.id == adoptID }) {
                 return running
             }
