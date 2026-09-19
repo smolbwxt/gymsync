@@ -1,6 +1,6 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
-SELECT plan(23);
+SELECT plan(24);
 
 -- Migration under test: 20260919000101_session_swap_layer.sql
 -- (session_participants.self_swaps jsonb, sessions.squad_swaps jsonb,
@@ -288,6 +288,23 @@ SELECT lives_ok(
      WHERE session_id = '00000000-0000-4000-e000-000000001742'
        AND user_id = '00000000-0000-4000-e000-000000001701'$$,
   'A writes her own self_swaps on the ad-hoc session AH -- scheduled_for IS NULL fails open');
+
+-- 24. The INSERT door (review-data.md, blocking; migration 000103): a session
+-- cannot be BORN with squad_swaps. The sessions INSERT policy has no column
+-- list, so without the insert guard an organizer could seed the layer at
+-- creation and skip every check apply_squad_swap makes. BEFORE ROW triggers
+-- run before the RLS WITH CHECK, so the caller sees this P0001. The fixture
+-- inserts at the top of this file (squad_swaps left NULL) are the proof that
+-- ordinary inserts still pass the same trigger.
+SET LOCAL role authenticated;
+SET LOCAL request.jwt.claim.sub = '00000000-0000-4000-e000-000000001701';
+SELECT throws_ok(
+  $$INSERT INTO sessions (id, routine_id, organizer_id, state, scheduled_for, squad_swaps) VALUES
+      ('00000000-0000-4000-e000-000000001749', '00000000-0000-4000-e000-000000001720',
+       '00000000-0000-4000-e000-000000001701', 'scheduled', now() + interval '1 day',
+       '{"00000000-0000-4000-e000-000000001799": "00000000-0000-4000-e000-000000001798"}'::jsonb)$$,
+  'P0001', 'squad_swaps is written through apply_squad_swap',
+  'a session cannot be inserted with squad_swaps already set');
 
 SELECT * FROM finish();
 ROLLBACK;

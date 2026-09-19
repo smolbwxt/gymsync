@@ -55,7 +55,7 @@
 -- edit -- neither is right, so there is no FK.
 --
 -- APPLIED: live 2026-09-19 as `session_swap_layer`, version 20260919001232 (controller, Supabase MCP; verified:
--- three new columns present, the guard carries the venue AND the squad_swaps clauses, anon holds no EXECUTE).
+-- both new columns present (self_swaps, squad_swaps), the guard carries the venue AND the squad_swaps clauses, anon holds no EXECUTE).
 -- The controller's gate review added the slot-membership check (R-C-4) before applying.
 
 ALTER TABLE public.session_participants
