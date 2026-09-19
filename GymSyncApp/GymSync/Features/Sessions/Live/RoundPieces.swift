@@ -223,8 +223,8 @@ enum RoundCopy {
 
     /// The solo page's kicker: the routine being run. A session with no
     /// routine keeps the style's own word, which is what it had before.
-    static func freestyleSoloKicker(routineName: String) -> String {
-        let trimmed = routineName.trimmingCharacters(in: .whitespacesAndNewlines)
+    static func freestyleSoloKicker(routineName: String?) -> String {
+        let trimmed = (routineName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? "FREESTYLE" : trimmed.uppercased()
     }
 
