@@ -8,6 +8,12 @@ import XCTest
 /// today's accepted set reduction rides the SLOT rather than the lift. It was
 /// hand-copied into three files before this type existed, which is three
 /// chances for two screens to print two prescriptions for the same lift.
+///
+/// THE TWO KEYINGS (Phase C1, plan task S1): both swap layers are keyed by
+/// the SLOT (`re.id`), today's scale by the LIFT (`re.exerciseID`). A swap is
+/// about one station; a dose the athlete accepted is about one movement.
+/// `SessionSwapLayerTests` carries the case that forced it — a routine
+/// naming one lift twice.
 final class RoutineLayeringTests: XCTestCase {
 
     private let benchID = UUID()
@@ -31,8 +37,9 @@ final class RoutineLayeringTests: XCTestCase {
     }
 
     func testASquadSwapReplacesTheLiftForEveryone() {
-        let applied = RoutineLayering.apply([row(benchID, sets: 4)],
-                                            squadSwaps: [benchID: inclineID])
+        let bench = row(benchID, sets: 4)
+        let applied = RoutineLayering.apply([bench],
+                                            squadSwaps: [bench.id: inclineID])
         XCTAssertEqual(applied.first?.exerciseID, inclineID)
         // The prescription survives; the bar number does not — a weight for
         // one lift is not a weight for another.
@@ -44,10 +51,22 @@ final class RoutineLayeringTests: XCTestCase {
     func testMyOwnSelfScaleBeatsTheSquadSwapForTheSameSlot() {
         // Layer 2 over layer 1: my own choice for my own body outranks the
         // crew's choice for the room, and it is never announced.
-        let applied = RoutineLayering.apply([row(benchID, sets: 4)],
-                                            squadSwaps: [benchID: inclineID],
-                                            selfScale: [benchID: machinePressID])
+        let bench = row(benchID, sets: 4)
+        let applied = RoutineLayering.apply([bench],
+                                            squadSwaps: [bench.id: inclineID],
+                                            selfScale: [bench.id: machinePressID])
         XCTAssertEqual(applied.first?.exerciseID, machinePressID)
+    }
+
+    /// BOTH SWAP LAYERS ARE KEYED BY THE SLOT (Phase C1, decision 2) — a key
+    /// that names the LIFT matches no row at all, which is the property that
+    /// stops a vote about slot 3 from replacing slot 7's identical bench.
+    func testASwapKeyedOnTheExerciseIdMatchesNothing() {
+        let bench = row(benchID, sets: 4)
+        let applied = RoutineLayering.apply([bench],
+                                            squadSwaps: [benchID: inclineID])
+        XCTAssertEqual(applied.first?.exerciseID, benchID)
+        XCTAssertEqual(applied, [bench])
     }
 
     func testTodaysScaleRidesASWAPPEDSlotBecauseItIsKeyedOnTheRoutinesOwnExercise() {
@@ -55,9 +74,10 @@ final class RoutineLayeringTests: XCTestCase {
         // squad swap landing afterwards changes the LIFT in that slot; the
         // reduced set count stays with the SLOT, which is what the athlete
         // agreed to.
+        let bench = row(benchID, sets: 4)
         let applied = RoutineLayering.apply(
-            [row(benchID, sets: 4)],
-            squadSwaps: [benchID: inclineID],
+            [bench],
+            squadSwaps: [bench.id: inclineID],
             todaysScale: TodaysScale(exerciseID: benchID, setsInstead: 3))
         XCTAssertEqual(applied.first?.exerciseID, inclineID)
         XCTAssertEqual(applied.first?.targetSets, 3)
@@ -67,9 +87,10 @@ final class RoutineLayeringTests: XCTestCase {
         // The mirror of the case above, stated so the keying cannot be
         // quietly inverted later: the scale is keyed on the routine's own
         // exercise, so naming the swapped-IN lift matches no row.
+        let bench = row(benchID, sets: 4)
         let applied = RoutineLayering.apply(
-            [row(benchID, sets: 4)],
-            squadSwaps: [benchID: inclineID],
+            [bench],
+            squadSwaps: [bench.id: inclineID],
             todaysScale: TodaysScale(exerciseID: inclineID, setsInstead: 3))
         XCTAssertEqual(applied.first?.targetSets, 4)
     }
@@ -78,8 +99,8 @@ final class RoutineLayeringTests: XCTestCase {
         let rows = [row(benchID, sets: 4), row(squatID, sets: 5, position: 1)]
         let applied = RoutineLayering.apply(
             rows,
-            squadSwaps: [benchID: inclineID],
-            selfScale: [squatID: machinePressID],
+            squadSwaps: [rows[0].id: inclineID],
+            selfScale: [rows[1].id: machinePressID],
             todaysScale: TodaysScale(exerciseID: benchID, setsInstead: 3))
         XCTAssertEqual(applied.map(\.exerciseID), [inclineID, machinePressID])
         XCTAssertEqual(applied.map(\.targetSets), [3, 5])

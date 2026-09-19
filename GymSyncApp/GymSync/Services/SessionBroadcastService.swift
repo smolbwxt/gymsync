@@ -57,6 +57,21 @@ final class SessionBroadcastService {
         let replacementID: UUID
         let replacementName: String
         let vote: Bool?
+        /// THE SLOT the swap is about (Phase C1, decision 2). The wire was
+        /// extended, not replaced: this is ONE OPTIONAL FIELD, decoded when
+        /// present, and every other field keeps its meaning.
+        ///
+        /// `nil` is what an INSTALLED BUILD sends, and it is handled rather
+        /// than dropped — the receiver applies such an event to every slot
+        /// naming `exerciseID`, which is today's behaviour and is correct
+        /// whenever the routine names that lift once. A routine naming it
+        /// twice is exactly the case the slot key exists for, and only a
+        /// client new enough to send this field gets it right.
+        ///
+        /// The durable row, not this event, is the truth either way: the
+        /// wire is a nudge that saves a round trip, and `reload()` is what a
+        /// late joiner and a relaunching lifter actually learn from.
+        let routineExerciseID: UUID?
     }
 
     // MARK: - Subscribe
@@ -105,10 +120,15 @@ final class SessionBroadcastService {
                         }
                         let proposalID = payload["proposal_id"]?.stringValue.flatMap(UUID.init)
                         let vote = payload["vote"]?.boolValue
+                        // Absent on an installed build's event — see
+                        // `SwapEvent.routineExerciseID`. Absence is a
+                        // handled case, never a malformed payload, so it
+                        // must not join the `guard` above.
+                        let slotID = payload["routine_exercise_id"]?.stringValue.flatMap(UUID.init)
                         onSwap(SwapEvent(userID: uid, kind: kind,
                                          proposalID: proposalID, exerciseID: exID,
                                          replacementID: repID, replacementName: repName,
-                                         vote: vote))
+                                         vote: vote, routineExerciseID: slotID))
                     }
                 }
 
@@ -167,9 +187,15 @@ final class SessionBroadcastService {
     /// Broadcast a hot-swap event. Deliberately NOT behind the shared
     /// 1/s rate limit: a vote landing inside the cooldown would be
     /// silently dropped, and unanimity math cannot survive dropped votes.
+    ///
+    /// `routineExerciseID` is the Phase C1 addition and it has a TRAILING
+    /// DEFAULT so every existing call site compiles unchanged; a caller that
+    /// knows the slot names it, and an older peer that receives it ignores
+    /// the extra key.
     func sendSwap(sessionID: UUID, kind: String, proposalID: UUID?,
                   exerciseID: UUID, replacementID: UUID,
-                  replacementName: String, vote: Bool? = nil) async {
+                  replacementName: String, vote: Bool? = nil,
+                  routineExerciseID: UUID? = nil) async {
         guard let me = await SupabaseService.shared.currentUserID() else { return }
         var message: [String: AnyJSON] = [
             "user_id":          .string(me.uuidString),
@@ -181,6 +207,9 @@ final class SessionBroadcastService {
         ]
         if let proposalID { message["proposal_id"] = .string(proposalID.uuidString) }
         if let vote { message["vote"] = .bool(vote) }
+        if let routineExerciseID {
+            message["routine_exercise_id"] = .string(routineExerciseID.uuidString)
+        }
         await broadcastRaw(sessionID: sessionID, event: "swap", message: message)
     }
 

@@ -331,19 +331,39 @@ struct SessionLiveView: View {
     // replacement, shown on their set when their turn comes, never
     // announced (no overlay, no feed event). Squad swap: ANYONE proposes,
     // UNANIMOUS consent (every present member votes yes) applies it to
-    // everyone. Session-local like the solo overrides - dies with the
-    // session; set_logs carry the replacement exercise as real data.
+    // everyone. set_logs carry the replacement exercise as real data.
+    //
+    // DURABLE AND KEYED BY THE SLOT SINCE PHASE C1 (decision 2). Both
+    // dictionaries below are still the in-memory cache this body renders
+    // from — nothing about the wire moved — but they are now SEEDED from
+    // `session_participants.self_swaps` / `sessions.squad_swaps` in
+    // `reload()` and WRITTEN THROUGH on every change, so a lifter who joins
+    // late, relaunches, or foregrounds after an OS kill sees the same
+    // routine the crew sees. Before this the broadcast was the only ingress
+    // and it has no replay (debug-swap-state.md §8.5).
+    //
+    // THE INNER KEY IS THE SLOT (`routine_exercises.id`), NOT THE EXERCISE
+    // ID. A routine naming one lift twice used to have slot 7 swapped by a
+    // vote about slot 3. `SwapTarget` keeps the replacement's NAME because
+    // the consent card and the station card are worded from it; the name is
+    // NOT persisted — a name cached in a row goes stale and a swap's truth
+    // is the id, so it is re-resolved from the catalog on load.
     struct SwapTarget: Equatable { let id: UUID; let name: String }
     struct SwapProposal: Equatable {
         let id: UUID
         let proposerID: UUID
+        /// The lift on the table, for the card's wording and its door.
         let exerciseID: UUID
+        /// The SLOT the vote is about. Optional only because an installed
+        /// build's `propose` event carries no slot — such a proposal still
+        /// votes and still applies, by exercise id, exactly as it does today.
+        let slotID: UUID?
         let target: SwapTarget
         var votes: [UUID: Bool]
     }
-    /// Per-member quiet scales: userID -> (original exerciseID -> replacement).
+    /// Per-member quiet scales: userID -> (SLOT id -> replacement).
     @State private var selfScales: [UUID: [UUID: SwapTarget]] = [:]
-    /// Squad-approved swaps: original exerciseID -> replacement.
+    /// Squad-approved swaps: SLOT id -> replacement.
     @State private var squadSwaps: [UUID: SwapTarget] = [:]
     @State private var swapProposal: SwapProposal? = nil
     @State private var swapProposalExpiry: Task<Void, Never>? = nil
@@ -625,9 +645,21 @@ struct SessionLiveView: View {
             todaysScale: todaysScale)
     }
 
+    /// THE SLOT this lifter is on — resolved through `RoutineProgression`,
+    /// the same walk `currentExerciseForSheet` makes, rather than by looking
+    /// the exercise back up.
+    ///
+    /// It used to be `first(where: { $0.exerciseID == ex.id })`, which is a
+    /// lookup BY LIFT for a question about a SLOT. On a routine naming one
+    /// lift twice that answers with the FIRST of the two however far the
+    /// lifter has got, and after Phase C1's re-keying a swap applied to the
+    /// second slot would be read off the first. The progression already
+    /// knows which row it landed on; asking it is both correct and one
+    /// fewer place for the two answers to disagree.
     private var currentRoutineExercise: RoutineExercise? {
-        guard let ex = currentExerciseForSheet else { return nil }
-        return effectiveRoutineExercises.first(where: { $0.exerciseID == ex.id })
+        RoutineProgression.currentExercise(
+            routine: effectiveRoutineExercises,
+            completedSets: { exerciseID in mySetCount(for: exerciseID) })
     }
 
     /// The CURRENT exercise's venue equipment class, or `nil` when there is no
@@ -2569,7 +2601,8 @@ struct SessionLiveView: View {
         // case where a vote can outrun the roster this client has fetched —
         // a meter showing 3 of 2 would be worse than a wide one.
         let crewSize = max(presentRotation.count, agreedIDs.count)
-        let details = swapDoorDetails(for: proposal.exerciseID,
+        let details = swapDoorDetails(slotID: proposal.slotID,
+                                      exerciseID: proposal.exerciseID,
                                       target: proposal.target.id)
         return SwapConsentCard.Model(
             proposerName: SessionCopy.firstName(proposer),
@@ -2604,11 +2637,19 @@ struct SessionLiveView: View {
     /// `3 × —`, because the rebuild dropped `targetFailure` and the copy kept
     /// it. Both now go through `RoutineLayering.swapped(_:to:)`, so a door cannot promise
     /// a prescription the swap does not produce, whatever field is added next.
-    private func swapDoorDetails(for exerciseID: UUID,
+    ///
+    /// BY SLOT WHEN THE PROPOSAL NAMES ONE (Phase C1): a routine naming one
+    /// lift twice has two rows to print and only the voted one is the
+    /// subject. `slotID` is nil only for an installed build's proposal,
+    /// which has no slot to name — that falls back to the by-lift lookup,
+    /// which is this function's shipped behaviour.
+    private func swapDoorDetails(slotID: UUID?, exerciseID: UUID,
                                  target: UUID) -> (now: String, proposed: String) {
-        guard let re = routineExercises.first(where: { $0.exerciseID == exerciseID }) else {
-            return ("—", "—")
+        let bySlot = slotID.flatMap { id in
+            routineExercises.first(where: { candidate in candidate.id == id })
         }
+        let row = bySlot ?? routineExercises.first(where: { $0.exerciseID == exerciseID })
+        guard let re = row else { return ("—", "—") }
         return (SessionPlanRow.prescription(for: re),
                 SessionPlanRow.prescription(for: RoutineLayering.swapped(re, to: target)))
     }
@@ -2898,17 +2939,16 @@ struct SessionLiveView: View {
     }
 
     /// Best-guess current exercise for the turn (first routine exercise, or first from allExercises).
+    ///
+    /// THE LIFT OF THE SLOT `currentRoutineExercise` LANDED ON. The
+    /// progression walk used to be spelled here and the slot was then looked
+    /// back up BY LIFT — two derivations of one answer, which a routine
+    /// naming one lift twice could make disagree. The walk now lives once,
+    /// in `currentRoutineExercise` (Phase C1, decision 2); this reads the
+    /// exercise off its row. Counts still come from the UNCAPPED session
+    /// array — the 30-row feed undercounts long sessions.
     private var currentExerciseForSheet: Exercise? {
-        // Exercise progression (2026-07-30, closing the in-code-documented
-        // gap): the first routine exercise THIS lifter hasn't finished,
-        // replacing the hardcoded `.first` that pinned every set of a
-        // multi-exercise routine to exercise 1 ("Set 13/3" on device).
-        // Counts come from the UNCAPPED session array — the 30-row feed
-        // undercounts long sessions. See RoutineProgression's doc.
-        if let re = RoutineProgression.currentExercise(
-            routine: effectiveRoutineExercises,
-            completedSets: { exerciseID in mySetCount(for: exerciseID) }
-        ) {
+        if let re = currentRoutineExercise {
             return allExercises.first(where: { $0.id == re.exerciseID })
         }
         return allExercises.first
@@ -3393,8 +3433,10 @@ struct SessionLiveView: View {
         switch event.kind {
         case "self":
             // Quiet: store and show on their set. Never an overlay.
-            selfScales[event.userID, default: [:]][event.exerciseID] =
-                SwapTarget(id: event.replacementID, name: event.replacementName)
+            for slotID in slots(for: event) {
+                selfScales[event.userID, default: [:]][slotID] =
+                    SwapTarget(id: event.replacementID, name: event.replacementName)
+            }
             exerciseNames[event.replacementID] = event.replacementName
         case "propose":
             guard let pid = event.proposalID else { return }
@@ -3403,6 +3445,7 @@ struct SessionLiveView: View {
             var proposal = SwapProposal(
                 id: pid, proposerID: event.userID,
                 exerciseID: event.exerciseID,
+                slotID: event.routineExerciseID,
                 target: SwapTarget(id: event.replacementID, name: event.replacementName),
                 votes: [event.userID: true])
             if let existing = swapProposal, existing.id == pid {
@@ -3422,13 +3465,39 @@ struct SessionLiveView: View {
             // Proposer's client is the single decision point.
             if proposal.proposerID == selfID { evaluateUnanimity(proposal) }
         case "apply":
-            squadSwaps[event.exerciseID] =
-                SwapTarget(id: event.replacementID, name: event.replacementName)
+            // THE DURABLE ROW IS NOT WRITTEN HERE. `apply_squad_swap` is
+            // called once, by the PROPOSER's client (`evaluateUnanimity`) —
+            // the same single-decision-point rule the unanimity math already
+            // follows. Every other client applies the swap in memory now and
+            // reads the crew's row on its next `reload()`.
+            for slotID in slots(for: event) {
+                squadSwaps[slotID] =
+                    SwapTarget(id: event.replacementID, name: event.replacementName)
+            }
             exerciseNames[event.replacementID] = event.replacementName
             clearProposal()
         default:
             break
         }
+    }
+
+    /// WHICH SLOTS AN INBOUND EVENT IS ABOUT.
+    ///
+    /// A client new enough to name the slot names exactly one, and it is
+    /// honoured even when this client's routine does not carry it (the row
+    /// may have been edited under us; an entry naming no row is inert, which
+    /// is what `RoutineLayering.apply` guarantees).
+    ///
+    /// AN INSTALLED BUILD NAMES NO SLOT, and that event is applied to EVERY
+    /// slot bearing its exercise id — today's behaviour exactly, and correct
+    /// whenever the routine names that lift once (decision 2). Widening it
+    /// silently is the honest reading of an old peer's intent: it believed
+    /// it was swapping "the bench", because that is all its wire could say.
+    private func slots(for event: SessionBroadcastService.SwapEvent) -> [UUID] {
+        if let slotID = event.routineExerciseID { return [slotID] }
+        return routineExercises
+            .filter { $0.exerciseID == event.exerciseID }
+            .map(\.id)
     }
 
     @MainActor
@@ -3437,7 +3506,9 @@ struct SessionLiveView: View {
         let present = Set(presentRotation.map(\.participant.userID))
         let yes = Set(proposal.votes.filter { $0.value }.map(\.key))
         guard !present.isEmpty, present.subtracting(yes).isEmpty else { return }
-        squadSwaps[proposal.exerciseID] = proposal.target
+        let slotIDs = proposal.slotID.map { [$0] }
+            ?? routineExercises.filter { $0.exerciseID == proposal.exerciseID }.map(\.id)
+        for slotID in slotIDs { squadSwaps[slotID] = proposal.target }
         exerciseNames[proposal.target.id] = proposal.target.name
         clearProposal()
         Task {
@@ -3445,7 +3516,43 @@ struct SessionLiveView: View {
                 sessionID: liveSession.id, kind: "apply", proposalID: proposal.id,
                 exerciseID: proposal.exerciseID,
                 replacementID: proposal.target.id,
-                replacementName: proposal.target.name)
+                replacementName: proposal.target.name,
+                routineExerciseID: proposal.slotID)
+            // THE CREW'S ROW, AND THE CREW'S ROW ONLY THROUGH THE RPC.
+            // Last, and never a gate: the crew has already seen the swap
+            // land through the wire, and the layer above is what this body
+            // renders from. A refusal leaves every one of those standing and
+            // says so in the slot the card was just in — the durable row is
+            // what a late joiner or a relaunch would then be missing, which
+            // is a smaller loss than a swap that looked refused and was not.
+            await persistSquadSwaps(slotIDs, replacementID: proposal.target.id)
+        }
+    }
+
+    /// Write the crew's agreed swap where a relaunch can find it.
+    ///
+    /// One RPC per slot, which is one for every swap a current build makes;
+    /// an installed build's slot-less proposal can name more than one, and
+    /// the loop is what keeps that case honest rather than half-written.
+    ///
+    /// THE ERROR GOES WHERE THE QUESTION WAS ASKED. `topNotices` renders the
+    /// consent card and `errorBannerOverlay` in the SAME slot, one or the
+    /// other — so a P0001 lands exactly where the crew was just voting, with
+    /// the function's own words (`ErrorMapping` surfaces a `P0001` message
+    /// verbatim through `.validation`).
+    @MainActor
+    private func persistSquadSwaps(_ slotIDs: [UUID], replacementID: UUID) async {
+        for slotID in slotIDs {
+            do {
+                try await SessionSwapRepository.applySquad(
+                    sessionID: liveSession.id, slotID: slotID,
+                    replacementID: replacementID)
+            } catch {
+                AppLogger.sessions.error(
+                    "apply_squad_swap refused: \(error, privacy: .public)")
+                errorText = ErrorMapping.map(error).errorDescription
+                return
+            }
         }
     }
 
@@ -3496,30 +3603,64 @@ struct SessionLiveView: View {
 
     @MainActor
     private func chooseSwap(_ option: GroupSwapOption) {
-        guard let ex = currentExerciseForSheet, let selfID else { return }
+        guard let ex = currentExerciseForSheet, let selfID,
+              let slotID = currentRoutineExercise?.id else { return }
         showGroupSwapSheet = false
         let target = SwapTarget(id: option.id, name: option.name)
         if swapForSquad {
             let pid = UUID()
             swapProposal = SwapProposal(id: pid, proposerID: selfID,
-                                        exerciseID: ex.id, target: target,
+                                        exerciseID: ex.id, slotID: slotID,
+                                        target: target,
                                         votes: [selfID: true])
             armProposalExpiry(pid)
             Task {
                 await broadcastService.sendSwap(
                     sessionID: liveSession.id, kind: "propose", proposalID: pid,
                     exerciseID: ex.id, replacementID: target.id,
-                    replacementName: target.name)
+                    replacementName: target.name,
+                    routineExerciseID: slotID)
             }
+            // NOTHING DURABLE IS WRITTEN FOR A PROPOSAL. The crew has not
+            // agreed yet, and `apply_squad_swap` has no half state — the
+            // write happens once, at unanimity, on this same client
+            // (`evaluateUnanimity`).
         } else {
-            selfScales[selfID, default: [:]][ex.id] = target
+            selfScales[selfID, default: [:]][slotID] = target
             exerciseNames[target.id] = target.name
             Task {
                 await broadcastService.sendSwap(
                     sessionID: liveSession.id, kind: "self", proposalID: nil,
                     exerciseID: ex.id, replacementID: target.id,
-                    replacementName: target.name)
+                    replacementName: target.name,
+                    routineExerciseID: slotID)
+                await persistSelfSwaps(userID: selfID)
             }
+        }
+    }
+
+    /// Write MY OWN quiet layer to my own participant row.
+    ///
+    /// THE WHOLE LAYER, not the one entry: `self_swaps` is a plain jsonb
+    /// column written by a direct own-row PATCH (no RPC, no merge on the
+    /// server — see `SessionSwapRepository.saveSelf`), so the object this
+    /// client holds is the object the column should carry.
+    ///
+    /// Best-effort, and deliberately AFTER the broadcast: a refused write
+    /// leaves the in-memory scale standing for this session exactly as it
+    /// stood before Phase C1, which is shipped behaviour, and what is lost
+    /// is only its survival of a relaunch. Surfaced in the body's one error
+    /// line rather than swallowed — a quiet swap that did not persist is
+    /// worth one sentence.
+    @MainActor
+    private func persistSelfSwaps(userID: UUID) async {
+        let layer = SessionSwapLayer((selfScales[userID] ?? [:]).mapValues(\.id))
+        guard !layer.isEmpty else { return }
+        do {
+            try await SessionSwapRepository.saveSelf(sessionID: liveSession.id, layer: layer)
+        } catch {
+            AppLogger.sessions.error("self_swaps write failed: \(error, privacy: .public)")
+            errorText = ErrorMapping.map(error).errorDescription
         }
     }
 
@@ -3537,7 +3678,8 @@ struct SessionLiveView: View {
                 sessionID: liveSession.id, kind: "vote", proposalID: proposal.id,
                 exerciseID: proposal.exerciseID,
                 replacementID: proposal.target.id,
-                replacementName: proposal.target.name, vote: yes)
+                replacementName: proposal.target.name, vote: yes,
+                routineExerciseID: proposal.slotID)
         }
     }
 
@@ -3659,12 +3801,74 @@ struct SessionLiveView: View {
             allExercises = (try? await ExerciseRepository.fetchAll()) ?? []
         }
 
+        // THE DURABLE SWAP LAYER, AFTER THE ROUTINE AND THE CATALOG, because
+        // the names it re-resolves come from them (plan task S1).
+        await seedSwapLayers()
+
         // Auto-join voice once `liveSession` reflects the latest state
         // (Task 4) — no-ops once already connecting/connected, so it's safe
         // to call from every reload(), not just the first (`openAndSubscribe`
         // calls this at its very start, and the scenePhase→active handler
         // calls it again on every foreground transition).
         await joinVoiceIfEligible()
+    }
+
+    /// THE SYMBOL THAT READS THE DURABLE ROW (plan task S1, constraint 12).
+    ///
+    /// Called from `reload()`, which runs on mount, on every realtime nudge
+    /// and on every foreground — so a LATE JOINER, a RELAUNCHING LIFTER and
+    /// a lifter whose app the OS killed all arrive at the same routine the
+    /// crew is running. The broadcast never promised that: it has no replay,
+    /// so a member who was not listening at the moment of the vote never
+    /// learned of it (debug-swap-state.md §8.5).
+    ///
+    /// IT SEEDS, IT NEVER CLEARS. `SessionSwapLayer.merging` keeps a local
+    /// entry over the row's, so a swap made a moment ago and still in flight
+    /// survives the reload that lands while its write is travelling. That is
+    /// exact and not merely cautious: neither body has an un-swap, so the
+    /// layer only grows within a session.
+    ///
+    /// THE NAME IS RE-RESOLVED, NEVER READ FROM THE ROW. Only ids are
+    /// persisted — a name cached in a row goes stale the day the catalog
+    /// renames a lift, and a swap's truth is the id. `SwapTarget` still
+    /// carries the name because the consent card and the station card are
+    /// worded from it.
+    @MainActor
+    private func seedSwapLayers() async {
+        for (participant, _) in participants {
+            guard let row = participant.selfSwaps, !row.isEmpty else { continue }
+            var held = selfScales[participant.userID] ?? [:]
+            let merged = SessionSwapLayer(held.mapValues(\.id)).merging(row)
+            for (slotID, replacementID) in merged.bySlot
+            where held[slotID]?.id != replacementID {
+                held[slotID] = SwapTarget(id: replacementID,
+                                          name: await swapName(for: replacementID))
+            }
+            selfScales[participant.userID] = held
+        }
+        guard let row = try? await SessionSwapRepository.loadSquad(sessionID: session.id),
+              !row.isEmpty else { return }
+        let merged = SessionSwapLayer(squadSwaps.mapValues(\.id)).merging(row)
+        for (slotID, replacementID) in merged.bySlot
+        where squadSwaps[slotID]?.id != replacementID {
+            squadSwaps[slotID] = SwapTarget(id: replacementID,
+                                            name: await swapName(for: replacementID))
+        }
+    }
+
+    /// A replacement's name for the card's wording — the catalog this body
+    /// already holds first, then the app-wide cache, then the honest word.
+    /// Also fills `exerciseNames`, which every other surface reads.
+    @MainActor
+    private func swapName(for exerciseID: UUID) async -> String {
+        if let known = allExercises.first(where: { $0.id == exerciseID })?.name {
+            exerciseNames[exerciseID] = known
+            return known
+        }
+        if let cached = exerciseNames[exerciseID] { return cached }
+        let name = await ExerciseNameCache.name(for: exerciseID)
+        exerciseNames[exerciseID] = name
+        return name
     }
 
     @MainActor
@@ -3815,8 +4019,11 @@ struct SessionLiveView: View {
             name: profile.username,
             isYou: userID == selfID,
             hasLogged: hasLoggedThisRound(userID),
-            // Spec §3.4 mode 2 -- quiet, and only where the crew already looks.
-            scaleDown: currentExerciseForSheet.flatMap { selfScales[userID]?[$0.id]?.name })
+            // Spec §3.4 mode 2 -- quiet, and only where the crew already
+            // looks. BY SLOT since Phase C1: the layer's key is the row, so
+            // the lift shown here is the one that lifter is doing at THIS
+            // station rather than at any station naming the same lift.
+            scaleDown: currentRoutineExercise.flatMap { selfScales[userID]?[$0.id]?.name })
     }
 
     /// Who the round is still waiting on, first names, me excluded -- if I had
@@ -3996,7 +4203,9 @@ struct SessionLiveView: View {
     /// by the inbound `self` event, and `evaluateUnanimity` is not on this
     /// path at all.
     private var turnStripTiles: [TurnStrip.Tile] {
-        let currentExerciseID = currentExerciseForSheet?.id
+        // The SLOT, since Phase C1 re-keyed the layer — `stationLifter`'s
+        // own lookup, still, so the two cannot disagree.
+        let currentSlotID = currentRoutineExercise?.id
         return rotationTiles.map { tile in
             TurnStrip.Tile(
                 id: tile.userID,
@@ -4005,7 +4214,7 @@ struct SessionLiveView: View {
                 isNow: tile.label == "NOW",
                 isSpeaking: VoiceRoomService.shared.speakingParticipantIDs
                     .contains(tile.userID.uuidString.lowercased()),
-                doing: currentExerciseID.flatMap { selfScales[tile.userID]?[$0]?.name })
+                doing: currentSlotID.flatMap { selfScales[tile.userID]?[$0]?.name })
         }
     }
 

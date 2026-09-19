@@ -147,36 +147,26 @@ final class AppState {
     // Group sessions deliberately have no handle here: they are pushes with
     // the back button hidden (no swipe-down exists) and Home's "Join" hero +
     // check-in widget already re-enter an in_progress group session.
-    /// THE SNAPSHOT IS NO LONGER FROZEN AT START (owner field report
-    /// 2026-09-18: a swiped-down session came back on the exercise that had
-    /// been swapped OUT, so its sets were logged a second time under the
-    /// original lift). The four `let`s below are still the session's
-    /// identity, captured once; `swapOverrides` beneath them is session
-    /// state that must OUTLIVE the view, because `WorkoutSessionView` is a
-    /// push inside a dismissible sheet and a swipe-down destroys every
-    /// `@State` it holds. `WorkoutSessionView` writes it on every swap
-    /// (`mirrorSwapLayer()`) and reads it back in `startIfNeeded()`.
+    /// THE FOUR `let`s BELOW ARE THE SESSION'S IDENTITY, captured once.
     ///
-    /// THE REST WINDOW IS NOT HERE. It belongs to `LiveSessionTimerStore`,
-    /// which the group body has used for the same symptom since the
-    /// 2026-08-14 report; solo simply never adopted it. One store, one
-    /// shape, both bodies.
+    /// THE SWAP MIRROR IS GONE (Phase C1, plan task S1). The 2026-09-18
+    /// hotfix added a `swapOverrides` field here so the layer would survive
+    /// a swipe-down, and said in this very comment that it did NOT survive
+    /// an OS termination and that the durable layer — a row keyed by
+    /// routine SLOT, read back before the cursor is derived — was Phase C's
+    /// job. That row now exists (`session_participants.self_swaps`,
+    /// 20260919000101) and `WorkoutSessionView` reads and writes it
+    /// directly, so a second in-memory copy could only ever drift from it.
     ///
-    /// IN-MEMORY ONLY, deliberately: this fixes swipe-down/up and any
-    /// relaunch-free return (the SESSION LIVE pill, a re-entry from Home),
-    /// which is the whole of the evidenced report. It does NOT survive an
-    /// OS termination — the DURABLE swap layer (a row keyed by routine
-    /// SLOT, read back before the cursor is derived) is Phase C's job, and
-    /// this property is deleted with `WorkoutSessionView` when that lands.
+    /// THE REST WINDOW WAS NEVER HERE EITHER. It belongs to
+    /// `LiveSessionTimerStore`, which the group body has used for the same
+    /// symptom since the 2026-08-14 report. One store, one shape, both
+    /// bodies.
     struct LiveSoloSession: Identifiable, Equatable {
         let session: WorkoutSession
         let routine: Routine?
         let routineExercises: [RoutineExercise]
         let allExercises: [Exercise]
-        /// Session-local hot-swaps, keyed by ROUTINE-EXERCISE ROW ID (not
-        /// exercise id) — the same keying `WorkoutSessionView`'s own
-        /// `soloSwapOverrides` uses, so a slot swapped twice has one entry.
-        var swapOverrides: [UUID: RoutineExercise] = [:]
         var id: UUID { session.id }
         static func == (lhs: Self, rhs: Self) -> Bool { lhs.session.id == rhs.session.id }
     }

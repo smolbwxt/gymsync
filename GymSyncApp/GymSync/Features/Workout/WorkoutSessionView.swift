@@ -246,6 +246,14 @@ struct WorkoutSessionView: View {
     /// workout itself (see that function's catch block below).
     @State private var attemptOptInFailedText: String? = nil
 
+    /// The same transient pill, for a failed DURABLE SWAP write (plan task
+    /// S1). It shares `attemptOptInNotice`'s one mount rather than adding a
+    /// second overlay to `sessionChrome`: the two can never be up at once
+    /// (one fires at start, the other only on a swap) and the fixed page —
+    /// which is where a routine session lives, and where a swap is made —
+    /// has no `errorText` reader of its own.
+    @State private var soloNoticeText: String? = nil
+
     /// Freeform (no-routine) session: exercises the lifter picks as they go.
     /// Synthesized `RoutineExercise` values (no `routines` row exists — the
     /// `routineID` is a throwaway UUID and never persisted; `set_logs` only
@@ -301,13 +309,20 @@ struct WorkoutSessionView: View {
     /// actually done. Quiet by design: shown where the exercise shows,
     /// announced nowhere.
     ///
-    /// SESSION-LOCAL, NOT VIEW-LOCAL (hotfix 2026-09-18, ruling H1). This
-    /// view is a push inside a dismissible sheet, so a swipe-down destroys
-    /// it and every `@State` in it; the layer is therefore mirrored into
-    /// `AppState.liveSoloSession.swapOverrides` on every change
-    /// (`mirrorSwapLayer()`) and read back in `startIfNeeded()` BEFORE the
-    /// cursor is derived. In memory only — see that type's own comment for
-    /// why, and for Phase C's durable replacement.
+    /// DURABLE SINCE PHASE C1 (plan task S1, decision 2), which is what the
+    /// hotfix's in-memory mirror said it was standing in for. The layer
+    /// lives in `session_participants.self_swaps` — MY OWN row, keyed by
+    /// SLOT, the same column and the same shape the crew body writes — and
+    /// is read back in `startIfNeeded()` BEFORE the cursor is derived. The
+    /// hotfix's `AppState.liveSoloSession.swapOverrides` mirror and its
+    /// `mirrorSwapLayer()` writer are DELETED with this: a row survives an
+    /// OS kill, which is the one leg of the 2026-09-18 report the mirror
+    /// could never cover (its own doc comment said so).
+    ///
+    /// The dictionary keeps holding the REBUILT row rather than a bare id,
+    /// because `SoloResumeCursor.layered` and `activeExercises` both take
+    /// that shape; what is persisted is only `{slot: replacement exercise}`,
+    /// and the row is rebuilt through `RoutineLayering.swapped` on load.
     @State private var soloSwapOverrides: [UUID: RoutineExercise] = [:]
     @State private var showSwapSheet = false
     // Form video v1 (owner rulings 2026-08-21): record a set, attach the
@@ -384,7 +399,7 @@ struct WorkoutSessionView: View {
             .sensoryFeedback(.success, trigger: logHapticTick)
             .gsSpotlight(.workout)   // fires on arrival — never mid-lift
             .overlay(alignment: .top) { attemptOptInNotice }
-            .animation(.easeInOut(duration: 0.25), value: attemptOptInFailedText)
+            .animation(.easeInOut(duration: 0.25), value: topNoticeText)
             .gsHidesDock()
             .navigationTitle(routine?.name ?? "Freeform Workout")
             .navigationBarTitleDisplayMode(.inline)
@@ -667,9 +682,13 @@ struct WorkoutSessionView: View {
 
     // Minor finding 2: non-blocking "couldn't join the leaderboard" notice —
     // transient pill at `.top` (bottom is the sticky "Log Set N" button).
+    // Phase C1 shares it with the durable-swap write's own notice; see
+    // `soloNoticeText`.
+    private var topNoticeText: String? { attemptOptInFailedText ?? soloNoticeText }
+
     @ViewBuilder
     private var attemptOptInNotice: some View {
-        if let txt = attemptOptInFailedText {
+        if let txt = topNoticeText {
             Text(txt)
                 .font(GSFont.bold(11, relativeTo: .caption2))
                 .lineLimit(2)
@@ -931,21 +950,36 @@ struct WorkoutSessionView: View {
         setStartedAt = .now
     }
 
-    /// WRITE THE SWAP LAYER WHERE IT OUTLIVES THIS VIEW (ruling H1).
+    /// WRITE THE SWAP LAYER WHERE IT OUTLIVES THIS VIEW — and, since Phase
+    /// C1, this PROCESS.
     ///
-    /// Called from `applySwap`, the one place the layer changes. Guarded on
-    /// the id so a stale view — one that lost the race with a finished
-    /// session, or a second solo session — can never write over the live
-    /// one's layer.
+    /// Called from `applySwap`, the one place the layer changes. The hotfix
+    /// wrote `AppState.liveSoloSession.swapOverrides` here, which survived a
+    /// swipe-down and nothing else; this writes
+    /// `session_participants.self_swaps`, which survives a relaunch and an
+    /// OS kill too. Only ids are persisted — the rebuilt row is derived from
+    /// the routine on the way back in.
     ///
-    /// Deliberately NOT mirrored, and therefore still lost on a swipe-down:
-    /// `soloEditedList`, the mid-session builder's list (report §8.3, a
-    /// second unreported instance of the same defect). It is Phase C's,
-    /// with the durable swap layer it belongs beside.
-    private func mirrorSwapLayer() {
-        guard let sessionID = session?.id,
-              appState.liveSoloSession?.id == sessionID else { return }
-        appState.liveSoloSession?.swapOverrides = soloSwapOverrides
+    /// BEST-EFFORT, NEVER A GATE. The in-memory layer is already applied by
+    /// the time this runs, so a refused write costs the lifter nothing in
+    /// this session; what is lost is its survival of a relaunch, and the
+    /// notice says so.
+    ///
+    /// Still NOT durable, and named so it stays visible: `soloEditedList`,
+    /// the mid-session builder's list (debug-swap-state.md §8.3, a second
+    /// unreported instance of the same defect). It has no column of its own
+    /// and inventing one is not this task's.
+    @MainActor
+    private func persistSwapLayer() async {
+        guard let sessionID = session?.id else { return }
+        let layer = SessionSwapLayer(soloSwapOverrides.mapValues(\.exerciseID))
+        guard !layer.isEmpty else { return }
+        do {
+            try await SessionSwapRepository.saveSelf(sessionID: sessionID, layer: layer)
+        } catch {
+            AppLogger.workout.error("self_swaps write failed: \(error, privacy: .public)")
+            await showSoloNotice("Swap saved for this workout, but not for a relaunch.")
+        }
     }
 
     /// THE REST WINDOW, WHERE THE GROUP BODY ALREADY KEEPS ITS OWN.
@@ -1332,8 +1366,10 @@ struct WorkoutSessionView: View {
         }
         soloSwapOverrides[re.id] = RoutineLayering.swapped(re, to: targetID)
         showSwapSheet = false
-        // The layer has to outlive this view — see `soloSwapOverrides`.
-        mirrorSwapLayer()
+        // The layer has to outlive this view AND this process — see
+        // `soloSwapOverrides`. Fire-and-forget: the swap is already applied
+        // above and nothing on screen waits for the row.
+        Task { await persistSwapLayer() }
         soloPrefill()
     }
 
@@ -3575,8 +3611,18 @@ struct WorkoutSessionView: View {
             // exerciseID is immutable by design - a swap is a REPLACEMENT
             // row carrying the old prescription. save() deletes and
             // re-inserts the full array, so position survives by copying.
+            //
+            // AND SO MUST THE ID (ruling R-C-5, Phase C1). This path edits
+            // the LIVE session's routine IN PLACE, mid-session. A fresh
+            // `UUID()` here silently orphans every entry keyed to that slot
+            // — the durable swap layer (`self_swaps` / `squad_swaps`) and,
+            // from S2, every `set_logs.routine_exercise_id` already written
+            // against it. Neither column has a foreign key, so nothing would
+            // have raised: the sets would simply have stopped counting, the
+            // same class of failure as the report this phase exists to fix.
+            // A row edited in place is the SAME slot; only its contents move.
             rows[index] = RoutineExercise(
-                id: UUID(), routineID: old.routineID, exerciseID: replacement.id,
+                id: old.id, routineID: old.routineID, exerciseID: replacement.id,
                 position: old.position,
                 targetSets: old.targetSets,
                 targetReps: old.targetReps,
@@ -3843,7 +3889,7 @@ struct WorkoutSessionView: View {
             // routine, so restoring it afterwards would be restoring it
             // too late and the lifter would land back on the lift they
             // swapped away, with its sets already in the log.
-            adoptSwapLayer(sessionID: resumeSession.id)
+            await adoptSwapLayer(sessionID: resumeSession.id)
             await restoreLoggedProgress(sessionID: resumeSession.id)
             // …and the rest window AFTER, so its notification and lapse
             // task are keyed against the cursor the logs just produced
@@ -3868,7 +3914,7 @@ struct WorkoutSessionView: View {
            live.routine?.id == routine?.id {
             session = live.session
             // Same ordering law as the resume branch above.
-            adoptSwapLayer(sessionID: live.session.id)
+            await adoptSwapLayer(sessionID: live.session.id)
             await restoreLoggedProgress(sessionID: live.session.id)
             restoreSoloTimersFromStore(sessionID: live.session.id)
             if !isFreeform, soloWarmupMinutes > 0, loggedSets.isEmpty {
@@ -3938,16 +3984,49 @@ struct WorkoutSessionView: View {
         catch { errorText = ErrorMapping.map(error).errorDescription }
     }
 
-    /// READ BACK THE SWAP LAYER THE LAST INSTANCE OF THIS VIEW LEFT BEHIND
-    /// (ruling H1).
+    /// READ BACK THE SWAP LAYER FROM THE ROW (plan task S1; was ruling H1's
+    /// in-memory mirror).
     ///
     /// Must run BEFORE `restoreLoggedProgress`: the cursor is derived
     /// against the LAYERED routine, and layering with an empty layer is
-    /// exactly the bug.
+    /// exactly the bug the 2026-09-18 report describes.
+    ///
+    /// A ROW SURVIVES A PROCESS DEATH, which the mirror did not. That is the
+    /// termination leg the hotfix's own `logSoloEntry` doc comment names as
+    /// uncovered: a session adopted after an OS kill now comes back layered.
+    ///
+    /// SEEDS WITHOUT CLEARING, like the crew body's `seedSwapLayers()`: a
+    /// local entry wins, so a swap still in flight is not erased by a read
+    /// that overtakes it. The rebuilt row comes from the routine's own rows
+    /// through `RoutineLayering.swapped`, so every prescription field the
+    /// screen renders survives the trip — a bare id in a column cannot drop
+    /// `targetFailure` the way the old hand-written rebuild did (R-B2-13).
+    ///
+    /// A FREEFORM SESSION HAS NO SLOTS: its rows are re-synthesised from the
+    /// logs with fresh ids, so any entry here is inert. That is not an error
+    /// and `appliedSwapCount` is what reports it honestly.
     @MainActor
-    private func adoptSwapLayer(sessionID: UUID) {
-        guard let live = appState.liveSoloSession, live.id == sessionID else { return }
-        soloSwapOverrides = live.swapOverrides
+    private func adoptSwapLayer(sessionID: UUID) async {
+        guard let row = try? await SessionSwapRepository.loadSelf(sessionID: sessionID) else {
+            return
+        }
+        let held = SessionSwapLayer(soloSwapOverrides.mapValues(\.exerciseID))
+        let merged = held.merging(row)
+        guard !merged.isEmpty else { return }
+        let base = soloEditedList ?? routineExercises
+        soloSwapOverrides = base.reduce(into: [UUID: RoutineExercise]()) { layered, re in
+            guard let replacementID = merged[re.id] else { return }
+            layered[re.id] = RoutineLayering.swapped(re, to: replacementID)
+        }
+    }
+
+    /// The transient top pill, shared with the leaderboard notice (they can
+    /// never be up at once — one fires at start, the other on a swap).
+    @MainActor
+    private func showSoloNotice(_ text: String) async {
+        soloNoticeText = text
+        try? await Task.sleep(nanoseconds: 3_000_000_000)
+        if soloNoticeText == text { soloNoticeText = nil }
     }
 
     /// How many restored overrides LAND on a row this session is actually
