@@ -160,6 +160,24 @@ final class CatalogScreenTests: XCTestCase {
             // question, fed from `LobbyFixtures.rackAsk`'s own
             // `rackAskClass`, not a live routine/exercise lookup.
             "session-lobby-rack-ask",
+            // Phase C1 S6 (2026-09-19): the ad-hoc solo session's proof
+            // frames. Frame 155 — the one body over a new one-participant
+            // `.freestyle` world (`LiveFixtures.soloLive`).
+            "session-solo-live",
+            // Frame 156 — the same solo world at rest (LiveFixtures.soloRest,
+            // a fixture restElapsedOverride).
+            "session-solo-rest",
+            // Frame 157 — the same solo world with slot 1 swapped to Goblet
+            // squat (LiveFixtures.soloSwap, a fixture selfSwaps seed).
+            "session-solo-swap",
+            // Frame 158 — the round wait with the N9/N10 `onEnd` door
+            // photographed, over the SAME `LiveFixtures.roundWait` world
+            // frame 137 captures.
+            "session-round-wait-door",
+            // Frame 159 — the solo warm-up (WarmUpFixtures.solo, frame 132's
+            // own world) inside the real SoloSessionCover with MINIMISE
+            // mounted, via the cover's DEBUG-only catalogContent seam.
+            "session-solo-warmup-cover",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

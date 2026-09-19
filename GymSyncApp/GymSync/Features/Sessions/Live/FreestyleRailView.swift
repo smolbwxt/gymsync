@@ -160,6 +160,29 @@ struct FreestyleRailView: View {
     var onAcceptAccessory: () -> Void = {}
     var onDeclineAccessory: () -> Void = {}
 
+    /// THE WAY OUT (fix round 1 / B1, ruling R-C-7). This page drew no
+    /// header rail and no foot of its own, and the pinned `turnChrome`
+    /// beneath it carries LOG and nothing else — so a Freestyle session
+    /// could not be ended at all. Shipped for CREW Freestyle since Phase B1;
+    /// Phase C1 made every ad-hoc solo workout `.freestyle` and so made it
+    /// everybody's.
+    ///
+    /// The SAME hook and the SAME control `TogetherClockView` already takes
+    /// (`onEnd` → `RoundDoor(glyph: "xmark", title: RoundCopy.endSession)`,
+    /// last in its foot), for the same reason its own comment gives:
+    /// neutral, never accent, because the LOG card above is this screen's
+    /// one accent act and ending is not what the lifter came to do. No new
+    /// composition.
+    ///
+    /// OPTIONAL, AND NIL IS THE CATALOG'S ANSWER (fix round 2 / N10 aligned
+    /// this with `RoundWaitView` and `SpotterView`; it was an `onEnd` plus a
+    /// separate `showsEnd` Bool). One idiom across all three pages that mount
+    /// their own door, and the same `onSetRackCount` precedent: a fixture
+    /// world passes nothing and the rail renders exactly as it does today.
+    /// Production passes it through
+    /// `SessionEndAffordance.pageMountsItsOwnEnd(.freestyleRail)`.
+    var onEnd: (() -> Void)?
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
@@ -180,6 +203,9 @@ struct FreestyleRailView: View {
                 }
                 if let entryCard {
                     entryCard
+                }
+                if let onEnd {
+                    RoundDoor(glyph: "xmark", title: RoundCopy.endSession, onTap: onEnd)
                 }
             }
             .padding(.horizontal, 16)

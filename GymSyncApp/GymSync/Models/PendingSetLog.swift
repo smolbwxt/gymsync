@@ -87,6 +87,36 @@ final class PendingSetLog {
     /// enqueued item).
     var unauthorizedAttemptCount: Int = 0
 
+    /// Mirrors `SetLog.routineExerciseID` (Phase C1, decision 3).
+    ///
+    /// IT HAD TO BE ADDED BY HAND, and that is worth a sentence, because the
+    /// plan assumed this queue "encodes a `SetLog`" and it does not — it is
+    /// a SwiftData model listing the wire type's fields one by one, which is
+    /// the same shape of mistake `RoutineLayering.swapped` exists to prevent
+    /// for routine rows. Without this, a set logged offline would replay
+    /// with a NULL slot, and the cursor would rewind that slot to its
+    /// fallback count the moment the lifter came back — the exact class of
+    /// failure this column exists to end.
+    ///
+    /// Defaults to nil: a lightweight SwiftData addition, and an item queued
+    /// by the previous build genuinely does not know its slot.
+    var routineExerciseID: UUID? = nil
+
+    /// Mirrors `SetLog.bodyWeightLbs` (ruling R-C-6) — the lifter's body
+    /// weight in CANONICAL POUNDS, stamped at log time for bodyweight
+    /// exercises.
+    ///
+    /// THIS MODEL HAD NEVER MIRRORED IT. A set of pull-ups logged offline
+    /// replayed with no body weight, so `effectiveWeightPounds` answered the
+    /// added load alone and the set contributed NO TONNAGE, while the
+    /// identical set logged online contributed all of it. Same defect the
+    /// watch path carried until Phase W, same fix: carry the field.
+    ///
+    /// Same `nil` default and the same reason: an item queued by an earlier
+    /// build does not know the body weight it was lifted at, and a guess
+    /// would be worse than the honest absence the column already models.
+    var bodyWeightLbs: Decimal? = nil
+
     init(setLog: SetLog, enqueuedAt: Date = Date()) {
         self.id = setLog.id
         self.userID = setLog.userID
@@ -102,6 +132,8 @@ final class PendingSetLog {
         self.loggedAt = setLog.loggedAt
         self.enqueuedAt = enqueuedAt
         self.attemptCount = 0
+        self.routineExerciseID = setLog.routineExerciseID
+        self.bodyWeightLbs = setLog.bodyWeightLbs
     }
 
     /// Reconstitutes the wire model for a replay submit attempt.
@@ -109,7 +141,9 @@ final class PendingSetLog {
         SetLog(
             id: id, userID: userID, sessionID: sessionID, exerciseID: exerciseID,
             setIndex: setIndex, reps: reps, weight: weight, rpe: rpe,
-            isFailed: isFailed, isPenalty: isPenalty, note: note, loggedAt: loggedAt
+            isFailed: isFailed, isPenalty: isPenalty, note: note, loggedAt: loggedAt,
+            bodyWeightLbs: bodyWeightLbs,
+            routineExerciseID: routineExerciseID
         )
     }
 }

@@ -192,14 +192,24 @@ final class SoloResumeCursorTests: XCTestCase {
                         .map(\.exerciseID), [legPressID])
     }
 
-    // MARK: - Pinned, known, and Phase C's to fix
+    // MARK: - The pre-column fallback, pinned
+    //
+    // EVERY LOG IN THIS FILE CARRIES NO SLOT — `logs(_:_:)` leaves
+    // `routineExerciseID` at its `nil` default — so every case above is
+    // also the assertion Phase C1 owes: a session logged before
+    // `set_logs.routine_exercise_id` existed, and a freeform session
+    // forever, walks to exactly the cursor it always walked to. The
+    // slot-attributed cases live in `RoutineSlotProgressTests`.
 
-    /// A ROUTINE NAMING THE SAME LIFT TWICE still fills the first slot to
-    /// its target before the second sees a set, because attribution is by
-    /// EXERCISE ID and both slots claim the same one. Unchanged by this
-    /// hotfix and pinned here so it cannot drift silently: the honest fix
-    /// is slot attribution (a `routine_exercise_id` on the set log), which
-    /// is Phase C's, and which this test should be deleted with.
+    /// A ROUTINE NAMING THE SAME LIFT TWICE, WITH PRE-COLUMN ROWS, still
+    /// fills the first slot to its target before the second sees a set:
+    /// the rows carry no slot, so the greedy fallback is all there is and
+    /// both slots claim the same exercise id. That is the RIGHT answer for
+    /// rows that genuinely do not know their slot, and it is the behaviour
+    /// this column's no-backfill stance preserves on purpose.
+    ///
+    /// The same routine with ATTRIBUTED rows answers differently, and
+    /// `RoutineSlotProgressTests` is where that is asserted.
     func testARoutineNamingOneLiftTwiceKeepsTodaysGreedyAttribution() {
         let rows = [slot(benchID, sets: 3, position: 0),
                     slot(benchID, sets: 3, position: 1)]

@@ -176,6 +176,95 @@ final class OfflineSetLogQueueTests: XCTestCase {
         XCTAssertTrue(queue.pendingSetLogIDs.isEmpty)
     }
 
+    // MARK: - The two nil-defaulted columns, through the store (ruling F9)
+    //
+    // `routineExerciseID` (Phase C1 decision 3) and `bodyWeightLbs` (ruling
+    // R-C-6) were added to `PendingSetLog` as nil-defaulted stored properties
+    // — SwiftData's lightweight-migration case, the same idiom
+    // `unauthorizedAttemptCount` already shipped in that file.
+    //
+    // WHAT THIS PROVES AND WHAT IT DOES NOT. It persists an item that names
+    // neither field, SAVES, and fetches it back through a SECOND context on
+    // the same container, so the values cross the store rather than being
+    // read out of the row the test itself constructed — which is what
+    // `testAnItemQueuedBeforeEitherColumnStillReplays` did, and all it did.
+    // It cannot conjure a store file written by a build whose schema lacked
+    // the two properties: that needs a versioned schema with an old model
+    // class, which this codebase does not have. The migration itself is
+    // therefore still argued from SwiftData's documented behaviour, not
+    // asserted here, and this test claims only the round trip.
+
+    func testAnItemNamingNeitherNewColumnSurvivesTheStoreAndReplaysWithNils() throws {
+        let context = try makeInMemoryContext()
+        let log = makeSetLog()
+        XCTAssertNil(log.routineExerciseID)
+        XCTAssertNil(log.bodyWeightLbs)
+
+        context.insert(PendingSetLog(setLog: log))
+        try context.save()
+
+        // A fresh context on the same container — the fetch goes to the
+        // store, not to the object this test just handed SwiftData.
+        let reopened = ModelContext(context.container)
+        let stored = try reopened.fetch(FetchDescriptor<PendingSetLog>())
+        XCTAssertEqual(stored.count, 1)
+        let item = try XCTUnwrap(stored.first)
+        XCTAssertNil(item.routineExerciseID)
+        XCTAssertNil(item.bodyWeightLbs)
+        XCTAssertEqual(item.unauthorizedAttemptCount, 0)
+
+        let replayed = item.asSetLog
+        XCTAssertEqual(replayed.id, log.id)
+        XCTAssertEqual(replayed.exerciseID, log.exerciseID)
+        XCTAssertNil(replayed.routineExerciseID)
+        XCTAssertNil(replayed.bodyWeightLbs)
+    }
+
+    func testAnItemNamingBOTHNewColumnsCarriesThemAcrossTheStore() throws {
+        let context = try makeInMemoryContext()
+        let slotID = UUID()
+        var log = makeSetLog()
+        log.bodyWeightLbs = 183
+        log.routineExerciseID = slotID
+
+        context.insert(PendingSetLog(setLog: log))
+        try context.save()
+
+        let reopened = ModelContext(context.container)
+        let stored = try reopened.fetch(FetchDescriptor<PendingSetLog>())
+        let item = try XCTUnwrap(stored.first)
+        XCTAssertEqual(item.routineExerciseID, slotID)
+        XCTAssertEqual(item.bodyWeightLbs, 183)
+        XCTAssertEqual(item.asSetLog.routineExerciseID, slotID)
+        XCTAssertEqual(item.asSetLog.bodyWeightLbs, 183)
+    }
+
+    /// The other half of "an older shape still decodes": a `set_logs` row
+    /// written before either column existed arrives from PostgREST with
+    /// neither key, and `SetLog` — which is what a replay submits and what
+    /// every read decodes — must answer nil for both rather than throwing.
+    /// This one IS a real old-shape literal, because `SetLog` is `Codable`
+    /// and `PendingSetLog` is not.
+    func testAnOldShapeServerRowDecodesWithBothColumnsNil() throws {
+        let json = Data("""
+        {"id":"E621E1F8-C36C-495A-93FC-0C247A3E6E5F",
+         "user_id":"E621E1F8-C36C-495A-93FC-0C247A3E6E60",
+         "session_id":"E621E1F8-C36C-495A-93FC-0C247A3E6E61",
+         "exercise_id":"E621E1F8-C36C-495A-93FC-0C247A3E6E62",
+         "set_index":1,"reps":8,"weight":135,"rpe":7,
+         "is_failed":false,"is_penalty":false,"note":null,
+         "logged_at":"2026-09-19T10:00:00Z"}
+        """.utf8)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(SetLog.self, from: json)
+        XCTAssertEqual(decoded.setIndex, 1)
+        XCTAssertNil(decoded.routineExerciseID)
+        XCTAssertNil(decoded.bodyWeightLbs)
+        XCTAssertEqual(decoded.effectiveWeightPounds, 135,
+                       "and its tonnage is the added load alone, which is correct for a loaded lift")
+    }
+
     // MARK: - Replay ordering
 
     func testReplaySubmitsInEnqueueOrderOldestFirst() async throws {

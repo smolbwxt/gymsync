@@ -212,6 +212,22 @@ struct SessionParticipant: Codable, Sendable {
     /// Same safe-decode guard as `energy` above: a projected select, or a
     /// client running behind the migration, must not fail the whole row.
     let todaysScale: TodaysScale?
+    /// MY OWN QUIET SWAPS for this session (20260919000101, Phase C1
+    /// decision 2) — `{"<routine_exercise_id>": "<replacement_exercise_id>"}`,
+    /// keyed by the SLOT, NULL until this lifter swaps something. NULL and
+    /// `{}` mean the same thing and `SessionSwapLayer`'s codec says so.
+    ///
+    /// The row is crew-readable and this field is read for EVERY
+    /// participant, not only me: the station card and the turn strip both
+    /// already print what a crewmate is doing instead
+    /// (`SessionLiveView.stationLifter`, `turnStripTiles`), and before this
+    /// column they learned it only from an ephemeral broadcast with no
+    /// replay — so a lifter who joined or relaunched late never learned of
+    /// it at all. Reading it here is what makes the durable row, rather than
+    /// the wire, the truth.
+    ///
+    /// Same safe-decode guard as `energy` and `todaysScale` above.
+    let selfSwaps: SessionSwapLayer?
 
     enum CodingKeys: String, CodingKey {
         case sessionID = "session_id"
@@ -225,6 +241,7 @@ struct SessionParticipant: Codable, Sendable {
         case warmupReady = "warmup_ready"
         case energy
         case todaysScale = "todays_scale"
+        case selfSwaps = "self_swaps"
     }
 
     // Safe decode: warmup_ready has DB DEFAULT false so full-row selects
@@ -245,6 +262,7 @@ struct SessionParticipant: Codable, Sendable {
         warmupReady   = (try? c.decodeIfPresent(Bool.self, forKey: .warmupReady)) ?? false
         energy        = (try? c.decodeIfPresent(Int.self, forKey: .energy)) ?? nil
         todaysScale   = (try? c.decodeIfPresent(TodaysScale.self, forKey: .todaysScale)) ?? nil
+        selfSwaps     = (try? c.decodeIfPresent(SessionSwapLayer.self, forKey: .selfSwaps)) ?? nil
     }
 }
 

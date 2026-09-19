@@ -112,6 +112,28 @@ struct LiveWorld {
     let logWeight: String
     let logRPE: Double
 
+    /// DEBUG-only rest-window override (plan task S6, frame 156) for
+    /// `SessionLiveView.freestyleScreen`'s rest card. `RoundCopy.elapsed
+    /// (since:now:)` computes against a live `TimelineView` tick — the
+    /// engine every `.freestyle` catalog frame ticks on, not something this
+    /// world can seed away — so the one fixture value that cannot drift with
+    /// the day the screenshot is taken is the RENDERED STRING itself: the
+    /// same idiom `RoundWaitWorld.rest.elapsed`/`FreestyleWorld.restElapsed`
+    /// already use. `nil` in every existing world, which keeps
+    /// `session-your-turn` and `session-solo-live` byte-identical.
+    let restElapsedOverride: String? = nil
+
+    /// DEBUG-only self-swap seed (plan task S6, frame 157): `[slotID:
+    /// SessionLiveView.SwapTarget]`, seeded into `selfScales[selfID]` at
+    /// `init(catalog:)` — the same idiom `logReps`/`logWeight`/`logRPE`
+    /// already use to seed other `@State`. `RoutineLayering.apply` (the pure
+    /// function `effectiveRoutineExercises` already delegates to) reads it
+    /// exactly as it reads a durable row's `self_swaps`; no repository, no
+    /// broadcast, no production seam. Empty in every existing world, which
+    /// keeps `effectiveRoutineExercises` resolving the UNSWAPPED routine for
+    /// `session-your-turn` and `session-solo-live`.
+    let selfSwaps: [UUID: SessionLiveView.SwapTarget] = [:]
+
     struct Reading: Equatable {
         let bpm: Int
         let zone: HeartRateZone?
@@ -634,6 +656,146 @@ enum LiveFixtures {
         logReps: "5",
         logWeight: "225",
         logRPE: 7.0)
+
+    // MARK: - The ad-hoc solo session (frame 155, plan task S6)
+
+    private static let soloLiveSessionID = UUID(uuidString: "00000000-0000-0000-0000-0000000001f0") ?? UUID()
+
+    /// `session-solo-live` (frame 155): an ad-hoc solo session in the one
+    /// body — `.freestyle`, a roster of one, the entry card up.
+    ///
+    /// `groupID`/`roomCode`/`scheduledFor` are all nil —
+    /// `SoloSessionShape.isSoloByConstruction`'s own triple (decision 1) —
+    /// so `hidesCrewFurniture` answers true from the session alone, before
+    /// any roster is even read; `participantCount: 1` is the honest roster
+    /// reading on top of it.
+    ///
+    /// `sets: []`, DELIBERATELY. `SessionLiveView.freestylePage` ticks on
+    /// `TimelineView(.periodic(from: .now, by: 1))` and computes
+    /// `restElapsed: RoundCopy.elapsed(since: myLastLoggedAt, now:)` — but
+    /// `RoundCopy.elapsed` returns the FIXED string `"0:00"` whenever its
+    /// `since` is nil, and `myLastLoggedAt` is nil exactly when this lifter
+    /// has no logged sets. An empty `sets` array is the one fixture choice
+    /// that keeps this frame's rendered text independent of the day the
+    /// screenshot is taken (constraint 11's "no Date.now reachable" — the
+    /// TimelineView tick is production's, not this builder's, but the
+    /// fixture still must not let a live clock show through it). The
+    /// routine and its exercises are `liveRoutineExercises`/`liveExercises`
+    /// (frame 145's own world) reused verbatim — only the session shape,
+    /// the style and the empty sets change.
+    ///
+    /// `LiveWorld` carries no roster (its own header) — `presentRotation` is
+    /// derived from `participants`, a `@State` that a catalog world never
+    /// seeds — so `FreestyleRailView`'s rail draws no lifter rows here,
+    /// exactly as it draws none for `session-your-turn` (145). That is the
+    /// existing fixture limitation, not a new one.
+    static let soloLive = LiveWorld(
+        session: WorkoutSession(
+            id: soloLiveSessionID,
+            routineID: liveRoutineID,
+            organizerID: alexID,
+            state: "in_progress",
+            startedAt: nil,
+            completedAt: nil,
+            createdAt: utcDate(year: 2026, month: 9, day: 16),
+            groupID: nil,
+            roomCode: nil,
+            scheduledFor: nil,
+            seriesID: nil,
+            currentTurnUserID: nil,
+            currentTurnStartedAt: nil,
+            style: .freestyle),
+        selfID: alexID,
+        routineName: "Push A",
+        routineExercises: liveRoutineExercises,
+        allExercises: liveExercises,
+        sets: [],
+        participantCount: 1,
+        heartRate: nil,
+        logReps: "5",
+        logWeight: "225",
+        logRPE: 7.0)
+
+    /// `session-solo-rest` (frame 156): the SAME solo world at rest — the
+    /// rest card reading a fixture elapsed time instead of "0:00".
+    /// `restElapsedOverride` is the only difference from `soloLive`; see its
+    /// own doc comment on `LiveWorld` for why a literal string, not a
+    /// `Date`, is the fixture-safe way to show it.
+    static let soloRest = LiveWorld(
+        session: WorkoutSession(
+            id: soloLiveSessionID,
+            routineID: liveRoutineID,
+            organizerID: alexID,
+            state: "in_progress",
+            startedAt: nil,
+            completedAt: nil,
+            createdAt: utcDate(year: 2026, month: 9, day: 16),
+            groupID: nil,
+            roomCode: nil,
+            scheduledFor: nil,
+            seriesID: nil,
+            currentTurnUserID: nil,
+            currentTurnStartedAt: nil,
+            style: .freestyle),
+        selfID: alexID,
+        routineName: "Push A",
+        routineExercises: liveRoutineExercises,
+        allExercises: liveExercises,
+        sets: [],
+        participantCount: 1,
+        heartRate: nil,
+        logReps: "5",
+        logWeight: "225",
+        logRPE: 7.0,
+        restElapsedOverride: "3:15")
+
+    /// The goblet squat `Exercise` the swap below substitutes in — a real
+    /// object, not just the `SwapConsentCard.Door` text `swapConsent`
+    /// already carries, so `allExercises.first(where:)` resolves a name
+    /// for the swapped slot exactly as it would for a durable row.
+    static let gobletSquatExercise = Exercise(
+        id: gobletSquatID, name: "Goblet squat", slug: "goblet-squat",
+        category: "compound", primaryMuscle: "quads",
+        secondaryMuscles: ["glutes", "core"], equipment: "dumbbell",
+        defaultUnit: "lb", demoVideoURL: nil)
+
+    /// `session-solo-swap` (frame 157): the same solo world with slot 1
+    /// (Back squat) swapped to Goblet squat — the RESULT, not the sheet:
+    /// `groupSwapSheet`'s suggestions come from a live
+    /// `ExerciseSubstitutionRepository` call (constraint 11), so this
+    /// photographs what a completed swap looks like on the page itself,
+    /// exactly the way `content_sessionScaleDown`'s "one lifter on a
+    /// different exercise, nothing announced" already reads for the crew.
+    /// `selfSwaps` is seeded into `selfScales[selfID]` at `init(catalog:)`
+    /// and read by the SAME `RoutineLayering.apply` a durable row goes
+    /// through — no repository, no broadcast.
+    static let soloSwap = LiveWorld(
+        session: WorkoutSession(
+            id: soloLiveSessionID,
+            routineID: liveRoutineID,
+            organizerID: alexID,
+            state: "in_progress",
+            startedAt: nil,
+            completedAt: nil,
+            createdAt: utcDate(year: 2026, month: 9, day: 16),
+            groupID: nil,
+            roomCode: nil,
+            scheduledFor: nil,
+            seriesID: nil,
+            currentTurnUserID: nil,
+            currentTurnStartedAt: nil,
+            style: .freestyle),
+        selfID: alexID,
+        routineName: "Push A",
+        routineExercises: liveRoutineExercises,
+        allExercises: liveExercises + [gobletSquatExercise],
+        sets: [],
+        participantCount: 1,
+        heartRate: nil,
+        logReps: "5",
+        logWeight: "225",
+        logRPE: 7.0,
+        selfSwaps: [squatRowID: SessionLiveView.SwapTarget(id: gobletSquatID, name: "Goblet squat")])
 
     /// `session-freestyle-rail` (frame 141): the rail, the stretched rest,
     /// and Coach's accessory — both suggestions, because the frame is built

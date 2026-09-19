@@ -257,6 +257,12 @@ struct SessionLiveView: View {
     /// Set in `reload()`'s catch, cleared on success. Gates the `GSErrorCard`
     /// replacement for the roster/spotlight block below (see `body`).
     @State private var rosterLoadFailed     = false
+    /// The one sentence `reload()`'s failure puts in the body's notice slot,
+    /// named so the success path can retire ITS OWN line and no other
+    /// writer's (fix round 1 / N1). It reads after `SessionCopy.verbFailed`,
+    /// so it is a whole sentence, not a clause.
+    private static let rosterFailedText =
+        "Couldn't load who's here — the crew's controls may be missing until it does."
     /// Canvas Completion Task 4 fix round 1 (proof p31-errors, "Set didn't
     /// save"): dedicated to `logSetAndAdvance`'s failure only — deliberately
     /// separate from the generic `errorText` above (which stays the small
@@ -331,19 +337,39 @@ struct SessionLiveView: View {
     // replacement, shown on their set when their turn comes, never
     // announced (no overlay, no feed event). Squad swap: ANYONE proposes,
     // UNANIMOUS consent (every present member votes yes) applies it to
-    // everyone. Session-local like the solo overrides - dies with the
-    // session; set_logs carry the replacement exercise as real data.
+    // everyone. set_logs carry the replacement exercise as real data.
+    //
+    // DURABLE AND KEYED BY THE SLOT SINCE PHASE C1 (decision 2). Both
+    // dictionaries below are still the in-memory cache this body renders
+    // from — nothing about the wire moved — but they are now SEEDED from
+    // `session_participants.self_swaps` / `sessions.squad_swaps` in
+    // `reload()` and WRITTEN THROUGH on every change, so a lifter who joins
+    // late, relaunches, or foregrounds after an OS kill sees the same
+    // routine the crew sees. Before this the broadcast was the only ingress
+    // and it has no replay (debug-swap-state.md §8.5).
+    //
+    // THE INNER KEY IS THE SLOT (`routine_exercises.id`), NOT THE EXERCISE
+    // ID. A routine naming one lift twice used to have slot 7 swapped by a
+    // vote about slot 3. `SwapTarget` keeps the replacement's NAME because
+    // the consent card and the station card are worded from it; the name is
+    // NOT persisted — a name cached in a row goes stale and a swap's truth
+    // is the id, so it is re-resolved from the catalog on load.
     struct SwapTarget: Equatable { let id: UUID; let name: String }
     struct SwapProposal: Equatable {
         let id: UUID
         let proposerID: UUID
+        /// The lift on the table, for the card's wording and its door.
         let exerciseID: UUID
+        /// The SLOT the vote is about. Optional only because an installed
+        /// build's `propose` event carries no slot — such a proposal still
+        /// votes and still applies, by exercise id, exactly as it does today.
+        let slotID: UUID?
         let target: SwapTarget
         var votes: [UUID: Bool]
     }
-    /// Per-member quiet scales: userID -> (original exerciseID -> replacement).
+    /// Per-member quiet scales: userID -> (SLOT id -> replacement).
     @State private var selfScales: [UUID: [UUID: SwapTarget]] = [:]
-    /// Squad-approved swaps: original exerciseID -> replacement.
+    /// Squad-approved swaps: SLOT id -> replacement.
     @State private var squadSwaps: [UUID: SwapTarget] = [:]
     @State private var swapProposal: SwapProposal? = nil
     @State private var swapProposalExpiry: Task<Void, Never>? = nil
@@ -451,6 +477,69 @@ struct SessionLiveView: View {
     }
     private var isOrganizer: Bool { liveSession.organizerID == selfID }
 
+    /// THE SOLO FURNITURE GATE (plan task S4, brief item 7) — one law, read
+    /// in every place the crew's furniture would otherwise reach a lifter who
+    /// is alone in a gym. `SoloSessionShape` carries the reasoning and the
+    /// list of what the body ALREADY hides without it.
+    ///
+    /// SOLO IS A FACT ABOUT THE SESSION, NOT ABOUT HOW MANY ROWS HAVE LOADED
+    /// (fix round 1 / N1). This used to read `rosterCount <= 1`, and
+    /// `participants` is `@State … = []` filled only by `reload()` — so it
+    /// answered SOLO for every session, crew included, on the render pass
+    /// before the fetch landed, and kept answering solo for as long as a
+    /// reload failed. A crew's chrome popped in rather than being there, and
+    /// on a bad connection the whole crew silently lost its voice dock.
+    ///
+    /// So construction decides first (an ad-hoc row is solo before any fetch
+    /// exists), an EMPTY roster means NOT KNOWN rather than empty, and an
+    /// unknown keeps the crew's shipped behaviour. A scheduled solo session
+    /// still gets the solo shape the moment its roster of one arrives.
+    private var crewShape: SoloSessionShape.Crew {
+        SoloSessionShape.crew(groupID: liveSession.groupID,
+                              roomCode: liveSession.roomCode,
+                              scheduledFor: liveSession.scheduledFor,
+                              loadedParticipantCount: loadedRosterCount)
+    }
+
+    private var hidesCrewFurniture: Bool {
+        SoloSessionShape.hidesCrewFurniture(crewShape)
+    }
+
+    /// The roster count WHEN ONE IS KNOWN, nil otherwise. A real session
+    /// always holds at least the viewer's own row, so an empty array is the
+    /// honest signal for "the fetch has not landed (or failed)".
+    ///
+    /// The catalog's count is always known — a fixture world states its
+    /// roster rather than fetching one — which is what keeps a crew frame a
+    /// crew frame and lets a one-participant world get the solo shape.
+    private var loadedRosterCount: Int? {
+        #if DEBUG
+        if let catalog { return catalog.participantCount }
+        #endif
+        return participants.isEmpty ? nil : participants.count
+    }
+
+    /// The end confirmation's words (fix round 1 / B1). Solo for a roster of
+    /// one — the same law the furniture reads — crew otherwise.
+    private var endDialog: SessionEndCopy.Dialog {
+        SessionEndCopy.dialog(isSolo: hidesCrewFurniture,
+                              isLastPresent: presentRotation.count <= 1)
+    }
+
+    /// The end action a PAGE mounts itself, or nil when the law says that
+    /// page carries none (fix round 2 / N10).
+    ///
+    /// THE LAW'S THREE READERS ARE ALL HERE — `freestyleScreen`,
+    /// `roundWaitPage` and `spotterPage` — so deleting an arm of
+    /// `SessionEndAffordance.mount(for:)` makes that page's door vanish
+    /// rather than only reddening a test. `myTurnFixedPage` is `.headerRail`
+    /// and answers nil; `togetherPage`'s door is unconditional and predates
+    /// the law (its own comment says why).
+    private func endAction(for page: SessionEndAffordance.Page) -> (() -> Void)? {
+        guard SessionEndAffordance.pageMountsItsOwnEnd(page) else { return nil }
+        return { showEndConfirmation = true }
+    }
+
     /// WHOSE ACT THE LOG CONTROL IS — plan task S5's one behavioural change.
     ///
     /// Rounds is a rotation: the inline LOG THIS SET card belongs to whoever
@@ -489,6 +578,13 @@ struct SessionLiveView: View {
     @MainActor
     private func joinVoiceIfEligible() async {
         guard isVoiceEligible else { return }
+        // NOBODY TO TALK TO (plan task S4, brief item 7). This is the gate
+        // that matters most of the four: the others hide a control, this one
+        // declines to OPEN a live voice room — a real connection, and on a
+        // device that has never granted it, a microphone prompt — for a
+        // lifter who is the only person in the session. Same roster law as
+        // the rail the dock would have drawn.
+        guard !hidesCrewFurniture else { return }
         await VoiceRoomService.shared.join(sessionID: liveSession.id)
     }
 
@@ -625,9 +721,29 @@ struct SessionLiveView: View {
             todaysScale: todaysScale)
     }
 
+    /// THE SLOT this lifter is on — resolved through `RoutineProgression`,
+    /// the same walk `currentExerciseForSheet` makes, rather than by looking
+    /// the exercise back up.
+    ///
+    /// It used to be `first(where: { $0.exerciseID == ex.id })`, which is a
+    /// lookup BY LIFT for a question about a SLOT. On a routine naming one
+    /// lift twice that answers with the FIRST of the two however far the
+    /// lifter has got, and after Phase C1's re-keying a swap applied to the
+    /// second slot would be read off the first. The progression already
+    /// knows which row it landed on; asking it is both correct and one
+    /// fewer place for the two answers to disagree.
+    ///
+    /// COUNTED PER SLOT since Phase C1 (decision 3), through a `SlotProgress`
+    /// built ONCE here and read per slot as a dictionary lookup (review F6).
+    /// It carries the one fallback rule, so a slot whose lift was swapped
+    /// mid-exercise counts both halves and a pre-column session walks exactly
+    /// as it did before the column existed.
     private var currentRoutineExercise: RoutineExercise? {
-        guard let ex = currentExerciseForSheet else { return nil }
-        return effectiveRoutineExercises.first(where: { $0.exerciseID == ex.id })
+        let rows = effectiveRoutineExercises
+        let progress = SlotProgress(routine: rows, logs: mySets)
+        return RoutineProgression.currentSlot(
+            routine: rows,
+            completedSets: { re in progress.count(for: re) })
     }
 
     /// The CURRENT exercise's venue equipment class, or `nil` when there is no
@@ -753,6 +869,16 @@ struct SessionLiveView: View {
         _logReps = State(initialValue: catalog.logReps)
         _logWeight = State(initialValue: catalog.logWeight)
         _logRPE = State(initialValue: catalog.logRPE)
+        // Plan task S6, frame 157: a fixture's own quiet swap, seeded the
+        // same way a durable row's `self_swaps` seeds `selfScales` in
+        // `reload()` — `effectiveRoutineExercises` reads it through the
+        // same `RoutineLayering.apply` either way. Empty in every other
+        // world, so `selfScales` stays `[:]` (its own declared default) and
+        // this line changes nothing for `session-your-turn`/`session-solo-
+        // live`.
+        if !catalog.selfSwaps.isEmpty {
+            _selfScales = State(initialValue: [catalog.selfID: catalog.selfSwaps])
+        }
     }
     #endif
 
@@ -1002,10 +1128,15 @@ struct SessionLiveView: View {
 
             Spacer(minLength: 8)
 
-            if case .connecting = VoiceRoomService.shared.state {
+            // THE RAIL'S CREW HALF (plan task S4, brief item 7). Three doors
+            // onto other people — the voice pill, the mixer, the chat — and
+            // the presence count, all of which a lifter alone in a gym must
+            // never see. Each is wrapped rather than removed, so the rail's
+            // child count is unchanged and nothing a crew sees moves.
+            if !hidesCrewFurniture, case .connecting = VoiceRoomService.shared.state {
                 GSConnectingVoicePill()
             }
-            if isVoiceConnected {
+            if !hidesCrewFurniture, isVoiceConnected {
                 Button { showVoiceMixerSheet = true } label: {
                     Image(systemName: "slider.horizontal.3")
                         .font(.system(size: 13, weight: .semibold))
@@ -1015,23 +1146,28 @@ struct SessionLiveView: View {
                 }
                 .buttonStyle(.plain)
             }
-            Button { showChatSheet = true } label: {
-                Image(systemName: "bubble.left.and.bubble.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(theme.neutral700)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+            if !hidesCrewFurniture {
+                Button { showChatSheet = true } label: {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(theme.neutral700)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
 
-            HStack(spacing: 4) {
-                Text("\(rosterCount)")
-                    .font(GSFont.bold(11, relativeTo: .caption2).monospacedDigit())
-                Image(systemName: "person.2.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                // A presence count of one is not presence, it is a reminder
+                // that you are on your own. The number answers "who else is
+                // here", and for a party of one the honest render is nothing.
+                HStack(spacing: 4) {
+                    Text("\(rosterCount)")
+                        .font(GSFont.bold(11, relativeTo: .caption2).monospacedDigit())
+                    Image(systemName: "person.2.fill")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .foregroundStyle(theme.neutral700)
+                .frame(width: 56, height: 44)
             }
-            .foregroundStyle(theme.neutral700)
-            .frame(width: 56, height: 44)
         }
         .padding(.horizontal, 6)
         .frame(height: 44)
@@ -1849,7 +1985,13 @@ struct SessionLiveView: View {
             // my-turn page and Freestyle share, so this mount is two of the
             // three missing pages; Together's own foot carries the third.
             // Same order as the round wait's foot: notices, strip, dock.
-            if !reactionEmojis.isEmpty {
+            // …and not for a party of one (plan task S4). `tapReaction`
+            // broadcasts on the session channel; with a roster of one it
+            // reaches nobody, so the pills are a crew gesture offered to
+            // somebody with no crew. Same roster law, added to the existing
+            // condition rather than as a new child — this `VStack` holds
+            // exactly ten.
+            if !hidesCrewFurniture, !reactionEmojis.isEmpty {
                 ReactionStrip(emojis: reactionEmojis,
                               onTap: { emoji in Task { await tapReaction(emoji: emoji) } })
                 Color.clear.frame(height: 6)
@@ -1933,15 +2075,31 @@ struct SessionLiveView: View {
         return false
     }
 
+    /// Gated for a party of one (plan task S4): with `joinVoiceIfEligible`
+    /// declining to open a room there is nothing for these to report, and an
+    /// empty notices slot in the shared foot is one fewer crew shape on a
+    /// solo screen. `@ViewBuilder` rather than a child of `turnChrome`,
+    /// whose `VStack` is at the ten-child ceiling exactly.
+    @ViewBuilder
     private var voiceNotices: some View {
-        VoiceNotices(foot: voiceFoot)
+        if !hidesCrewFurniture {
+            VoiceNotices(foot: voiceFoot)
+        }
     }
 
     /// The mic rail: what is left of the plate dock (plan task S4) once the
     /// plates and the ALL door left with the soundboard. Push-to-talk is NOT
     /// collateral (plan constraint 21), and it sits exactly where it sat.
+    ///
+    /// NOT FOR A PARTY OF ONE (plan task S4, brief item 7). The dock was not
+    /// solo-gated at all — an ad-hoc lifter got a push-to-talk control for a
+    /// room with nobody in it, which is the plainest piece of crew furniture
+    /// on the freestyle rail's foot. Gated INSIDE the rail rather than at its
+    /// mount, because `turnChrome`'s `VStack` already carries exactly ten
+    /// children and an eleventh would break the ViewBuilder ceiling.
+    @ViewBuilder
     private var turnMicRail: some View {
-        Group {
+        if !hidesCrewFurniture {
             HStack(spacing: 8) {
                 Spacer(minLength: 4)
 
@@ -2094,24 +2252,39 @@ struct SessionLiveView: View {
         // non-organizers the RPC refused, stranding them in the session).
         // Leave = drop out of the rotation; End = the last present lifter
         // (or the organizer) closing it out for the crew's records.
+        //
+        // AND IT READS AS A SOLO WORKOUT FOR A ROSTER OF ONE (fix round 1 /
+        // B1, ruling R-C-7). "Leave session" and "End for everyone" both
+        // describe other people; a lifter alone in a gym has none, and is
+        // finishing their workout. ONE action, worded for that, calling the
+        // very same `endSession()` — `complete()`, the recap, the week, the
+        // pump post — as a crew end does. NOT the streak: an ad-hoc session
+        // has never moved one (`streak_on_session_state_change` returns on
+        // `scheduled_for IS NULL`) and this does not change that; see
+        // `SessionEndAffordance`'s header. `SessionEndCopy` owns both
+        // branches' words so they are asserted rather than eyeballed.
         .confirmationDialog(
-            "Leave the session?",
+            endDialog.title,
             isPresented: $showEndConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Leave session") {
-                Task { await leaveSession() }
-            }
-            if isOrganizer || presentRotation.count <= 1 {
-                Button("End for everyone", role: .destructive) {
+            if let soloPrimary = endDialog.soloPrimary {
+                Button(soloPrimary) {
                     Task { await endSession() }
+                }
+            } else {
+                Button("Leave session") {
+                    Task { await leaveSession() }
+                }
+                if isOrganizer || presentRotation.count <= 1 {
+                    Button("End for everyone", role: .destructive) {
+                        Task { await endSession() }
+                    }
                 }
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text(presentRotation.count <= 1
-                 ? "You're the last one lifting — leaving completes the session."
-                 : "Leaving removes you from the rotation; the crew keeps lifting.")
+            Text(endDialog.message)
         }
         // Realtime lifecycle — SessionLiveService + SessionBroadcastService
         //
@@ -2163,13 +2336,23 @@ struct SessionLiveView: View {
         }
         // Rest buzz (owner 2026-08-14) — one observation point for the
         // self-rotation interlude, same shape as solo's restEndAt wire.
-        // The same point PERSISTS the window to LiveSessionTimerStore so a
-        // sheet swipe-down/rejoin can't erase a running rest.
+        // The same point carries the window into `LiveSessionTimerStore` so a
+        // dismiss/rejoin — a MINIMISE, since Phase C1 — can't erase a running
+        // rest.
+        //
+        // IT IS IN MEMORY, NOT ON DISK. This comment and the one below used
+        // to say "writes to disk", and the store's own header says the
+        // opposite in as many words: "Memory-only on purpose: anchors are
+        // meaningless across app launches". So a rest window survives a
+        // minimise and a lock, and does NOT survive a relaunch — the lifter
+        // comes back to the next set with the countdown gone, which is the
+        // documented limit rather than a bug to report (decision 5's table).
         .onChange(of: selfRotationRestUntil) { _, _ in
             // A capture never enters the rest interlude (nothing logs), so
             // this cannot fire — the guard is here so that stays true if
             // something later seeds the window (`RestNotifier` schedules a
-            // local notification, and `LiveSessionTimerStore` writes to disk).
+            // local notification, and `LiveSessionTimerStore` records an
+            // in-memory anchor).
             guard !catalogSkipLoad else { return }
             if let end = selfRotationRestUntil {
                 RestNotifier.schedule(at: end)
@@ -2258,8 +2441,25 @@ struct SessionLiveView: View {
             // SESSION LIVE pill can route back in; cleared only by a
             // deliberate exit (exitToHome) or a terminal state. Title
             // refreshed after reload() once routineName is real.
+            //
+            // PHASE C1 S5: registration is unconditional, so this now fires
+            // for a roster of one too — `pillTitle`'s `isSolo` argument is
+            // what keeps a freeform ad-hoc lifter from reading "Crew
+            // session".
+            //
+            // AND IT IS THE PROVISIONAL ANSWER, by construction (fix round 2).
+            // `hidesCrewFurniture` reads `crewShape`, which here has no
+            // roster and so answers from the row alone: an AD-HOC session is
+            // `.solo` and titles correctly on the first frame, while a
+            // SCHEDULED solo session is `.unknown` — indistinguishable at the
+            // row from a scheduled `.friends` session — and briefly reads
+            // "Crew session". `openAndSubscribe`'s refresh below is where
+            // that is corrected, once the roster has actually arrived, and
+            // it now runs for a session with no routine too.
             appState.liveGroupSession = AppState.LiveGroupSession(
-                sessionID: liveSession.id, title: routineName ?? "Crew session")
+                sessionID: liveSession.id,
+                title: AppState.LiveGroupSession.pillTitle(
+                    routineName: routineName, isSolo: hidesCrewFurniture))
             // Phase O Task 4 (Sentry) — "session join" refresh; see
             // SentryContext.refreshLiveSession's doc comment.
             SentryContext.refreshLiveSession(rawState: liveSession.state, participantCount: participants.count)
@@ -2569,7 +2769,8 @@ struct SessionLiveView: View {
         // case where a vote can outrun the roster this client has fetched —
         // a meter showing 3 of 2 would be worse than a wide one.
         let crewSize = max(presentRotation.count, agreedIDs.count)
-        let details = swapDoorDetails(for: proposal.exerciseID,
+        let details = swapDoorDetails(slotID: proposal.slotID,
+                                      exerciseID: proposal.exerciseID,
                                       target: proposal.target.id)
         return SwapConsentCard.Model(
             proposerName: SessionCopy.firstName(proposer),
@@ -2604,11 +2805,19 @@ struct SessionLiveView: View {
     /// `3 × —`, because the rebuild dropped `targetFailure` and the copy kept
     /// it. Both now go through `RoutineLayering.swapped(_:to:)`, so a door cannot promise
     /// a prescription the swap does not produce, whatever field is added next.
-    private func swapDoorDetails(for exerciseID: UUID,
+    ///
+    /// BY SLOT WHEN THE PROPOSAL NAMES ONE (Phase C1): a routine naming one
+    /// lift twice has two rows to print and only the voted one is the
+    /// subject. `slotID` is nil only for an installed build's proposal,
+    /// which has no slot to name — that falls back to the by-lift lookup,
+    /// which is this function's shipped behaviour.
+    private func swapDoorDetails(slotID: UUID?, exerciseID: UUID,
                                  target: UUID) -> (now: String, proposed: String) {
-        guard let re = routineExercises.first(where: { $0.exerciseID == exerciseID }) else {
-            return ("—", "—")
+        let bySlot = slotID.flatMap { id in
+            routineExercises.first(where: { candidate in candidate.id == id })
         }
+        let row = bySlot ?? routineExercises.first(where: { $0.exerciseID == exerciseID })
+        guard let re = row else { return ("—", "—") }
         return (SessionPlanRow.prescription(for: re),
                 SessionPlanRow.prescription(for: RoutineLayering.swapped(re, to: target)))
     }
@@ -2898,17 +3107,16 @@ struct SessionLiveView: View {
     }
 
     /// Best-guess current exercise for the turn (first routine exercise, or first from allExercises).
+    ///
+    /// THE LIFT OF THE SLOT `currentRoutineExercise` LANDED ON. The
+    /// progression walk used to be spelled here and the slot was then looked
+    /// back up BY LIFT — two derivations of one answer, which a routine
+    /// naming one lift twice could make disagree. The walk now lives once,
+    /// in `currentRoutineExercise` (Phase C1, decision 2); this reads the
+    /// exercise off its row. Counts still come from the UNCAPPED session
+    /// array — the 30-row feed undercounts long sessions.
     private var currentExerciseForSheet: Exercise? {
-        // Exercise progression (2026-07-30, closing the in-code-documented
-        // gap): the first routine exercise THIS lifter hasn't finished,
-        // replacing the hardcoded `.first` that pinned every set of a
-        // multi-exercise routine to exercise 1 ("Set 13/3" on device).
-        // Counts come from the UNCAPPED session array — the 30-row feed
-        // undercounts long sessions. See RoutineProgression's doc.
-        if let re = RoutineProgression.currentExercise(
-            routine: effectiveRoutineExercises,
-            completedSets: { exerciseID in mySetCount(for: exerciseID) }
-        ) {
+        if let re = currentRoutineExercise {
             return allExercises.first(where: { $0.id == re.exerciseID })
         }
         return allExercises.first
@@ -2920,8 +3128,23 @@ struct SessionLiveView: View {
         allSessionSets.filter { $0.userID == selfID && $0.exerciseID == exerciseID && !$0.isPenalty }.count
     }
 
+    /// My own non-penalty sets, uncapped — the input every slot count is
+    /// taken from. `mySetCount(for:)` above counts by LIFT and stays: it is
+    /// what `logSetAndAdvance` numbers a set with, and `set_index` has always
+    /// meant "my nth set of this lift".
+    private var mySets: [SetLog] {
+        allSessionSets.filter { $0.userID == selfID && !$0.isPenalty }
+    }
+
+    /// The rep target of the slot this lifter is on. Resolved by SLOT
+    /// (Phase C1) when it is the current one; the by-lift lookup stays for
+    /// any other exercise a caller names, where a routine naming one lift
+    /// twice has two identical prescriptions anyway.
     private func defaultReps(for exerciseID: UUID) -> String? {
-        effectiveRoutineExercises.first(where: { $0.exerciseID == exerciseID })?.targetReps
+        if let slot = currentRoutineExercise, slot.exerciseID == exerciseID {
+            return slot.targetReps
+        }
+        return effectiveRoutineExercises.first(where: { $0.exerciseID == exerciseID })?.targetReps
     }
 
     /// Reset the inline log card to fresh defaults — called whenever it becomes my turn.
@@ -3099,13 +3322,19 @@ struct SessionLiveView: View {
     }
 
     /// Re-seed the self-rotation rest window + recovery-drop history from
-    /// the store after a sheet swipe-down/rejoin (owner bug 2026-08-14).
-    /// The window only restores while still in the future, and its
-    /// auto-clear task is RE-ARMED here — the original died with the view.
+    /// the store after a dismiss/rejoin — a MINIMISE, since Phase C1 (owner
+    /// bug 2026-08-14). The window only restores while still in the future,
+    /// and its auto-clear task is RE-ARMED here — the original died with the
+    /// view.
+    ///
+    /// WHAT THIS DOES AND DOES NOT BRING BACK. The store is IN MEMORY (its
+    /// own header: "Memory-only on purpose"), so it survives the cover being
+    /// minimised and the phone being locked, and it does not survive the app
+    /// being relaunched — nothing here reads a file. The swap layer and the
+    /// cursor do survive a relaunch, because they live in the row.
     private func restoreTimersFromStore() {
         // Guarded here as well as at its one `.onAppear` call site (plan task
-        // S4): a store read is a disk read, and a re-armed clear `Task` is a
-        // clock.
+        // S4): a re-armed clear `Task` is a clock, and a capture owns none.
         guard !catalogSkipLoad else { return }
         guard let snap = LiveSessionTimerStore.shared.snapshot(for: session.id) else { return }
         if selfRotationRestDrops.isEmpty, !snap.restDrops.isEmpty {
@@ -3215,7 +3444,12 @@ struct SessionLiveView: View {
             // Always sample: it is the athlete's own number on their own
             // screen. Whether it is BROADCAST is still shareHeartRate's
             // decision, made phone-side.
-            sampleHeartRate: true
+            sampleHeartRate: true,
+            // The slot this lifter is on (Phase C1, decision 3) — the phone
+            // is the only side that knows it, and a wrist-logged set that
+            // arrived without it would be dropped from a slot that already
+            // had attributed rows.
+            routineExerciseID: currentRoutineExercise?.id
         )
         WatchConnectivityBridge.shared.updateSessionState(payload)
     }
@@ -3233,11 +3467,24 @@ struct SessionLiveView: View {
         // sees the actual current exercise shortly after entering, not
         // only after the first turn change.
         pushWatchSessionState()
-        // Recovery-pill title refresh — onAppear registered before reload()
-        // populated routineName.
-        if appState.liveGroupSession?.sessionID == liveSession.id, let routineName {
+        // Recovery-pill title refresh — `.onAppear` registered before
+        // `reload()` populated `routineName` AND before `participants`
+        // existed, so both halves of the title were guesses there.
+        //
+        // THROUGH `pillTitle`, AND NO LONGER GATED ON A ROUTINE NAME (fix
+        // round 2 / the S5 residual). This site used to write
+        // `title: routineName` directly, behind `let routineName` — so it
+        // was the one writer that did not read the law, and a session with
+        // NO routine never reached it at all. That is exactly the case the
+        // law exists for: a scheduled solo FREEFORM session is `.unknown` at
+        // `.onAppear` (no roster yet) and prints "Crew session", and nothing
+        // ever corrected it. Now the roster has landed, `hidesCrewFurniture`
+        // is the real answer, and this is where it is applied.
+        if appState.liveGroupSession?.sessionID == liveSession.id {
             appState.liveGroupSession = AppState.LiveGroupSession(
-                sessionID: liveSession.id, title: routineName)
+                sessionID: liveSession.id,
+                title: AppState.LiveGroupSession.pillTitle(
+                    routineName: routineName, isSolo: hidesCrewFurniture))
         }
         await ExerciseNameCache.preload()
         // Owner item 7: latest body weight for bodyweight-set stamping.
@@ -3393,8 +3640,10 @@ struct SessionLiveView: View {
         switch event.kind {
         case "self":
             // Quiet: store and show on their set. Never an overlay.
-            selfScales[event.userID, default: [:]][event.exerciseID] =
-                SwapTarget(id: event.replacementID, name: event.replacementName)
+            for slotID in slots(for: event) {
+                selfScales[event.userID, default: [:]][slotID] =
+                    SwapTarget(id: event.replacementID, name: event.replacementName)
+            }
             exerciseNames[event.replacementID] = event.replacementName
         case "propose":
             guard let pid = event.proposalID else { return }
@@ -3403,6 +3652,7 @@ struct SessionLiveView: View {
             var proposal = SwapProposal(
                 id: pid, proposerID: event.userID,
                 exerciseID: event.exerciseID,
+                slotID: event.routineExerciseID,
                 target: SwapTarget(id: event.replacementID, name: event.replacementName),
                 votes: [event.userID: true])
             if let existing = swapProposal, existing.id == pid {
@@ -3422,13 +3672,39 @@ struct SessionLiveView: View {
             // Proposer's client is the single decision point.
             if proposal.proposerID == selfID { evaluateUnanimity(proposal) }
         case "apply":
-            squadSwaps[event.exerciseID] =
-                SwapTarget(id: event.replacementID, name: event.replacementName)
+            // THE DURABLE ROW IS NOT WRITTEN HERE. `apply_squad_swap` is
+            // called once, by the PROPOSER's client (`evaluateUnanimity`) —
+            // the same single-decision-point rule the unanimity math already
+            // follows. Every other client applies the swap in memory now and
+            // reads the crew's row on its next `reload()`.
+            for slotID in slots(for: event) {
+                squadSwaps[slotID] =
+                    SwapTarget(id: event.replacementID, name: event.replacementName)
+            }
             exerciseNames[event.replacementID] = event.replacementName
             clearProposal()
         default:
             break
         }
+    }
+
+    /// WHICH SLOTS AN INBOUND EVENT IS ABOUT.
+    ///
+    /// A client new enough to name the slot names exactly one, and it is
+    /// honoured even when this client's routine does not carry it (the row
+    /// may have been edited under us; an entry naming no row is inert, which
+    /// is what `RoutineLayering.apply` guarantees).
+    ///
+    /// AN INSTALLED BUILD NAMES NO SLOT, and that event is applied to EVERY
+    /// slot bearing its exercise id — today's behaviour exactly, and correct
+    /// whenever the routine names that lift once (decision 2). Widening it
+    /// silently is the honest reading of an old peer's intent: it believed
+    /// it was swapping "the bench", because that is all its wire could say.
+    private func slots(for event: SessionBroadcastService.SwapEvent) -> [UUID] {
+        if let slotID = event.routineExerciseID { return [slotID] }
+        return routineExercises
+            .filter { $0.exerciseID == event.exerciseID }
+            .map(\.id)
     }
 
     @MainActor
@@ -3437,7 +3713,9 @@ struct SessionLiveView: View {
         let present = Set(presentRotation.map(\.participant.userID))
         let yes = Set(proposal.votes.filter { $0.value }.map(\.key))
         guard !present.isEmpty, present.subtracting(yes).isEmpty else { return }
-        squadSwaps[proposal.exerciseID] = proposal.target
+        let slotIDs = proposal.slotID.map { [$0] }
+            ?? routineExercises.filter { $0.exerciseID == proposal.exerciseID }.map(\.id)
+        for slotID in slotIDs { squadSwaps[slotID] = proposal.target }
         exerciseNames[proposal.target.id] = proposal.target.name
         clearProposal()
         Task {
@@ -3445,8 +3723,60 @@ struct SessionLiveView: View {
                 sessionID: liveSession.id, kind: "apply", proposalID: proposal.id,
                 exerciseID: proposal.exerciseID,
                 replacementID: proposal.target.id,
-                replacementName: proposal.target.name)
+                replacementName: proposal.target.name,
+                routineExerciseID: proposal.slotID)
+            // THE CREW'S ROW, AND THE CREW'S ROW ONLY THROUGH THE RPC.
+            // Last, and never a gate: the crew has already seen the swap
+            // land through the wire, and the layer above is what this body
+            // renders from. A refusal leaves every one of those standing and
+            // says so in the slot the card was just in — the durable row is
+            // what a late joiner or a relaunch would then be missing, which
+            // is a smaller loss than a swap that looked refused and was not.
+            await persistSquadSwaps(slotIDs, replacementID: proposal.target.id)
         }
+    }
+
+    /// Write the crew's agreed swap where a relaunch can find it.
+    ///
+    /// One RPC per slot, which is one for every swap a current build makes;
+    /// an installed build's slot-less proposal can name more than one.
+    ///
+    /// EVERY SLOT IS ATTEMPTED, AND THE REPORT NAMES WHAT LANDED (review
+    /// F4). The loop used to `return` on the first refusal, so a three-slot
+    /// proposal could persist one and abandon two while this function's own
+    /// comment claimed it kept that case "honest rather than half-written".
+    /// `apply_squad_swap` merges one key at a time and has no transaction
+    /// across calls, so all-or-nothing is not available to ask for: the
+    /// honest alternative is to try them all and say how many arrived.
+    ///
+    /// THE ERROR GOES WHERE THE QUESTION WAS ASKED. `topNotices` renders the
+    /// consent card and `errorBannerOverlay` in the SAME slot, one or the
+    /// other — so a P0001 lands exactly where the crew was just voting, with
+    /// the function's own words (`ErrorMapping` surfaces a `P0001` message
+    /// verbatim through `.validation`).
+    @MainActor
+    private func persistSquadSwaps(_ slotIDs: [UUID], replacementID: UUID) async {
+        var landed = 0
+        var lastMessage: String?
+        for slotID in slotIDs {
+            do {
+                try await SessionSwapRepository.applySquad(
+                    sessionID: liveSession.id, slotID: slotID,
+                    replacementID: replacementID)
+                landed += 1
+            } catch {
+                AppLogger.sessions.error(
+                    "apply_squad_swap refused: \(error, privacy: .public)")
+                lastMessage = ErrorMapping.map(error).errorDescription
+            }
+        }
+        guard let lastMessage, landed < slotIDs.count else { return }
+        // The crew's swap is applied on every screen either way — this says
+        // what the CREW'S ROW is now missing, which is what a relaunch or a
+        // late joiner would not see.
+        errorText = landed == 0
+            ? lastMessage
+            : "Saved \(landed) of \(slotIDs.count) — \(lastMessage)"
     }
 
     @MainActor
@@ -3497,29 +3827,81 @@ struct SessionLiveView: View {
     @MainActor
     private func chooseSwap(_ option: GroupSwapOption) {
         guard let ex = currentExerciseForSheet, let selfID else { return }
+        // THE SHEET ALWAYS CLOSES (review F3). The slot guard below used to
+        // sit in this line's `guard`, so a session with no routine answered
+        // a tap by doing nothing AND leaving the sheet up. S3 makes
+        // routine-less ad-hoc sessions ordinary, so a dead tap there would
+        // stop being a corner.
         showGroupSwapSheet = false
+        guard let slotID = currentRoutineExercise?.id else {
+            // A swap replaces a lift IN A PLANNED SLOT. With no plan there
+            // is no slot to key it to, and a layer keyed to nothing would
+            // apply to nothing — say so rather than pretend.
+            errorText = "Nothing to swap — this session has no planned exercises."
+            return
+        }
         let target = SwapTarget(id: option.id, name: option.name)
         if swapForSquad {
             let pid = UUID()
             swapProposal = SwapProposal(id: pid, proposerID: selfID,
-                                        exerciseID: ex.id, target: target,
+                                        exerciseID: ex.id, slotID: slotID,
+                                        target: target,
                                         votes: [selfID: true])
             armProposalExpiry(pid)
             Task {
                 await broadcastService.sendSwap(
                     sessionID: liveSession.id, kind: "propose", proposalID: pid,
                     exerciseID: ex.id, replacementID: target.id,
-                    replacementName: target.name)
+                    replacementName: target.name,
+                    routineExerciseID: slotID)
             }
+            // NOTHING DURABLE IS WRITTEN FOR A PROPOSAL. The crew has not
+            // agreed yet, and `apply_squad_swap` has no half state — the
+            // write happens once, at unanimity, on this same client
+            // (`evaluateUnanimity`).
         } else {
-            selfScales[selfID, default: [:]][ex.id] = target
+            selfScales[selfID, default: [:]][slotID] = target
             exerciseNames[target.id] = target.name
             Task {
                 await broadcastService.sendSwap(
                     sessionID: liveSession.id, kind: "self", proposalID: nil,
                     exerciseID: ex.id, replacementID: target.id,
-                    replacementName: target.name)
+                    replacementName: target.name,
+                    routineExerciseID: slotID)
+                await persistSelfSwaps(userID: selfID)
             }
+        }
+    }
+
+    /// Write MY OWN quiet layer to my own participant row.
+    ///
+    /// THE WHOLE LAYER, not the one entry: `self_swaps` is a plain jsonb
+    /// column written by a direct own-row PATCH (no RPC, no merge on the
+    /// server — see `SessionSwapRepository.saveSelf`), so the object this
+    /// client holds is the object the column should carry.
+    ///
+    /// Best-effort, and deliberately AFTER the broadcast: a refused write
+    /// leaves the in-memory scale standing for this session exactly as it
+    /// stood before Phase C1, which is shipped behaviour, and what is lost
+    /// is only its survival of a relaunch. Surfaced in the body's one error
+    /// line rather than swallowed — a quiet swap that did not persist is
+    /// worth one sentence.
+    /// RECORDED BEFORE IT IS WRITTEN (ruling F1). The pending store is where
+    /// my layer lives when the row cannot have it yet; a refused write leaves
+    /// it dirty, the layer keeps applying, and the next seed, set log or
+    /// foreground re-attempts it. The notice says that, rather than claiming
+    /// a durability the write did not buy.
+    @MainActor
+    private func persistSelfSwaps(userID: UUID) async {
+        let layer = SessionSwapLayer((selfScales[userID] ?? [:]).mapValues(\.id))
+        guard !layer.isEmpty else { return }
+        SessionSwapPendingStore.shared.record(layer, for: liveSession.id)
+        do {
+            try await SessionSwapRepository.saveSelf(sessionID: liveSession.id, layer: layer)
+            SessionSwapPendingStore.shared.confirm(liveSession.id, matching: layer)
+        } catch {
+            AppLogger.sessions.error("self_swaps write failed: \(error, privacy: .public)")
+            errorText = "Couldn't save the swap — it applies on this phone; will retry."
         }
     }
 
@@ -3537,7 +3919,8 @@ struct SessionLiveView: View {
                 sessionID: liveSession.id, kind: "vote", proposalID: proposal.id,
                 exerciseID: proposal.exerciseID,
                 replacementID: proposal.target.id,
-                replacementName: proposal.target.name, vote: yes)
+                replacementName: proposal.target.name, vote: yes,
+                routineExerciseID: proposal.slotID)
         }
     }
 
@@ -3620,6 +4003,11 @@ struct SessionLiveView: View {
             let (fetchedParts, fetchedSets, fetchedSession) =
                 try await (pFetch, setsFetch, sessionRef)
             rosterLoadFailed = false
+            // …and retire its notice, but ONLY its own. Another writer's
+            // line — a refused swap, a failed leave — is a statement about
+            // something this fetch knows nothing about, and the lifter may
+            // not have read it yet.
+            if errorText == Self.rosterFailedText { errorText = nil }
             participants = fetchedParts
             if let s = fetchedSession { liveSession = s }
 
@@ -3643,6 +4031,17 @@ struct SessionLiveView: View {
         } catch {
             AppLogger.sessions.error("SessionLiveView reload: \(error, privacy: .public)")
             rosterLoadFailed = true
+            // AND IT IS SAID (fix round 1 / N1). `rosterLoadFailed` had no
+            // reader anywhere in this file: the fetch failed, the roster
+            // stayed empty, and the lifter was told nothing at all while the
+            // screen quietly behaved as though the session were empty. It now
+            // has two readers — `crewShape`, which treats an absent roster as
+            // UNKNOWN and keeps the crew's behaviour, and this line, which
+            // puts the failure in the body's one existing notice slot
+            // (`errorBannerOverlay`, tap to dismiss). No retry control: the
+            // next reload is already armed by every realtime nudge and every
+            // foreground, which is exactly what a retry button would trigger.
+            errorText = Self.rosterFailedText
         }
 
         // Routine
@@ -3659,12 +4058,86 @@ struct SessionLiveView: View {
             allExercises = (try? await ExerciseRepository.fetchAll()) ?? []
         }
 
+        // THE DURABLE SWAP LAYER, AFTER THE ROUTINE AND THE CATALOG, because
+        // the names it re-resolves come from them (plan task S1).
+        await seedSwapLayers()
+
         // Auto-join voice once `liveSession` reflects the latest state
         // (Task 4) — no-ops once already connecting/connected, so it's safe
         // to call from every reload(), not just the first (`openAndSubscribe`
         // calls this at its very start, and the scenePhase→active handler
         // calls it again on every foreground transition).
         await joinVoiceIfEligible()
+    }
+
+    /// THE SYMBOL THAT READS THE DURABLE ROW (plan task S1, constraint 12).
+    ///
+    /// Called from `reload()`, which runs on mount, on every realtime nudge
+    /// and on every foreground — so a LATE JOINER, a RELAUNCHING LIFTER and
+    /// a lifter whose app the OS killed all arrive at the same routine the
+    /// crew is running. The broadcast never promised that: it has no replay,
+    /// so a member who was not listening at the moment of the vote never
+    /// learned of it (debug-swap-state.md §8.5).
+    ///
+    /// IT SEEDS, IT NEVER CLEARS. `SessionSwapLayer.merging` keeps a local
+    /// entry over the row's, so a swap made a moment ago and still in flight
+    /// survives the reload that lands while its write is travelling. That is
+    /// exact and not merely cautious: neither body has an un-swap, so the
+    /// layer only grows within a session.
+    ///
+    /// THE NAME IS RE-RESOLVED, NEVER READ FROM THE ROW. Only ids are
+    /// persisted — a name cached in a row goes stale the day the catalog
+    /// renames a lift, and a swap's truth is the id. `SwapTarget` still
+    /// carries the name because the consent card and the station card are
+    /// worded from it.
+    @MainActor
+    private func seedSwapLayers() async {
+        for (participant, _) in participants {
+            let isMe = participant.userID == selfID
+            // MY OWN row is laid under the pending store (ruling F1), so a
+            // swap whose write has not landed is not erased by the reload
+            // that races it. A crewmate's row is all there is to know about
+            // theirs.
+            let row = participant.selfSwaps ?? SessionSwapLayer()
+            let durable = isMe
+                ? SessionSwapPendingStore.shared.seeded(from: row, for: liveSession.id)
+                : row
+            guard !durable.isEmpty else { continue }
+            var held = selfScales[participant.userID] ?? [:]
+            let merged = SessionSwapLayer(held.mapValues(\.id)).merging(durable)
+            for (slotID, replacementID) in merged.bySlot
+            where held[slotID]?.id != replacementID {
+                held[slotID] = SwapTarget(id: replacementID,
+                                          name: await swapName(for: replacementID))
+            }
+            selfScales[participant.userID] = held
+        }
+        // A natural opportunity: the layer is in hand and the network just
+        // answered. Silent — see `flushIfDirty`.
+        await SessionSwapPendingStore.shared.flushIfDirty(liveSession.id)
+        guard let squadRow = try? await SessionSwapRepository.loadSquad(sessionID: session.id),
+              !squadRow.isEmpty else { return }
+        let merged = SessionSwapLayer(squadSwaps.mapValues(\.id)).merging(squadRow)
+        for (slotID, replacementID) in merged.bySlot
+        where squadSwaps[slotID]?.id != replacementID {
+            squadSwaps[slotID] = SwapTarget(id: replacementID,
+                                            name: await swapName(for: replacementID))
+        }
+    }
+
+    /// A replacement's name for the card's wording — the catalog this body
+    /// already holds first, then the app-wide cache, then the honest word.
+    /// Also fills `exerciseNames`, which every other surface reads.
+    @MainActor
+    private func swapName(for exerciseID: UUID) async -> String {
+        if let known = allExercises.first(where: { $0.id == exerciseID })?.name {
+            exerciseNames[exerciseID] = known
+            return known
+        }
+        if let cached = exerciseNames[exerciseID] { return cached }
+        let name = await ExerciseNameCache.name(for: exerciseID)
+        exerciseNames[exerciseID] = name
+        return name
     }
 
     @MainActor
@@ -3749,7 +4222,12 @@ struct SessionLiveView: View {
                 },
                 onCoachTap: { Task { await openCoachThread() } },
                 onReaction: { emoji in Task { await tapReaction(emoji: emoji) } },
-                onSkip: { Task { await skipHeldLifter() } })
+                onSkip: { Task { await skipHeldLifter() } },
+                // THE WAY OUT (fix round 2 / N10). This page had none: no
+                // header rail, and `bottomChrome` skips `turnChrome` for a
+                // crew page, so a lifter whose turn-holder walked out was
+                // waiting on a rotation that was never going to move.
+                onEnd: endAction(for: .roundsRoundWait))
         }
     }
 
@@ -3815,8 +4293,11 @@ struct SessionLiveView: View {
             name: profile.username,
             isYou: userID == selfID,
             hasLogged: hasLoggedThisRound(userID),
-            // Spec §3.4 mode 2 -- quiet, and only where the crew already looks.
-            scaleDown: currentExerciseForSheet.flatMap { selfScales[userID]?[$0.id]?.name })
+            // Spec §3.4 mode 2 -- quiet, and only where the crew already
+            // looks. BY SLOT since Phase C1: the layer's key is the row, so
+            // the lift shown here is the one that lifter is doing at THIS
+            // station rather than at any station naming the same lift.
+            scaleDown: currentRoutineExercise.flatMap { selfScales[userID]?[$0.id]?.name })
     }
 
     /// Who the round is still waiting on, first names, me excluded -- if I had
@@ -3834,14 +4315,23 @@ struct SessionLiveView: View {
     /// question nobody asked. Spec §2's "is the plan still achievable" is
     /// about the exercises that are LEFT, which is what these rows show.
     private var roundPlanRows: [SessionPlanRow] {
-        effectiveRoutineExercises.map { re in
+        // HOISTED, both of them (review F6). `currentRoutineExercise` is a
+        // full progression walk and `SlotProgress` a full pass over the logs;
+        // read per row they made one body pass roughly O(slots² × logs).
+        let current = currentRoutineExercise
+        let rows = effectiveRoutineExercises
+        let progress = SlotProgress(routine: rows, logs: mySets)
+        return rows.map { re in
             SessionPlanRow(
                 id: re.id,
                 name: allExercises.first(where: { $0.id == re.exerciseID })?.name
                     ?? exerciseNames[re.exerciseID] ?? "Exercise",
                 prescription: SessionPlanRow.prescription(for: re),
-                isCurrent: re.exerciseID == currentExerciseForSheet?.id,
-                setsDone: mySetCount(for: re.exerciseID),
+                // BY SLOT (Phase C1, decision 3): a routine naming one lift
+                // twice drew BOTH rows as current and gave both the same
+                // set count — the whole plan lighting up at once.
+                isCurrent: re.id == current?.id,
+                setsDone: progress.count(for: re),
                 sets: re.targetSets ?? 0)
         }
     }
@@ -3980,7 +4470,10 @@ struct SessionLiveView: View {
             voice: voiceFoot,
             onCoachTap: { Task { await openCoachThread() } },
             onReaction: { emoji in Task { await tapReaction(emoji: emoji) } },
-            onCheer: { Task { await tapReaction(emoji: RoundCopy.cheerEmoji) } })
+            onCheer: { Task { await tapReaction(emoji: RoundCopy.cheerEmoji) } },
+            // THE WAY OUT (fix round 2 / N10) — same gap as the round wait's,
+            // and easier to miss here because CHEER is a `RoundDoor` too.
+            onEnd: endAction(for: .roundsSpotter))
     }
 
     /// `rotationTiles`, worded for the strip. The speaking ring is resolved
@@ -3996,7 +4489,9 @@ struct SessionLiveView: View {
     /// by the inbound `self` event, and `evaluateUnanimity` is not on this
     /// path at all.
     private var turnStripTiles: [TurnStrip.Tile] {
-        let currentExerciseID = currentExerciseForSheet?.id
+        // The SLOT, since Phase C1 re-keyed the layer — `stationLifter`'s
+        // own lookup, still, so the two cannot disagree.
+        let currentSlotID = currentRoutineExercise?.id
         return rotationTiles.map { tile in
             TurnStrip.Tile(
                 id: tile.userID,
@@ -4005,7 +4500,7 @@ struct SessionLiveView: View {
                 isNow: tile.label == "NOW",
                 isSpeaking: VoiceRoomService.shared.speakingParticipantIDs
                     .contains(tile.userID.uuidString.lowercased()),
-                doing: currentExerciseID.flatMap { selfScales[tile.userID]?[$0]?.name })
+                doing: currentSlotID.flatMap { selfScales[tile.userID]?[$0]?.name })
         }
     }
 
@@ -4210,6 +4705,17 @@ struct SessionLiveView: View {
         var stretch: FreestyleSuggestion?
         var accessory: FreestyleSuggestion?
         var behind: String?
+        // Plan task S6, frame 156: a fixture's own rest-elapsed string,
+        // read only in DEBUG and only for a catalog world that names one
+        // (`nil` everywhere else, including production). `RoundCopy.elapsed`
+        // ticks off `now`, which this page's own `TimelineView` — not this
+        // override — drives; the override exists so a catalog frame can
+        // show a rest reading that does not grow with the day it is
+        // captured.
+        var restElapsed = RoundCopy.elapsed(since: myLastLoggedAt, now: now)
+        #if DEBUG
+        if let override = catalog?.restElapsedOverride { restElapsed = override }
+        #endif
 
         if case .ahead(let by) = standing {
             if !freestyleStretchAcknowledged {
@@ -4232,7 +4738,7 @@ struct SessionLiveView: View {
             kicker: freestyleKicker,
             title: RoundCopy.freestyleTitle,
             rail: freestyleRailModel,
-            restElapsed: RoundCopy.elapsed(since: myLastLoggedAt, now: now),
+            restElapsed: restElapsed,
             standing: standing,
             stretchSuggestion: stretch,
             accessorySuggestion: accessory,
@@ -4248,7 +4754,13 @@ struct SessionLiveView: View {
             onAcceptStretch: { freestyleStretchAcknowledged = true },
             onDeclineStretch: { freestyleStretchAcknowledged = true },
             onAcceptAccessory: { freestyleAcknowledgeAccessory() },
-            onDeclineAccessory: { freestyleAcknowledgeAccessory() })
+            onDeclineAccessory: { freestyleAcknowledgeAccessory() },
+            // THE WAY OUT (fix round 1 / B1). The same hook, the same
+            // control and the same confirmation `togetherPage` raises —
+            // Freestyle had none, so an ad-hoc solo workout could not be
+            // finished. `SessionEndAffordance` is the law that says this
+            // page owes one, and `endAction(for:)` is its reader.
+            onEnd: endAction(for: .freestyleRail))
     }
 
     private func freestyleAcknowledgeAccessory() {
@@ -4594,7 +5106,21 @@ struct SessionLiveView: View {
             // Owner item 7: bodyweight sets carry the load they moved.
             bodyWeightLbs: (currentExerciseForSheet?.id == exerciseID
                             && currentExerciseForSheet?.equipment == "bodyweight")
-                ? turnLatestBodyWeightLbs : nil
+                ? turnLatestBodyWeightLbs : nil,
+            // THE SLOT (Phase C1, decision 3) — this body's ONE place a set
+            // row is built. It is derived HERE, from the slot this lifter is
+            // already on, rather than threaded through the log path: none of
+            // `LogFollowUp.calls(for:)`, `commitInlineLog`, `prefillLogInputs`
+            // or `turnEntryCard` changes, because the slot rides on the SetLog
+            // being built and not through their signatures (constraint 21).
+            //
+            // GUARDED ON THE SAME EQUALITY `bodyWeightLbs` uses above, and
+            // for the same reason: `exerciseID` is the caller's, the slot is
+            // this view's, and stamping one against the other's lift would
+            // attribute a set to a station nobody was at. A mismatch writes
+            // NULL, which the per-exercise fallback then serves correctly.
+            routineExerciseID: currentRoutineExercise?.exerciseID == exerciseID
+                ? currentRoutineExercise?.id : nil
         )
         do {
             // PR check — same logic as solo WorkoutSessionView:
@@ -4657,6 +5183,9 @@ struct SessionLiveView: View {
                 try await SessionRepository.logSet(log)
                 stamp("logSet insert", tInsert)
                 Task { await OfflineSetLogQueue.shared.replay() }   // cheap drain
+                // The same opportunity for the swap outbox (ruling F1): a
+                // successful insert proves the connection.
+                Task { await SessionSwapPendingStore.shared.flushIfDirty(liveSession.id) }
             } catch let error as GymSyncError {
                 guard case .network = error else { throw error }
                 // Offline — queue for replay + optimistic local append. `feedSets`/
@@ -5021,6 +5550,10 @@ struct SessionLiveView: View {
         if appState.liveGroupSession?.sessionID == session.id {
             appState.liveGroupSession = nil
         }
+        // …and the swap outbox (ruling F1). Deliberate exit only, for the
+        // same reason the pill is cleared only here: a swipe-down is
+        // recoverable and its pending layer must survive it.
+        SessionSwapPendingStore.shared.clear(session.id)
         dismiss()
     }
 

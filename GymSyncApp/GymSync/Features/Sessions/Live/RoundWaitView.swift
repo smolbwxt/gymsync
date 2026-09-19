@@ -89,6 +89,24 @@ struct RoundWaitView: View {
     var onReaction: (String) -> Void = { _ in }
     var onSkip: () -> Void = {}
 
+    /// THE WAY OUT (fix round 2 / N10, ruling R-C-7). This page drew no
+    /// header rail, and `SessionLiveView.bottomChrome` renders `turnChrome`
+    /// only when `!showsCrewPage` — so a crew lifter whose turn-holder walked
+    /// out sat here with no leave and no end, waiting on a rotation that was
+    /// never going to move.
+    ///
+    /// The SAME hook and the SAME control `TogetherClockView` and
+    /// `FreestyleRailView` take: an `onEnd` closure mounting
+    /// `RoundDoor(glyph: "xmark", title: RoundCopy.endSession)` last in the
+    /// foot, neutral and never accent. No new composition.
+    ///
+    /// OPTIONAL, AND NIL IS THE CATALOG'S ANSWER — the `onSetRackCount`
+    /// precedent two properties up, for the same reason: every fixture world
+    /// passes nothing, so frames 137/139/143 and their neighbours render
+    /// exactly as they render today (constraint 14). Production passes it
+    /// through `SessionEndAffordance.pageMountsItsOwnEnd(.roundsRoundWait)`.
+    var onEnd: (() -> Void)?
+
     var body: some View {
         RoundPage(kicker: kicker, title: title) {
             if let skip {
@@ -120,6 +138,12 @@ struct RoundWaitView: View {
             PTTDockRow(otherParticipantNames: dockNames, compact: false)
             if !waitingOn.isEmpty {
                 GatedControl(title: RoundCopy.waitingOn(waitingOn))
+            }
+            // Last, under the gated control, because the crew's own wait is
+            // what this page is about and leaving is the thing you do when it
+            // stops being worth waiting for.
+            if let onEnd {
+                RoundDoor(glyph: "xmark", title: RoundCopy.endSession, onTap: onEnd)
             }
         }
     }

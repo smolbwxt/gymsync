@@ -166,7 +166,19 @@ struct SessionRunnerView: View {
                     blockMilestone: blockMilestone,
                     elapsed: WarmUpGate.elapsed(since: effective.startedAt, now: now),
                     // Solo only, and only before check-in — spec §2's path.
-                    showsCheckIn: isSolo && !isCheckedIn,
+                    //
+                    // AND ONLY WITH A ROSTER IN HAND (fix round 1 / N5).
+                    // `SessionEntryView` now routes a solo session here
+                    // rather than to a crew lobby when the participants
+                    // fetch fails, and an EMPTY roster cannot tell us
+                    // whether this lifter is already checked in — an ad-hoc
+                    // row is inserted at `ready`, so offering check-in would
+                    // be offering an act that is already done, and tapping
+                    // it reaches `CheckInService` and a location read
+                    // (constraint 10's permitted site, but for nothing).
+                    // The five-second poll below fills `roster` and the
+                    // control appears if it is genuinely owed.
+                    showsCheckIn: isSolo && !isCheckedIn && !roster.isEmpty,
                     isCheckingIn: isCheckingIn,
                     canCheckIn: canCheckIn,
                     checkInOpensAtText: checkInOpensAtText,

@@ -44,6 +44,17 @@ struct SpotterView: View {
     var onReaction: (String) -> Void = { _ in }
     var onCheer: () -> Void = {}
 
+    /// THE WAY OUT (fix round 2 / N10, ruling R-C-7). Same gap as the round
+    /// wait's: no header rail here, and `bottomChrome` does not reach a crew
+    /// page. CHEER below is a `RoundDoor` too, which is what made the absence
+    /// easy to miss — a page with a door on it looks like a page you can
+    /// leave.
+    ///
+    /// Optional, nil in every catalog world, so the spotter frames render
+    /// exactly as they render today (constraint 14). Production passes it
+    /// through `SessionEndAffordance.pageMountsItsOwnEnd(.roundsSpotter)`.
+    var onEnd: (() -> Void)?
+
     var body: some View {
         RoundPage(kicker: kicker, title: title) {
             VStack(alignment: .leading, spacing: 5) {
@@ -96,6 +107,11 @@ struct SpotterView: View {
                       title: RoundCopy.cheer,
                       isPrimary: true,
                       onTap: onCheer)
+            // AFTER cheer, and not primary: this page's one accent act is
+            // CHEER (rule 2), and ending is not what the spotter came to do.
+            if let onEnd {
+                RoundDoor(glyph: "xmark", title: RoundCopy.endSession, onTap: onEnd)
+            }
         }
     }
 }

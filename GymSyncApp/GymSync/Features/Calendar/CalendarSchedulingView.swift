@@ -84,6 +84,15 @@ struct CalendarSchedulingView: View {
     /// session, because `navigationDestination(item:)` wants a `Hashable`
     /// and `WorkoutSession` is not one.
     @State private var lobbySessionID: UUID?
+    /// The live SOLO session this page opened, filling the screen in the
+    /// app's one cover (fix round 2 / N11).
+    ///
+    /// `timeline` is fed by `liveForCurrentUser()`, which returns solo rows,
+    /// and every agenda row used to set `lobbySessionID` — a navigation push,
+    /// where MINIMISE is not mounted, `arenaBase` hides the back button and
+    /// the body hides the dock. `SessionPresentation.of(_:)` is the one rule
+    /// now, asked here exactly as `HomeView.present(_:)` asks it.
+    @State private var adHocSession: WorkoutSession?
     /// The row being MOVED — opens the shared change-time sheet.
     @State private var moveTarget: WorkoutSession?
     /// The new time being picked in that sheet.
@@ -243,6 +252,10 @@ struct CalendarSchedulingView: View {
                     .id(session.id)
             }
         }
+        // The other half of the one presentation rule (fix round 2 / N11).
+        .fullScreenCover(item: $adHocSession) { session in
+            SoloSessionCover(session: session)
+        }
         .task { await refresh() }
         .refreshable { await refresh() }
         // The pills belong to the week on screen, so they are re-read when
@@ -314,7 +327,7 @@ struct CalendarSchedulingView: View {
             // coming back dimmed.
             if let session = item.session {
                 Button {
-                    lobbySessionID = session.id
+                    present(session)
                 } label: {
                     CalendarAgendaRowView(item: item)
                 }
@@ -343,6 +356,20 @@ struct CalendarSchedulingView: View {
     }
 
     private var selfID: UUID? { appState.currentProfile?.id }
+
+    /// THE ONE PRESENTATION RULE, asked here too (fix round 2 / N11) —
+    /// `SessionPresentation.of(_:)`, exactly as `HomeView.present(_:)` asks
+    /// it. A solo session is the cover with MINIMISE from every route; a crew
+    /// session, and a scheduled solo one, keep the push this page has always
+    /// used.
+    private func present(_ session: WorkoutSession) {
+        switch SessionPresentation.of(session) {
+        case .soloCover:
+            adHocSession = session
+        case .push:
+            lobbySessionID = session.id
+        }
+    }
 
     private func moveAction(for item: CalendarAgendaItem) -> (() -> Void)? {
         guard let session = item.session, canMove(session) else { return nil }

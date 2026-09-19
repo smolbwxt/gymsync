@@ -79,10 +79,33 @@ struct SessionEntryView: View {
     /// error line — this view invents no second one.
     @State private var fetchFailed = false
 
+    /// A SOLO SESSION IS NEVER SENT TO A LOBBY, not even by a failure (fix
+    /// round 1 / N5). The fall-through above is right for a crew — a lobby
+    /// refetches and says so — but inside a non-dismissible cover it put a
+    /// lifter who is on their own in front of a crew's waiting room for a
+    /// session of one. Newly reachable, because this is the first ad-hoc path
+    /// through this view.
+    ///
+    /// The symmetric destination is `SessionRunnerView`, which retries on
+    /// exactly the same terms the lobby would: its five-second warm-up poll
+    /// refetches `participants`, and once lifting has started
+    /// `SessionLiveView.reload()` does. It is handed an EMPTY roster, which
+    /// is the truth — the fetch failed — and which it heals itself within one
+    /// poll.
+    private var isSoloByConstruction: Bool {
+        SoloSessionShape.isSoloByConstruction(groupID: session.groupID,
+                                              roomCode: session.roomCode,
+                                              scheduledFor: session.scheduledFor)
+    }
+
     var body: some View {
         Group {
             if fetchFailed {
-                LobbyView(session: session)
+                if isSoloByConstruction {
+                    SessionRunnerView(session: session, participants: [])
+                } else {
+                    LobbyView(session: session)
+                }
             } else if let participants {
                 destination(participants: participants)
             } else {
