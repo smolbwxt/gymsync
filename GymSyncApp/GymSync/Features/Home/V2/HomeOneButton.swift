@@ -61,6 +61,15 @@ enum HomeOneButtonState {
     case checkIn(crew: String, routine: String, time: String)
     /// It started without you. Tap → the lobby of the live session.
     case joinSession(startedAt: String)
+    /// YOUR OWN workout, still running, minimised. Tap → back into it.
+    ///
+    /// `.joinSession` used to answer for this too (final review F4), so a
+    /// workout the lifter minimised forty seconds ago read "JOIN THE SESSION /
+    /// STARTED 09:41 · YOU'RE LATE" — two false sentences on the everyday
+    /// path, and on the only door back into a minimised warm-up (the pill is
+    /// not registered until `SessionLiveView.onAppear`). You cannot join your
+    /// own lift, and you cannot be late for it.
+    case resumeWorkout(startedAt: String)
 
     /// Which of the three faces this state wears (plan's table): accent for
     /// the ordinary primary, the theme's raised pair for the quiet countdown,
@@ -69,18 +78,23 @@ enum HomeOneButtonState {
 
     var face: Face {
         switch self {
-        case .startRoutine, .startWorkout, .joinSession: return .accent
-        case .checkInOpens:                              return .raised
-        case .checkIn:                                   return .gold
+        case .startRoutine, .startWorkout, .joinSession, .resumeWorkout: return .accent
+        case .checkInOpens:                                             return .raised
+        case .checkIn:                                                  return .gold
         }
     }
 
     /// True when the primary is about a session with other people. Rule 5:
     /// in those states the quiet `START SOLO WORKOUT` pill remains under it.
+    ///
+    /// `.resumeWorkout` is FALSE, and that is the point of it being its own
+    /// case: it is this lifter's own workout, and offering START SOLO WORKOUT
+    /// under a workout that is already running is the second door rule 5
+    /// exists to close.
     var isCrewState: Bool {
         switch self {
-        case .checkInOpens, .checkIn, .joinSession: return true
-        case .startRoutine, .startWorkout:          return false
+        case .checkInOpens, .checkIn, .joinSession:      return true
+        case .startRoutine, .startWorkout, .resumeWorkout: return false
         }
     }
 
@@ -91,6 +105,7 @@ enum HomeOneButtonState {
         case .checkInOpens(let time):   return "CHECK-IN OPENS \(time)"
         case .checkIn:                  return "CHECK IN"
         case .joinSession:              return "JOIN THE SESSION"
+        case .resumeWorkout:            return "RESUME WORKOUT"
         }
     }
 
@@ -125,6 +140,10 @@ enum HomeOneButtonState {
             return (parts + ["OPEN NOW"]).joined(separator: " · ")
         case .joinSession(let startedAt):
             return "STARTED \(startedAt) · YOU'RE LATE"
+        case .resumeWorkout(let startedAt):
+            // The time, and NO lateness line: there is nobody this lifter is
+            // late for.
+            return "STARTED \(startedAt)"
         }
     }
 }

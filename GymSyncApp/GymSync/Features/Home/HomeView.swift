@@ -675,10 +675,22 @@ struct HomeView: View {
 
     private func oneButtonInput(for session: WorkoutSession, now: Date) -> HomeOneButtonInput {
         let opensAt = checkInOpensAt(session)
+        // MY OWN live ad-hoc workout (final review F4). The shape comes from
+        // `SoloSessionShape.isSoloByConstruction` — the same triple
+        // `SessionPresentation.of` reads to decide this row opens as the cover
+        // — and the ownership from the organizer, which is the only thing at a
+        // session row that separates the workout I started from one I am
+        // merely a participant of.
+        let isSoloByConstruction = SoloSessionShape.isSoloByConstruction(
+            groupID: session.groupID,
+            roomCode: session.roomCode,
+            scheduledFor: session.scheduledFor)
+        let isMine = session.organizerID == appState.currentProfile?.id
         return HomeOneButtonInput(
             isInProgress: session.state == "in_progress",
             startedAtLabel: session.startedAt.map { $0.formatted(.dateTime.hour().minute()) },
             isGroupSession: session.groupID != nil,
+            isOwnSoloWorkout: isSoloByConstruction && isMine,
             checkInAvailable: checkInAvailable(session, now: now),
             opensInLabel: opensAt.flatMap { now < $0 ? compactCountdown(to: $0, from: now) : nil },
             crewName: crewName(for: session),
@@ -715,7 +727,10 @@ struct HomeView: View {
     private func performOneButtonAction(_ state: HomeOneButtonState,
                                         session: WorkoutSession?) {
         switch state {
-        case .joinSession, .checkIn:
+        case .joinSession, .checkIn, .resumeWorkout:
+            // `.resumeWorkout` takes the SAME route (final review F4): a solo
+            // session is always the cover, and `present(_:)` is where that is
+            // decided, by the row rather than by the button that found it.
             if let session { present(session) }
         case .checkInOpens:
             guard let session else { return }
