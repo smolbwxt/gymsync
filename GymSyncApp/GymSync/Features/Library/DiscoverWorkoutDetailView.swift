@@ -70,6 +70,12 @@ struct DiscoverWorkoutDetailView: View {
     /// deliberately not `errorText`, which gates the whole screen.
     @State private var startingAttempt = false
     @State private var startAttemptErrorText: String?
+    /// The session that exists but whose leaderboard attempt was refused
+    /// (fix round 1 / N4). Held here rather than presented, until the lifter
+    /// has been told and has answered — a line written onto a screen the
+    /// cover hides a frame later has not been said at all.
+    @State private var attemptAwaitingAcknowledgement: WorkoutSession?
+    @State private var showAttemptFailedDialog = false
 
     // MARK: - Attempt with Friends
     @State private var showScheduleSheet = false
@@ -177,6 +183,24 @@ struct DiscoverWorkoutDetailView: View {
             Button("Yes, show me") { Task { await beginSoloAttempt(optIn: true) } }
             Button("No, keep private") { Task { await beginSoloAttempt(optIn: false) } }
             Button("Cancel", role: .cancel) {}
+        }
+        // The refused attempt, said BEFORE the cover hides this screen (fix
+        // round 1 / N4). The same dialog idiom as the opt-in question above —
+        // no new composition — and the workout starts when the lifter says
+        // so. Cancel leaves the session standing: the next Attempt Solo
+        // adopts it rather than starting a second one.
+        .confirmationDialog(
+            "Couldn't join the leaderboard",
+            isPresented: $showAttemptFailedDialog,
+            titleVisibility: .visible
+        ) {
+            Button("Start the workout anyway") {
+                attemptSession = attemptAwaitingAcknowledgement
+                attemptAwaitingAcknowledgement = nil
+            }
+            Button("Not now", role: .cancel) { attemptAwaitingAcknowledgement = nil }
+        } message: {
+            Text("Every set is still logged, but this run won't appear on the leaderboard.")
         }
         // Attempt Solo — Flow 3 with the routine pre-selected (Flow 4:
         // "launches Flow 3 with the public routine pre-selected").
@@ -388,9 +412,17 @@ struct DiscoverWorkoutDetailView: View {
     /// needs a session id, so it cannot run first; and a refused attempt must
     /// never block the lift — the lifter simply will not appear on the
     /// leaderboard for this run. That is verbatim the stance
-    /// `WorkoutSessionView.startIfNeeded()` took when it owned both calls,
-    /// and the failure is now said on THIS screen (where the tap was made)
-    /// instead of as a three-second notice inside the session.
+    /// `WorkoutSessionView.startIfNeeded()` took when it owned both calls.
+    ///
+    /// AND THE FAILURE IS ACKNOWLEDGED BEFORE THE COVER GOES UP (fix round 1
+    /// / N4). Writing the line and raising the cover in the same turn wrote
+    /// it onto a screen that was covered a frame later — the lifter saw it
+    /// only if they minimised, which is worse than the three-second notice
+    /// this replaced. So a refused attempt raises the same kind of
+    /// confirmation dialog the opt-in question already uses on this screen
+    /// (no new composition), and the workout starts when the lifter says so.
+    /// Cancelling leaves the row standing: the next Attempt Solo adopts it
+    /// through `startOrAdoptSolo` rather than starting a second one.
     ///
     /// `startOrAdoptSolo` is deliberate here too: a lifter who minimises an
     /// attempt and taps Attempt Solo again comes back to the same run rather
@@ -407,13 +439,13 @@ struct DiscoverWorkoutDetailView: View {
             do {
                 _ = try await PublicWorkoutRepository.startAttempt(
                     routineID: workout.routine.id, sessionID: session.id, optIn: optIn)
+                attemptSession = session
             } catch {
                 AppLogger.db.error(
                     "startAttempt failed: \(error.localizedDescription, privacy: .public)")
-                startAttemptErrorText =
-                    "Couldn't join the leaderboard for this run — the workout still starts."
+                attemptAwaitingAcknowledgement = session
+                showAttemptFailedDialog = true
             }
-            attemptSession = session
         } catch let error as GymSyncError {
             startAttemptErrorText = error.errorDescription
         } catch {

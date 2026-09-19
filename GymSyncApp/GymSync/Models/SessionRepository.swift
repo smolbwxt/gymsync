@@ -138,32 +138,47 @@ enum SessionRepository {
     /// IT ADOPTS FROM THE DATABASE, NOT FROM `AppState`. The shipped branch
     /// read `appState.liveSoloSession`, a view-registered in-memory handle
     /// that a relaunch lost; `liveForCurrentUser()` is the durable answer to
-    /// the same question and already carries the bound that makes it safe —
-    /// `in_progress`, newest first, nothing older than six hours, and a
-    /// `started_at` floor that excludes rows which cannot say when they
-    /// began.
+    /// the same question.
     ///
-    /// AD-HOC IS THE TRIPLE NIL: no `group_id`, no `room_code`, no
-    /// `scheduled_for`. A `.friends` session leaves `group_id` NULL but is
-    /// scheduled; a `.code` session carries a room code; a scheduled solo
-    /// session carries a time. Only an ad-hoc row is all three, and the
-    /// routine must match as well — resuming yesterday's push day because
-    /// the lifter tapped a pull routine would be the same bug from the other
-    /// direction.
+    /// THE DECISION IS `AdHocSessionAdoption.decide`, which is pure and
+    /// tested — see that file for the two things this function lost when the
+    /// law moved out of `WorkoutSessionView` and which fix round 1 restored:
+    /// the row must be one this lifter ORGANIZES (the old law had that by
+    /// construction, since it read a handle the view itself had written), and
+    /// a stale ad-hoc row is CLOSED rather than left `in_progress` forever
+    /// beside the new one.
     ///
-    /// A FAILED READ SIMPLY STARTS ONE. The adopt is an optimisation over
-    /// correctness-of-history, not a gate: a lifter with no connection must
-    /// still be able to begin a workout, and `startSolo`'s own error is the
-    /// one worth surfacing.
+    /// THE AGE FLOOR IS DROPPED HERE ON PURPOSE (`since: nil`). Home's read
+    /// applies it to decide what to OFFER, which is right; this call has the
+    /// opposite obligation — a row too old to offer is precisely the row that
+    /// needs ending, and filtering it out in SQL is what left it open.
+    ///
+    /// ENDING IS BEST-EFFORT AND NEVER BLOCKS THE START. Each `complete()`
+    /// is its own `try?`: a lifter standing in a gym must be able to begin,
+    /// and a row that failed to close will be offered again on the next start
+    /// (nothing removes it from the read).
+    ///
+    /// A FAILED READ SIMPLY STARTS ONE, for the same reason.
     static func startOrAdoptSolo(routineID: UUID?) async throws -> WorkoutSession {
-        if let live = try? await liveForCurrentUser(),
-           let running = live.first(where: {
-               $0.routineID == routineID
-                   && $0.groupID == nil
-                   && $0.roomCode == nil
-                   && $0.scheduledFor == nil
-           }) {
-            return running
+        if let userID = await SupabaseService.shared.currentUserID(),
+           let live = try? await liveForCurrentUser(since: nil) {
+            let decision = AdHocSessionAdoption.decide(
+                rows: live.map {
+                    AdHocSessionAdoption.Candidate(
+                        id: $0.id, routineID: $0.routineID,
+                        organizerID: $0.organizerID, groupID: $0.groupID,
+                        roomCode: $0.roomCode, scheduledFor: $0.scheduledFor,
+                        startedAt: $0.startedAt)
+                },
+                routineID: routineID, me: userID, now: Date())
+
+            for staleID in decision.end {
+                _ = try? await complete(sessionID: staleID)
+            }
+            if let adoptID = decision.adopt,
+               let running = live.first(where: { $0.id == adoptID }) {
+                return running
+            }
         }
         return try await startSolo(routineID: routineID)
     }
@@ -646,20 +661,32 @@ enum SessionRepository {
     /// session, so nothing downstream excludes solo any more.
     ///
     /// Two other callers read this: `CalendarSchedulingView:737` (which wants
-    /// every live row) and `startOrAdoptSolo` above (which wants exactly the
-    /// ad-hoc ones).
-    static func liveForCurrentUser(limit: Int = 20) async throws -> [WorkoutSession] {
+    /// every live row) and `startOrAdoptSolo` above.
+    ///
+    /// `since: nil` DROPS THE FLOOR, and exactly one caller asks for that
+    /// (fix round 1 / N6). The bound governs what Home OFFERS; a start has
+    /// the opposite obligation, because a row too old to offer is precisely
+    /// the row that needs ENDING, and hiding it in SQL is what left it
+    /// `in_progress` forever. The default is unchanged, so every existing
+    /// caller reads exactly what it read before.
+    static func liveForCurrentUser(
+        limit: Int = 20,
+        since floor: Date? = Date.now.addingTimeInterval(-6 * 3600)
+    ) async throws -> [WorkoutSession] {
         guard let userID = await SupabaseService.shared.currentUserID() else {
             throw GymSyncError.unauthorized
         }
         do {
-            let floor = Date.now.addingTimeInterval(-6 * 3600)
-            let sessions: [WorkoutSession] = try await client
+            var query = client
                 .from("sessions")
                 .select("*, session_participants!inner(user_id)")
                 .eq("session_participants.user_id", value: userID.uuidString)
                 .eq("state", value: "in_progress")
-                .gte("started_at", value: ISO8601DateFormatter().string(from: floor))
+            if let floor {
+                query = query.gte("started_at",
+                                  value: ISO8601DateFormatter().string(from: floor))
+            }
+            let sessions: [WorkoutSession] = try await query
                 .order("started_at", ascending: false)
                 .limit(limit)
                 .execute().value
