@@ -889,6 +889,14 @@ final class ScreenshotTests: XCTestCase {
     // rackAskClass: "barbell" named on the fixture).
     func testCatalogSessionLobbyRackAsk()    { captureCatalog("session-lobby-rack-ask") }
 
+    // Phase C1 S6 (2026-09-19): the ad-hoc solo session's proof frames.
+    // Frame 155 — the one body (SessionLiveView(catalog:)) over a new
+    // one-participant `.freestyle` world, LiveFixtures.soloLive. Frame 158 —
+    // the round wait with the N9/N10 `onEnd` door photographed, over the
+    // SAME LiveFixtures.roundWait world frame 137 captures.
+    func testCatalogSessionSoloLive()        { captureCatalog("session-solo-live") }
+    func testCatalogSessionRoundWaitDoor()   { captureCatalog("session-round-wait-door") }
+
     // MARK: - Seeded deep-screen captures
     //
     // Reachable via the deterministic fixture world the QA seed builds for the

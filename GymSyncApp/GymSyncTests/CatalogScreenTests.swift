@@ -160,6 +160,18 @@ final class CatalogScreenTests: XCTestCase {
             // question, fed from `LobbyFixtures.rackAsk`'s own
             // `rackAskClass`, not a live routine/exercise lookup.
             "session-lobby-rack-ask",
+            // Phase C1 S6 (2026-09-19): the ad-hoc solo session's proof
+            // frames. Frame 155 — the one body over a new one-participant
+            // `.freestyle` world (`LiveFixtures.soloLive`).
+            "session-solo-live",
+            // Frame 158 — the round wait with the N9/N10 `onEnd` door
+            // photographed, over the SAME `LiveFixtures.roundWait` world
+            // frame 137 captures. (Frames 156/157/159 — `session-solo-rest`,
+            // `session-solo-swap`, `session-solo-warmup-cover` — are not
+            // added: each needs a live call or a change outside this task's
+            // catalog/fixture/test/frame-map boundary; see CatalogHostView's
+            // own note above `content_sessionSoloLive`.)
+            "session-round-wait-door",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

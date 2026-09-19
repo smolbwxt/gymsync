@@ -635,6 +635,65 @@ enum LiveFixtures {
         logWeight: "225",
         logRPE: 7.0)
 
+    // MARK: - The ad-hoc solo session (frame 155, plan task S6)
+
+    private static let soloLiveSessionID = UUID(uuidString: "00000000-0000-0000-0000-0000000001f0") ?? UUID()
+
+    /// `session-solo-live` (frame 155): an ad-hoc solo session in the one
+    /// body — `.freestyle`, a roster of one, the entry card up.
+    ///
+    /// `groupID`/`roomCode`/`scheduledFor` are all nil —
+    /// `SoloSessionShape.isSoloByConstruction`'s own triple (decision 1) —
+    /// so `hidesCrewFurniture` answers true from the session alone, before
+    /// any roster is even read; `participantCount: 1` is the honest roster
+    /// reading on top of it.
+    ///
+    /// `sets: []`, DELIBERATELY. `SessionLiveView.freestylePage` ticks on
+    /// `TimelineView(.periodic(from: .now, by: 1))` and computes
+    /// `restElapsed: RoundCopy.elapsed(since: myLastLoggedAt, now:)` — but
+    /// `RoundCopy.elapsed` returns the FIXED string `"0:00"` whenever its
+    /// `since` is nil, and `myLastLoggedAt` is nil exactly when this lifter
+    /// has no logged sets. An empty `sets` array is the one fixture choice
+    /// that keeps this frame's rendered text independent of the day the
+    /// screenshot is taken (constraint 11's "no Date.now reachable" — the
+    /// TimelineView tick is production's, not this builder's, but the
+    /// fixture still must not let a live clock show through it). The
+    /// routine and its exercises are `liveRoutineExercises`/`liveExercises`
+    /// (frame 145's own world) reused verbatim — only the session shape,
+    /// the style and the empty sets change.
+    ///
+    /// `LiveWorld` carries no roster (its own header) — `presentRotation` is
+    /// derived from `participants`, a `@State` that a catalog world never
+    /// seeds — so `FreestyleRailView`'s rail draws no lifter rows here,
+    /// exactly as it draws none for `session-your-turn` (145). That is the
+    /// existing fixture limitation, not a new one.
+    static let soloLive = LiveWorld(
+        session: WorkoutSession(
+            id: soloLiveSessionID,
+            routineID: liveRoutineID,
+            organizerID: alexID,
+            state: "in_progress",
+            startedAt: nil,
+            completedAt: nil,
+            createdAt: utcDate(year: 2026, month: 9, day: 16),
+            groupID: nil,
+            roomCode: nil,
+            scheduledFor: nil,
+            seriesID: nil,
+            currentTurnUserID: nil,
+            currentTurnStartedAt: nil,
+            style: .freestyle),
+        selfID: alexID,
+        routineName: "Push A",
+        routineExercises: liveRoutineExercises,
+        allExercises: liveExercises,
+        sets: [],
+        participantCount: 1,
+        heartRate: nil,
+        logReps: "5",
+        logWeight: "225",
+        logRPE: 7.0)
+
     /// `session-freestyle-rail` (frame 141): the rail, the stretched rest,
     /// and Coach's accessory — both suggestions, because the frame is built
     /// to show the crew's ahead branch (`round-wait-v2`'s sister frame 116

@@ -393,5 +393,15 @@
     "frame": 153,
     "title": "Crew lobby - the style card's rack question",
     "note": "Owner-decisions round 2026-09-18 (plan task S9, coordinator ruling). LobbyFixtures.waiting (frame 129) copied as LobbyFixtures.rackAsk with rackAskClass: \"barbell\" named on the fixture - LobbyView.rackAskClass (LobbyView.swift:1248) reads a catalog world's rackAskClass directly rather than deriving it from a live routineInfo/allExercises lookup, so no repository is reached. rack_counts stays empty, so the ask shows as unanswered and skippable, under the style rows, on the same crew and routine frame 129 renders. LobbyWorld.rackAskClass defaults to nil, so frames 129/130/131/135/136 are unchanged."
+  },
+  "session-solo-live": {
+    "frame": 155,
+    "title": "An ad-hoc solo session in the one body - freestyle, a roster of one",
+    "note": "Phase C1 S6 (2026-09-19). SessionLiveView(catalog: LiveFixtures.soloLive) - groupID/roomCode/scheduledFor all nil (SoloSessionShape.isSoloByConstruction's own triple) and participantCount 1, so hidesCrewFurniture is true: no rotation strip, no stations, no round wait, no waiting-on line, no talk dock. The entry card is up and the end door is present (FreestyleRailView mounts onEnd unconditionally for every Freestyle session). sets is empty deliberately - RoundCopy.elapsed(since:now:) reads the fixed \"0:00\" only when its since is nil, which keeps the rendered rest clock independent of the day the screenshot is taken. Routine and exercises reused verbatim from LiveFixtures.liveRoutineExercises/liveExercises (frame 145's own world)."
+  },
+  "session-round-wait-door": {
+    "frame": 158,
+    "title": "Rounds, the round wait - the end door on it",
+    "note": "Phase C1 S6 (2026-09-19). The same production RoundWaitView over the SAME LiveFixtures.roundWait world session-round-wait (frame 137) captures, with a no-op onEnd closure - the onSetRackCount/session-round-rack-chip (frame 154) precedent, one property over. RoundWaitView.onEnd (fix round 2 / N9-N10) mounts a RoundDoor last in the foot only when non-nil; content_sessionRoundWait passes nothing, so frame 137 stays byte-identical (constraint 14)."
   }
 }
