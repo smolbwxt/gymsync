@@ -526,6 +526,20 @@ struct SessionLiveView: View {
                               isLastPresent: presentRotation.count <= 1)
     }
 
+    /// The end action a PAGE mounts itself, or nil when the law says that
+    /// page carries none (fix round 2 / N10).
+    ///
+    /// THE LAW'S THREE READERS ARE ALL HERE — `freestyleScreen`,
+    /// `roundWaitPage` and `spotterPage` — so deleting an arm of
+    /// `SessionEndAffordance.mount(for:)` makes that page's door vanish
+    /// rather than only reddening a test. `myTurnFixedPage` is `.headerRail`
+    /// and answers nil; `togetherPage`'s door is unconditional and predates
+    /// the law (its own comment says why).
+    private func endAction(for page: SessionEndAffordance.Page) -> (() -> Void)? {
+        guard SessionEndAffordance.pageMountsItsOwnEnd(page) else { return nil }
+        return { showEndConfirmation = true }
+    }
+
     /// WHOSE ACT THE LOG CONTROL IS — plan task S5's one behavioural change.
     ///
     /// Rounds is a rotation: the inline LOG THIS SET card belongs to whoever
@@ -4176,7 +4190,12 @@ struct SessionLiveView: View {
                 },
                 onCoachTap: { Task { await openCoachThread() } },
                 onReaction: { emoji in Task { await tapReaction(emoji: emoji) } },
-                onSkip: { Task { await skipHeldLifter() } })
+                onSkip: { Task { await skipHeldLifter() } },
+                // THE WAY OUT (fix round 2 / N10). This page had none: no
+                // header rail, and `bottomChrome` skips `turnChrome` for a
+                // crew page, so a lifter whose turn-holder walked out was
+                // waiting on a rotation that was never going to move.
+                onEnd: endAction(for: .roundsRoundWait))
         }
     }
 
@@ -4419,7 +4438,10 @@ struct SessionLiveView: View {
             voice: voiceFoot,
             onCoachTap: { Task { await openCoachThread() } },
             onReaction: { emoji in Task { await tapReaction(emoji: emoji) } },
-            onCheer: { Task { await tapReaction(emoji: RoundCopy.cheerEmoji) } })
+            onCheer: { Task { await tapReaction(emoji: RoundCopy.cheerEmoji) } },
+            // THE WAY OUT (fix round 2 / N10) — same gap as the round wait's,
+            // and easier to miss here because CHEER is a `RoundDoor` too.
+            onEnd: endAction(for: .roundsSpotter))
     }
 
     /// `rotationTiles`, worded for the strip. The speaking ring is resolved
@@ -4694,9 +4716,8 @@ struct SessionLiveView: View {
             // control and the same confirmation `togetherPage` raises —
             // Freestyle had none, so an ad-hoc solo workout could not be
             // finished. `SessionEndAffordance` is the law that says this
-            // page owes one, and `showsEnd` is its reader.
-            onEnd: { showEndConfirmation = true },
-            showsEnd: SessionEndAffordance.pageMountsItsOwnEnd(style))
+            // page owes one, and `endAction(for:)` is its reader.
+            onEnd: endAction(for: .freestyleRail))
     }
 
     private func freestyleAcknowledgeAccessory() {

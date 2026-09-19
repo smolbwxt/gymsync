@@ -173,12 +173,15 @@ struct FreestyleRailView: View {
     /// neutral, never accent, because the LOG card above is this screen's
     /// one accent act and ending is not what the lifter came to do. No new
     /// composition.
-    var onEnd: () -> Void = {}
-    /// Whether to draw it. `SessionLiveView` passes
-    /// `SessionEndAffordance.pageMountsItsOwnEnd(style)`, so the law that
-    /// says every style page has an end has a real reader here; the catalog
-    /// passes false and draws the rail alone.
-    var showsEnd: Bool = false
+    ///
+    /// OPTIONAL, AND NIL IS THE CATALOG'S ANSWER (fix round 2 / N10 aligned
+    /// this with `RoundWaitView` and `SpotterView`; it was an `onEnd` plus a
+    /// separate `showsEnd` Bool). One idiom across all three pages that mount
+    /// their own door, and the same `onSetRackCount` precedent: a fixture
+    /// world passes nothing and the rail renders exactly as it does today.
+    /// Production passes it through
+    /// `SessionEndAffordance.pageMountsItsOwnEnd(.freestyleRail)`.
+    var onEnd: (() -> Void)?
 
     var body: some View {
         ScrollView {
@@ -201,7 +204,7 @@ struct FreestyleRailView: View {
                 if let entryCard {
                     entryCard
                 }
-                if showsEnd {
+                if let onEnd {
                     RoundDoor(glyph: "xmark", title: RoundCopy.endSession, onTap: onEnd)
                 }
             }

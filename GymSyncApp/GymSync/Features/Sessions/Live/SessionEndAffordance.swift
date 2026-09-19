@@ -32,53 +32,111 @@ import Foundation
 // exhaustively, instead of by whichever page happened to be written with a
 // foot.
 //
-// WHY AN EXHAUSTIVE SWITCH IS THE STRUCTURE. `SessionStyle` is a closed enum
-// backed by the column's own CHECK constraint. A fourth style cannot be added
-// without the compiler failing this switch, and the author's only way past it
-// is to name a mount — and if they name `.none`, `SessionEndAffordanceTests`
-// fails. A comment could not do that; a test over `allCases` alone could not
-// either, because it would pass for a style whose page silently never mounts
-// what it was assigned.
+// IT IS KEYED ON THE PAGE, NOT ON THE STYLE (fix round 2 / N10). The first
+// version of this type asked `mount(for: SessionStyle)`, and its `.rounds`
+// arm claimed "`myTurnFixedPage`, `roundWaitPage` and `spotterPage` all carry
+// `turnHeaderRail`'s dismiss glyph". They do not. `roundWaitPage` builds
+// `RoundWaitView` and `spotterPage` builds `SpotterView`, neither of which
+// draws a header rail, and `bottomChrome` renders `turnChrome` only when
+// `!showsCrewPage` — so the crew pages carry no chrome either. A crew lifter
+// whose turn-holder walked out sat on the round wait with no leave and no
+// end. The router shows PAGES; the law has to be about the thing the router
+// shows, or it is true of a category and false of what is on screen.
+//
+// WHY TWO EXHAUSTIVE SWITCHES ARE THE STRUCTURE. `pages(for:)` is exhaustive
+// over `SessionStyle`, so a fourth style cannot be added without naming the
+// pages it can show; `mount(for:)` is exhaustive over `Page`, so a sixth page
+// cannot be added without naming where its end control lives. Either way the
+// author's only way past the compiler is to name something, and if what they
+// name is `.none`, `SessionEndAffordanceTests` fails. A comment could not do
+// that, and neither could a test over styles alone — which is exactly the
+// hole the first version left.
 enum SessionEndAffordance {
 
+    /// EVERY PAGE `SessionLiveView.arenaBase`'s switch can show. Five arms
+    /// there, five cases here, and the test asserts the two agree.
+    enum Page: String, CaseIterable {
+        /// `myTurnFixedPage` — `.rounds`, my turn (and the fallback).
+        case roundsMyTurn
+        /// `roundWaitPage` — `.rounds`, somebody else's turn, I still owe a
+        /// set this round.
+        case roundsRoundWait
+        /// `spotterPage` — `.rounds`, somebody else's turn, my prescription
+        /// for this round is done.
+        case roundsSpotter
+        /// `freestylePage`.
+        case freestyleRail
+        /// `togetherPage`.
+        case togetherClock
+    }
+
     /// WHERE the control that raises the end confirmation lives, for one
-    /// style's page.
+    /// page.
     enum Mount: Equatable {
-        /// `turnHeaderRail`'s ✕ — the my-turn page carries its own header.
+        /// `turnHeaderRail`'s dismiss glyph — the my-turn page carries its
+        /// own header rail.
         case headerRail
         /// A `RoundDoor` at the end of the page's own content or foot. The
         /// page takes an `onEnd` closure and mounts it itself, because these
-        /// pages draw no header rail.
+        /// pages draw no header rail and `bottomChrome` does not reach them.
         case pageFoot
-        /// NOTHING — which is what Freestyle had, and what this type exists
-        /// to make a test failure rather than a shipped dead end.
+        /// NOTHING — which is what Freestyle, the round wait and spotter mode
+        /// all had, and what this type exists to make a test failure rather
+        /// than a shipped dead end.
         case none
     }
 
-    /// Exhaustive over `SessionStyle`. Adding a case to that enum breaks
-    /// this switch at compile time.
-    static func mount(for style: SessionStyle) -> Mount {
-        switch style {
-        case .rounds:
-            // `myTurnFixedPage`, `roundWaitPage` and `spotterPage` all carry
-            // `turnHeaderRail`'s ✕ — and the two crew pages are only ever
-            // reachable while somebody else holds the turn, so the lifter is
-            // never further than one turn from the rail.
+    /// Exhaustive over `Page`.
+    static func mount(for page: Page) -> Mount {
+        switch page {
+        case .roundsMyTurn:
+            // `turnHeaderRail:1035` — the one shipped setter of
+            // `showEndConfirmation` that is not a page's own door.
             return .headerRail
-        case .freestyle:
+        case .roundsRoundWait:
+            // `RoundWaitView(onEnd:)` — added in fix round 2.
+            return .pageFoot
+        case .roundsSpotter:
+            // `SpotterView(onEnd:)` — added in fix round 2, beside CHEER and
+            // deliberately not instead of it.
+            return .pageFoot
+        case .freestyleRail:
             // `FreestyleRailView(onEnd:)` — added in fix round 1.
             return .pageFoot
-        case .together:
-            // `TogetherClockView(onEnd:)` — shipped.
+        case .togetherClock:
+            // `TogetherClockView(onEnd:)` — shipped before either round.
             return .pageFoot
         }
     }
 
-    /// True when this style's page must mount its own `RoundDoor`. Read by
-    /// `SessionLiveView` at both page call sites, so the law has a caller and
-    /// deleting an arm changes what renders.
-    static func pageMountsItsOwnEnd(_ style: SessionStyle) -> Bool {
-        mount(for: style) == .pageFoot
+    /// Exhaustive over `SessionStyle`: which pages a session of this style
+    /// can put on screen. Adding a style breaks this switch at compile time.
+    static func pages(for style: SessionStyle) -> [Page] {
+        switch style {
+        case .rounds:    return [.roundsMyTurn, .roundsRoundWait, .roundsSpotter]
+        case .freestyle: return [.freestyleRail]
+        case .together:  return [.togetherClock]
+        }
+    }
+
+    /// True when this page must mount its own `RoundDoor`.
+    ///
+    /// ITS READERS, NAMED HONESTLY (fix round 2 / N9 — the first version
+    /// claimed "both page call sites" while one of them read nothing).
+    /// THREE production call sites read it, each turning it into an OPTIONAL
+    /// `onEnd`, so deleting an arm makes that page's door vanish:
+    /// `SessionLiveView.freestyleScreen`, `.roundWaitPage` and
+    /// `.spotterPage`, all through `endAction(for:)`.
+    ///
+    /// `togetherPage` is the ONE that does not, and that is deliberate rather
+    /// than an oversight: `TogetherClockView.onEnd` is a non-optional
+    /// `() -> Void = {}` and its door renders unconditionally, so it is
+    /// already in the catalog's Together frames. Making it conditional would
+    /// change what those frames render (constraint 14). Its arm is therefore
+    /// asserted by the test and by nothing else, and this comment is the
+    /// place that says so.
+    static func pageMountsItsOwnEnd(_ page: Page) -> Bool {
+        mount(for: page) == .pageFoot
     }
 }
 

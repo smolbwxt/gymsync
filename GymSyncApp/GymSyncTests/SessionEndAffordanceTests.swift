@@ -1,59 +1,106 @@
 import XCTest
 @testable import GymSync
 
-/// EVERY STYLE PAGE HAS A WAY OUT (ruling R-C-7, fix round 1 / B1).
+/// EVERY PAGE THE ROUTER CAN SHOW HAS A WAY OUT (ruling R-C-7; fix round 1 /
+/// B1, re-keyed in fix round 2 / N10).
 ///
-/// The failure this pins is a real shipped one: `.freestyle`'s page mounted
-/// neither of `showEndConfirmation`'s two setters, so a Freestyle session
+/// The failures this pins are both real and both shipped. `.freestyle`'s page
+/// mounted neither setter of `showEndConfirmation`, so a Freestyle session
 /// could not be ended — no `complete()`, no recap, no week credit, and a row
-/// left `in_progress`. It shipped for crew Freestyle in Phase B1 and became
-/// everybody's when Phase C1 made every ad-hoc solo workout `.freestyle`.
-/// (No STREAK credit either way: an ad-hoc session has never moved one —
-/// `streak_on_session_state_change` returns on `scheduled_for IS NULL`.)
+/// left `in_progress`. And `roundWaitPage` / `spotterPage` mounted neither
+/// either: `RoundWaitView` and `SpotterView` draw no header rail, and
+/// `bottomChrome` renders `turnChrome` only when `!showsCrewPage`, so a crew
+/// lifter whose turn-holder walked out sat there with no leave and no end.
+/// (No STREAK credit in any of this either way: an ad-hoc session has never
+/// moved one — `streak_on_session_state_change` returns on
+/// `scheduled_for IS NULL`.)
 ///
-/// WHAT MAKES IT UNREPEATABLE, and it is two things together: the switch in
-/// `SessionEndAffordance.mount(for:)` is exhaustive over `SessionStyle`, so a
-/// fourth style is a compile error until somebody names its mount — and this
-/// suite fails if what they name is `.none`.
+/// WHAT MAKES IT UNREPEATABLE, and it is three things together: `pages(for:)`
+/// is exhaustive over `SessionStyle`, so a fourth style must name its pages;
+/// `mount(for:)` is exhaustive over `Page`, so a sixth page must name where
+/// its end lives; and this suite fails if what either names is `.none`.
+///
+/// THE FIRST VERSION WAS KEYED ON STYLE, and that is exactly why it passed
+/// while two of five pages had no way out: `.rounds` answered `.headerRail`
+/// for all three of its pages, which was true of one of them.
 final class SessionEndAffordanceTests: XCTestCase {
 
-    func testEveryShippedStyleHasAnEndAffordance() {
-        for style in SessionStyle.allCases {
+    // MARK: - Every page, and every style's pages
+
+    func testEveryPageTheRouterCanShowHasAnEndAffordance() {
+        for page in SessionEndAffordance.Page.allCases {
             // Spelled in full: a case named `none` on a non-Optional enum is
             // unambiguous to the compiler but not to a reader.
-            XCTAssertNotEqual(SessionEndAffordance.mount(for: style),
+            XCTAssertNotEqual(SessionEndAffordance.mount(for: page),
                               SessionEndAffordance.Mount.none,
-                              "\(style.rawValue) has no way to end the session")
+                              "\(page.rawValue) has no way to end the session")
         }
     }
 
-    func testTheLawCoversEVERYStyleTheRouterCanShow() {
-        // `SessionInProgressView` switches on `session.style` with three
-        // arms and no default, so the set of pages the router can show IS
-        // `SessionStyle.allCases`. If that grows, this count is the second
-        // place it has to be acknowledged.
+    func testEVERYStyleNamesAtLeastOnePage() {
+        for style in SessionStyle.allCases {
+            XCTAssertFalse(SessionEndAffordance.pages(for: style).isEmpty,
+                           "\(style.rawValue) shows no page at all")
+        }
+    }
+
+    /// The two enums must describe the same five screens. A page nobody can
+    /// route to is dead, and a page a style can show but that is missing from
+    /// `Page` would slip past `testEveryPageTheRouterCanShow…` entirely.
+    func testTheStylesPagesAreEXACTLYThePagesThatExist() {
+        let reachable = Set(SessionStyle.allCases.flatMap {
+            SessionEndAffordance.pages(for: $0)
+        })
+        XCTAssertEqual(reachable, Set(SessionEndAffordance.Page.allCases))
+    }
+
+    /// `SessionLiveView.arenaBase`'s switch has five arms. If a sixth page is
+    /// ever added there, this is the second place that has to be told.
+    func testTheRouterShowsFivePages() {
+        XCTAssertEqual(SessionEndAffordance.Page.allCases.count, 5)
         XCTAssertEqual(SessionStyle.allCases.count, 3)
     }
 
-    func testRoundsEndsThroughTheHeaderRail() {
-        // `myTurnFixedPage` mounts `turnHeaderRail`, whose ✕ is the setter;
-        // the two crew pages are reachable only while somebody else holds
-        // the turn.
-        XCTAssertEqual(SessionEndAffordance.mount(for: .rounds), .headerRail)
+    func testNoPageIsClaimedByTwoStyles() {
+        let all = SessionStyle.allCases.flatMap { SessionEndAffordance.pages(for: $0) }
+        XCTAssertEqual(all.count, Set(all).count)
     }
 
-    func testFreestyleAndTogetherMountTheirOwn() {
-        XCTAssertEqual(SessionEndAffordance.mount(for: .freestyle), .pageFoot)
-        XCTAssertEqual(SessionEndAffordance.mount(for: .together), .pageFoot)
+    // MARK: - Where each one's end lives
+
+    func testOnlyTheMyTurnPageEndsThroughTheHeaderRail() {
+        // It is the one page that draws `turnHeaderRail`, whose dismiss glyph
+        // is the setter. The other four draw no rail at all.
+        XCTAssertEqual(SessionEndAffordance.mount(for: .roundsMyTurn), .headerRail)
+        for page in SessionEndAffordance.Page.allCases where page != .roundsMyTurn {
+            XCTAssertEqual(SessionEndAffordance.mount(for: page), .pageFoot,
+                           "\(page.rawValue) draws no header rail, so it owes its own door")
+        }
     }
 
-    /// The reader `SessionLiveView` actually calls at both page call sites,
-    /// exercised through the same function — so this is not a law with no
-    /// caller (constraint 12's cautionary case).
-    func testPageMountsItsOwnEndIsTrueForExactlyTheFootStyles() {
-        XCTAssertTrue(SessionEndAffordance.pageMountsItsOwnEnd(.freestyle))
-        XCTAssertTrue(SessionEndAffordance.pageMountsItsOwnEnd(.together))
-        XCTAssertFalse(SessionEndAffordance.pageMountsItsOwnEnd(.rounds))
+    func testTheTWOCREWPagesMountTheirOwn() {
+        // N10's finding, as an assertion: the `.rounds` arm of the old
+        // style-keyed law said `.headerRail` for these, which was false.
+        XCTAssertEqual(SessionEndAffordance.mount(for: .roundsRoundWait), .pageFoot)
+        XCTAssertEqual(SessionEndAffordance.mount(for: .roundsSpotter), .pageFoot)
+    }
+
+    /// The reader `SessionLiveView.endAction(for:)` actually calls, exercised
+    /// through the same function — so this is not a law with no caller
+    /// (constraint 12's cautionary case).
+    func testPageMountsItsOwnEndIsTrueForExactlyTheFootPages() {
+        XCTAssertFalse(SessionEndAffordance.pageMountsItsOwnEnd(.roundsMyTurn))
+        XCTAssertTrue(SessionEndAffordance.pageMountsItsOwnEnd(.roundsRoundWait))
+        XCTAssertTrue(SessionEndAffordance.pageMountsItsOwnEnd(.roundsSpotter))
+        XCTAssertTrue(SessionEndAffordance.pageMountsItsOwnEnd(.freestyleRail))
+        XCTAssertTrue(SessionEndAffordance.pageMountsItsOwnEnd(.togetherClock))
+    }
+
+    func testRoundsShowsThreePagesAndTheOtherTwoShowOne() {
+        XCTAssertEqual(SessionEndAffordance.pages(for: .rounds),
+                       [.roundsMyTurn, .roundsRoundWait, .roundsSpotter])
+        XCTAssertEqual(SessionEndAffordance.pages(for: .freestyle), [.freestyleRail])
+        XCTAssertEqual(SessionEndAffordance.pages(for: .together), [.togetherClock])
     }
 
     // MARK: - The words
