@@ -2030,9 +2030,19 @@ struct SessionLiveView: View {
     /// the turn-holder's; in Freestyle and Together there is no turn to
     /// hold, so it reads true for everyone. The readback says which, so a
     /// dead button is never a silent one.
+    ///
+    /// THE VERB IS THE STYLE'S, NOT THE ROTATION'S (frames 155-157). The
+    /// title was a literal here, so a Freestyle lifter — every ad-hoc solo
+    /// workout since C1 — was told to "PASS" to a crew that does not exist,
+    /// and so was every Together lifter, in a style that never had a turn.
+    /// `RoundCopy.logControlTitle` is that decision, pure and tested over
+    /// every `SessionStyle`.
     private var logControlFoot: LogControlFoot {
         LogControlFoot(
-            title: isLoggingSet ? "LOGGING…" : (logIsFailed ? "LOG FAIL & PASS" : "LOG SET & PASS"),
+            title: RoundCopy.logControlTitle(style: style,
+                                             isSolo: hidesCrewFurniture,
+                                             isFailed: logIsFailed,
+                                             isLogging: isLoggingSet),
             readback: isLoggingSet ? nil : turnCTAReadback,
             isFailed: logIsFailed,
             isDisabled: isLoggingSet || !logControlIsMine
@@ -4769,9 +4779,29 @@ struct SessionLiveView: View {
     }
 
     /// `PUSH CREW · FREESTYLE` — `togetherKicker`'s own pattern.
+    /// THE PAGE NAMES WHAT IT IS (frames 155-157). For a crew it is whose
+    /// session this is; for a party of one — where the rail draws no lifter
+    /// rows and the crew gates hide everything else that could carry a name —
+    /// it is the routine being run, because nothing else on the screen said
+    /// so. A session with no routine keeps the style's own word.
     private var freestyleKicker: String {
+        if hidesCrewFurniture {
+            return RoundCopy.freestyleSoloKicker(routineName: routineName)
+        }
         let crew = (ledgerGroup?.name ?? "").uppercased()
         return crew.isEmpty ? "FREESTYLE" : "\(crew) · FREESTYLE"
+    }
+
+    /// …and the title names THE LIFT, effective (frame 157 reads "Goblet
+    /// squat", not "Back squat"). `currentExerciseForSheet` is the lift of
+    /// the slot `currentRoutineExercise` landed on, resolved through
+    /// `effectiveRoutineExercises`, so the swap layer is already applied and
+    /// this cannot disagree with the entry card above it. The crew keeps
+    /// "Own pace": its lifter rows carry the names, and the header is about
+    /// the style.
+    private var freestyleTitle: String {
+        guard hidesCrewFurniture else { return RoundCopy.freestyleTitle }
+        return RoundCopy.freestyleSoloTitle(exerciseName: currentExerciseForSheet?.name)
     }
 
     /// The page, on a one-second tick — the rest clock is the biggest numeral
@@ -4821,8 +4851,17 @@ struct SessionLiveView: View {
 
         return FreestyleRailView(
             kicker: freestyleKicker,
-            title: RoundCopy.freestyleTitle,
+            title: freestyleTitle,
             rail: freestyleRailModel,
+            // A PROVED PARTY OF ONE READS THE CARD AS ITS OWN PROGRESS
+            // (frames 155-157). Non-nil is the whole switch: every crew call
+            // site — production `.unknown`/`.crew` and the catalog's frame
+            // 141 alike — leaves it nil and renders exactly as it does today.
+            // The count comes from `freestyleSetsDone`, which reads the
+            // session's own rows rather than the roster, so it is right on
+            // the leg where the participants fetch failed.
+            soloSetsDone: hidesCrewFurniture
+                ? selfID.map { freestyleSetsDone($0) } ?? 0 : nil,
             restElapsed: restElapsed,
             standing: standing,
             stretchSuggestion: stretch,

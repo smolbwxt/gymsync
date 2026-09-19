@@ -689,6 +689,16 @@ enum LiveFixtures {
     /// seeds — so `FreestyleRailView`'s rail draws no lifter rows here,
     /// exactly as it draws none for `session-your-turn` (145). That is the
     /// existing fixture limitation, not a new one.
+    ///
+    /// WHAT THIS FRAME NOW PROVES, after the solo-wording round (the render
+    /// is what found it): the header reads `PUSH A` over `Back squat` — the
+    /// routine, and the lift the entry card is about to log, which the page
+    /// named nowhere before; the rail card reads `SETS DONE · 0 OF 13` (the
+    /// routine's own 4+3+3+3, none logged in this world) with no crew word
+    /// and no legend; and the button reads `LOG SET`, because there is
+    /// nobody to pass to. None of that needed a fixture change — every value
+    /// is derived from the world this frame already carried, which is the
+    /// point: the page had the truth and was not saying it.
     static let soloLive = LiveWorld(
         session: WorkoutSession(
             id: soloLiveSessionID,
@@ -720,7 +730,10 @@ enum LiveFixtures {
     /// rest card reading a fixture elapsed time instead of "0:00".
     /// `restElapsedOverride` is the only difference from `soloLive`; see its
     /// own doc comment on `LiveWorld` for why a literal string, not a
-    /// `Date`, is the fixture-safe way to show it.
+    /// `Date`, is the fixture-safe way to show it. The header, the rail card
+    /// and the button therefore read exactly as they do in 155 — `PUSH A` /
+    /// `Back squat`, `SETS DONE · 0 OF 13`, `LOG SET` — over a rest that is
+    /// running.
     static let soloRest = LiveWorld(
         session: WorkoutSession(
             id: soloLiveSessionID,
@@ -769,6 +782,13 @@ enum LiveFixtures {
     /// `selfSwaps` is seeded into `selfScales[selfID]` at `init(catalog:)`
     /// and read by the SAME `RoutineLayering.apply` a durable row goes
     /// through — no repository, no broadcast.
+    ///
+    /// AND THE HEADER IS WHERE THE SWAP IS NOW LEGIBLE: the swapped slot is
+    /// the current one (position 1, nothing logged), so the page's title
+    /// resolves through `effectiveRoutineExercises` and reads `Goblet squat`,
+    /// not `Back squat`. That is the whole difference between this frame and
+    /// 155 in one line of copy — the previous render said "Own pace" in both
+    /// and photographed a swap nobody could see.
     static let soloSwap = LiveWorld(
         session: WorkoutSession(
             id: soloLiveSessionID,

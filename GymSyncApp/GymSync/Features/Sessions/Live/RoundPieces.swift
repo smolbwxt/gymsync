@@ -207,6 +207,72 @@ enum RoundCopy {
 
     static let freestyleYourRest = "YOUR REST"
 
+    // MARK: Freestyle for a party of one (frames 155-157)
+    //
+    // THE SOLO PAGE SAID NOTHING TRUE ABOUT ITSELF. The proof frames showed
+    // "FREESTYLE / Own pace", a card headed "THE CREW · SETS DONE" with an
+    // empty bar, and a button reading "LOG SET & PASS" — a crew page shown to
+    // a lifter with no crew, and nowhere on it the name of the lift being
+    // logged (in a crew the rail's lifter rows carry it, and the solo gates
+    // hide those rows).
+    //
+    // Every answer below is a pure function of what the page already holds,
+    // and every one is read ONLY for a PROVED party of one
+    // (`SoloSessionShape.hidesCrewFurniture`, three-valued — `.unknown` keeps
+    // the crew's behaviour, which is what keeps every crew frame still).
+
+    /// The solo page's kicker: the routine being run. A session with no
+    /// routine keeps the style's own word, which is what it had before.
+    static func freestyleSoloKicker(routineName: String) -> String {
+        let trimmed = routineName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "FREESTYLE" : trimmed.uppercased()
+    }
+
+    /// The solo page's title: the lift being logged RIGHT NOW, effective —
+    /// the substitute when the slot is swapped, because that is what the
+    /// lifter is about to pick up. A freeform session with no current row
+    /// keeps "Own pace"; there is no exercise to name and inventing one would
+    /// be worse than the style's own word.
+    static func freestyleSoloTitle(exerciseName: String?) -> String {
+        guard let exerciseName,
+              !exerciseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return freestyleTitle }
+        return exerciseName
+    }
+
+    /// The same card, read as one lifter's own progress. No crew word: there
+    /// is no crew.
+    static let freestyleSoloRailKicker = "SETS DONE"
+
+    /// `3 OF 13` — done over the routine's own total. The crew's spelling
+    /// (`OF 13`) is a denominator under four markers; with one lifter the
+    /// numerator is the whole point and nothing else on the card says it.
+    static func freestyleSoloProgress(done: Int, total: Int) -> String {
+        "\(done) OF \(total)"
+    }
+
+    // MARK: The log control's verb
+
+    /// "& PASS" BELONGS TO A STYLE THAT HAS TURNS, AND TO A ROOM WITH
+    /// SOMEBODY IN IT (frames 155-157).
+    ///
+    /// The label was a literal on `SessionLiveView.logControlFoot`, so every
+    /// style wore the rotation's verb: Freestyle and Together never had a
+    /// turn to pass (`LogFollowUp.calls(for:)` is empty for both — the log IS
+    /// the whole transaction), and a solo lifter has nobody to pass to in any
+    /// style. A scheduled solo `.rounds` session is the case that needs both
+    /// halves: it runs the rotation engine, and it is a rotation of one.
+    ///
+    /// `isLogging` and `isFailed` stay in here rather than at the call site
+    /// so the button has ONE spelling law, not a pure half and a ternary.
+    static func logControlTitle(style: SessionStyle, isSolo: Bool,
+                                isFailed: Bool, isLogging: Bool) -> String {
+        if isLogging { return "LOGGING…" }
+        let verb = isFailed ? "LOG FAIL" : "LOG SET"
+        let hasSomebodyToPassTo = !isSolo && !LogFollowUp.calls(for: style).isEmpty
+        return hasSomebodyToPassTo ? "\(verb) & PASS" : verb
+    }
+
     /// The stretched-rest suggestion's kicker.
     static let freestyleStretchKicker = "COACH IS STRETCHING YOUR REST"
 

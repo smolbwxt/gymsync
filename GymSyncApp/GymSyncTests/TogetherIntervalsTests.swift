@@ -288,14 +288,23 @@ final class TogetherIntervalsTests: XCTestCase {
 
     // MARK: - The log control (fix round 3 / F6, ruling R-B17)
 
-    /// `TogetherClockView.logControl`'s default is the button `turnChrome`
-    /// has always drawn for Rounds/Freestyle: `LOG SET & PASS`, no
+    /// `TogetherClockView.logControl`'s default: `LOG SET & PASS`, no
     /// readback line, not failed, not disabled — the shape `logControlFoot`
     /// (`SessionLiveView`, private) builds from live state, unset here only
     /// because this default exists for the type to be constructible at
     /// all. Before this fix Together mounted no log control whatsoever;
     /// this test at least proves the parameter exists with a sane default
     /// rather than an empty/blank button.
+    ///
+    /// IT IS A FIXTURE VALUE AND PRODUCTION NO LONGER PRODUCES IT for this
+    /// style (solo-wording round, frames 155-157): the live title now comes
+    /// from `RoundCopy.logControlTitle(style:isSolo:isFailed:isLogging:)`,
+    /// which says `LOG SET` for Together and Freestyle — neither has a turn
+    /// to pass — and keeps `& PASS` for a crew `.rounds` rotation. The
+    /// default is left as it is deliberately: changing it would move the
+    /// approved `session-together-clock` frame, which this round is not
+    /// entitled to do. Flagged for the controller: a one-word fixture change
+    /// plus a re-capture.
     func testLogControlFootDefaultsToTheOrdinaryButton() {
         let foot = LogControlFoot()
         XCTAssertEqual(foot.title, "LOG SET & PASS")
