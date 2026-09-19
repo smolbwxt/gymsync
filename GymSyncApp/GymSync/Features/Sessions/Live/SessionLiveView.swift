@@ -2361,8 +2361,16 @@ struct SessionLiveView: View {
             // SESSION LIVE pill can route back in; cleared only by a
             // deliberate exit (exitToHome) or a terminal state. Title
             // refreshed after reload() once routineName is real.
+            //
+            // PHASE C1 S5: registration is unconditional, so this now fires
+            // for a roster of one too — `pillTitle`'s `isSolo` argument is
+            // what keeps a freeform ad-hoc lifter from reading "Crew
+            // session" (`hidesCrewFurniture` is S4's roster-only law, so a
+            // scheduled solo session gets the same honest fallback).
             appState.liveGroupSession = AppState.LiveGroupSession(
-                sessionID: liveSession.id, title: routineName ?? "Crew session")
+                sessionID: liveSession.id,
+                title: AppState.LiveGroupSession.pillTitle(
+                    routineName: routineName, isSolo: hidesCrewFurniture))
             // Phase O Task 4 (Sentry) — "session join" refresh; see
             // SentryContext.refreshLiveSession's doc comment.
             SentryContext.refreshLiveSession(rawState: liveSession.state, participantCount: participants.count)

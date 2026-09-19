@@ -327,16 +327,6 @@ private struct MainTabView: View {
     /// route.
     @State private var mountedTabs: Set<AppState.Tab> = Set(AppState.Tab.allCases)
 
-    /// The live solo session being re-presented (user report 2026-08-11:
-    /// sessions were irrecoverable). Driven by the "SESSION LIVE" pill below.
-    ///
-    /// PHASE C1 S3: it presents `SessionEntryView` in a `.fullScreenCover`,
-    /// so re-entry is the same door every other live session uses and the
-    /// cover cannot be swiped away again. Only `live.session` is read — the
-    /// routine and the two catalogs this handle also carries were the old
-    /// body's constructor arguments, and the one body loads its own plan.
-    @State private var resumeTarget: AppState.LiveSoloSession?
-
     /// Re-tap-to-reset (owner 2026-08-16: "Clicking the you page doesn't
     /// take us to T1 if we are in a lower tier"). Bumping a tab's token
     /// changes its content's `.id`, recreating the tab root — the whole
@@ -444,18 +434,23 @@ private struct MainTabView: View {
                     // there is nothing to orphan. The pill describes a session
                     // the lifter chose to MINIMISE (S4), and re-entering
                     // restores the cursor, the swap layer and the rest window.
-                    if let live = appState.liveSoloSession {
-                        LiveSessionPill(title: live.routine?.name ?? "Freeform workout") {
-                            resumeTarget = live
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 8)
-                    } else if let group = appState.liveGroupSession {
-                        // Group re-entry rides the existing lobby deep-link:
-                        // a fresh LobbyView fetch sees in_progress and its
-                        // auto-forward re-presents the live sheet.
-                        LiveSessionPill(title: group.title) {
-                            appState.pendingRoute = .lobby(sessionID: group.sessionID)
+                    //
+                    // PHASE C1 S5: `AppState.liveSoloSession` dropped out of
+                    // this decision — it has no production writer left
+                    // (its own doc comment says why) — so `liveGroupSession`
+                    // is now the ONE handle a solo ad-hoc session and a group
+                    // session both ride back in on (`SessionLiveView.onAppear`
+                    // registers it unconditionally). `LivePillDecision` states
+                    // that as one pure, tested law rather than an inline
+                    // optional chain.
+                    if case .resume(let sessionID, let title) =
+                        LivePillDecision.decide(liveGroupSession: appState.liveGroupSession) {
+                        // Re-entry rides the existing lobby deep-link: a
+                        // fresh LobbyView fetch sees in_progress and its
+                        // auto-forward re-presents the live session — the
+                        // same door for a solo lifter and a crew alike.
+                        LiveSessionPill(title: title) {
+                            appState.pendingRoute = .lobby(sessionID: sessionID)
                             appState.selectedTab = .home
                         }
                         .padding(.horizontal, 16)
@@ -471,29 +466,17 @@ private struct MainTabView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        // THE RESUME PATH, INTO THE ONE BODY (Phase C1 S3, decision 6). A
-        // `.fullScreenCover` over `SessionEntryView`, not a sheet over
-        // `WorkoutSessionView` in resume mode: the row itself is the resume
-        // handle now, and the router reads its state to decide whether the
-        // lifter comes back to the warm-up or to the rail. `resume:` is gone
-        // with the old body's constructor — the one body has no second
-        // "adopt" mode, because it only ever adopts.
-        //
-        // NOT SWIPE-DISMISSIBLE. The comment this replaced argued a plain
-        // sheet was safe because "swiping it down again is harmless now, the
-        // pill just comes back" — true of the pill and false of the session:
-        // the swipe destroyed the view's `@State`, which is the defect this
-        // phase exists to end.
-        .fullScreenCover(item: $resumeTarget) { live in
-            // S4: MINIMISE, the only way out. Re-entering through the pill
-            // and minimising again is a loop the lifter may run as often as
-            // they like — nothing is torn down either way.
-            SessionEntryView(session: live.session)
-                .soloMinimiseOverlay(SoloSessionShape.isAdHocSolo(
-                    participantCount: 1,
-                    roomCode: live.session.roomCode,
-                    scheduledFor: live.session.scheduledFor))
-        }
+        // THE RESUME PATH, INTO THE ONE BODY (Phase C1 S3/S4, decision 6).
+        // There is no cover HERE any more (Phase C1 S5 removed it, with
+        // `resumeTarget`): the pill above routes through the existing lobby
+        // deep-link (`pendingRoute = .lobby`, consumed by `HomeView`), which
+        // pushes `SessionEntryView` — the SAME destination every other live
+        // session (crew or solo) resumes into, and the router reads the
+        // row's own state to decide warm-up vs. rail. A push has its own way
+        // out (the back button), so no MINIMISE is mounted on it — MINIMISE
+        // belongs to the ad-hoc cover a fresh START presents (`HomeView`,
+        // `RoutinesListView`, `DiscoverWorkoutDetailView`), not to this
+        // resume path.
         // Trainer arm T3: does this account coach? One light fetch at
         // launch; CoachingView/TrainerTabView keep it fresh after.
         .task {
@@ -528,10 +511,11 @@ private struct MainTabView: View {
 }
 
 /// "SESSION LIVE" recovery pill — mounted by MainTabView above the dock
-/// whenever `AppState.liveSoloSession` is set, i.e. a solo workout is
-/// running but its sheet was swiped away. Tap to re-enter the session.
-/// Extruded like every tappable surface (design law); the pulsing accent
-/// dot is the "alive" signal.
+/// whenever `LivePillDecision.decide` answers `.resume` for the current
+/// `AppState.liveGroupSession`, i.e. an ad-hoc solo session or a group
+/// session is running and was MINIMISED (or, for a group, is simply
+/// off-screen). Tap to re-enter it. Extruded like every tappable surface
+/// (design law); the pulsing accent dot is the "alive" signal.
 private struct LiveSessionPill: View {
     @Environment(\.gsTheme) private var theme
     let title: String
