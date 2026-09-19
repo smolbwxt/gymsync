@@ -4,20 +4,25 @@ import SwiftUI
 //
 // THE SOLO SHAPE OF THE ONE BODY (Phase C1 S4, decision 6 and brief item 7).
 //
-// Two things live here and they are deliberately not the same law:
+// Three things live here and they are deliberately not the same law:
 //
-//   * `SoloSessionShape.hidesCrewFurniture(participantCount:)` — the gate the
-//     one body reads in four places so that a lifter alone in a gym never
-//     sees a talk dock, a presence count or a rotation. It asks about the
-//     ROSTER and nothing else, which is why a SCHEDULED solo session gets the
-//     same treatment: a party of one has nobody to talk to whether or not a
-//     calendar said so.
+//   * `SoloSessionShape.crew(…)` and `hidesCrewFurniture(…)` — the gate the
+//     one body reads in five places so that a lifter alone in a gym never
+//     sees a talk dock, a presence count or a rotation. It reads the SESSION
+//     first and the roster second (fix round 2 corrected this note, which
+//     still said "the ROSTER and nothing else" after `crew(…)` had stopped
+//     being true of that): an ad-hoc row is solo before any fetch exists, a
+//     LOADED roster decides everything else, and an absent roster is
+//     `.unknown`, which keeps the crew's shipped behaviour. A SCHEDULED solo
+//     session still gets the solo shape the moment its roster of one lands —
+//     a party of one has nobody to talk to whether or not a calendar said so.
 //   * `SoloSessionShape.isSoloByConstruction(groupID:roomCode:scheduledFor:)`
-//     — the discriminator every PRESENTATION route reads, decided from the
-//     session row alone because that is all those call sites hold. It is what
-//     says a session is presented in a cover with MINIMISE rather than
-//     pushed, and it is the seed of the furniture law below when no roster
-//     has arrived yet.
+//     — decided from the session row alone, because the screens that ask it
+//     hold no roster. It seeds the furniture law above, and it is what
+//     `SessionPresentation` below turns into cover-or-push.
+//   * `SoloSessionCover` and `SessionPresentation` — how a session is opened,
+//     stated once so that a second screen cannot quietly open one another way
+//     (which is exactly what the calendar page did).
 //
 // WHY A SEPARATE FILE AND NOT FOUR INLINE CONDITIONS. Constraint 22: the one
 // body's `body` is at its type-checker budget, so every modifier this task
@@ -168,6 +173,37 @@ struct SoloSessionCover: View {
                 groupID: session.groupID,
                 roomCode: session.roomCode,
                 scheduledFor: session.scheduledFor))
+    }
+}
+
+/// HOW A SESSION IS OPENED — one rule, one place (fix round 2 / N11).
+///
+/// B2 put this rule in `HomeView.present(_:)`, which was right for every
+/// route on that screen and wrong as a claim about the app: the calendar page
+/// fills its agenda from `liveForCurrentUser()`, which returns solo rows, and
+/// pushed them. So a live ad-hoc session tapped on the calendar was a push
+/// with no MINIMISE, a hidden back button and a hidden dock — the one
+/// counter-example to "a solo session is always the cover, from every route".
+///
+/// A rule stated at one call site is a rule until somebody writes a second
+/// call site, which is what happened. This is the rule itself; the two
+/// screens that open sessions both ask it.
+enum SessionPresentation: Equatable {
+    /// `SoloSessionCover` — full screen, not swipe-dismissible, MINIMISE the
+    /// deliberate way out.
+    case soloCover
+    /// The navigation push every session has always had. It carries its own
+    /// way out: the end control every page now mounts (`SessionEndAffordance`).
+    case push
+
+    /// Decided from the session row alone, because that is all a list screen
+    /// holds. See `SoloSessionShape.isSoloByConstruction` for why a SCHEDULED
+    /// solo session is not in this set and keeps the push.
+    static func of(_ session: WorkoutSession) -> SessionPresentation {
+        SoloSessionShape.isSoloByConstruction(groupID: session.groupID,
+                                              roomCode: session.roomCode,
+                                              scheduledFor: session.scheduledFor)
+            ? .soloCover : .push
     }
 }
 

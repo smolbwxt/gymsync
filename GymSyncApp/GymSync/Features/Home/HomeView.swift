@@ -754,17 +754,21 @@ struct HomeView: View {
     /// indistinguishable (`ScheduleSessionView` leaves `group_id` and
     /// `room_code` nil for both `.solo` and `.friends`), and this call site
     /// holds no roster to separate them. The push is no longer a dead end
-    /// regardless: B1 gave every style page an end control.
+    /// regardless: B1 and N10 gave every page the router can show an end.
+    ///
+    /// THE RULE ITSELF IS `SessionPresentation.of(_:)` (fix round 2 / N11).
+    /// It used to be spelled out here, which made it a rule about this
+    /// screen — and the calendar page, which also opens live sessions,
+    /// pushed a solo row straight past it.
     ///
     /// `.id(session.id)` on the push destination is load-bearing — see
     /// `navigateToJoined`'s destination comment for the 2026-07-30 field bug
     /// it exists to prevent.
     private func present(_ session: WorkoutSession) {
-        if SoloSessionShape.isSoloByConstruction(groupID: session.groupID,
-                                                 roomCode: session.roomCode,
-                                                 scheduledFor: session.scheduledFor) {
+        switch SessionPresentation.of(session) {
+        case .soloCover:
             adHocSession = session
-        } else {
+        case .push:
             joinedSession = session
             navigateToJoined = true
         }

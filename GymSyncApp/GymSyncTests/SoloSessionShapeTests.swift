@@ -158,7 +158,53 @@ final class SoloSessionShapeTests: XCTestCase {
             "but the row alone could not have proved it")
     }
 
-    // MARK: - Helper
+    // MARK: - SessionPresentation — one rule, two screens (fix round 2 / N11)
+
+    func testAnAdHocRowIsTheCOVER() {
+        XCTAssertEqual(SessionPresentation.of(Self.session()), .soloCover)
+    }
+
+    func testEveryOtherShapeKeepsThePush() {
+        XCTAssertEqual(SessionPresentation.of(Self.session(groupID: UUID())), .push)
+        XCTAssertEqual(SessionPresentation.of(Self.session(roomCode: "PX4K9Z")), .push)
+        XCTAssertEqual(
+            SessionPresentation.of(Self.session(scheduledFor: Self.date(2099, 5, 5))),
+            .push,
+            "a SCHEDULED solo session is indistinguishable from a scheduled .friends one at the row")
+    }
+
+    /// The rule and the predicate must not drift apart — this is the pair the
+    /// calendar page broke by spelling the branch out for itself (N11).
+    func testThePresentationRuleISTheSoloByConstructionPredicate() {
+        for session in [Self.session(),
+                        Self.session(groupID: UUID()),
+                        Self.session(roomCode: "PX4K9Z"),
+                        Self.session(scheduledFor: Self.date(2099, 5, 5))] {
+            let byConstruction = SoloSessionShape.isSoloByConstruction(
+                groupID: session.groupID, roomCode: session.roomCode,
+                scheduledFor: session.scheduledFor)
+            XCTAssertEqual(SessionPresentation.of(session),
+                           byConstruction ? .soloCover : .push)
+        }
+    }
+
+    // MARK: - Helpers
+
+    /// A `WorkoutSession` in `startSolo`'s exact shape, with one field moved
+    /// per case. Built through the memberwise init the repository uses, so a
+    /// field added to that init shows up here rather than being silently
+    /// defaulted somewhere a test cannot see.
+    private static func session(groupID: UUID? = nil,
+                                roomCode: String? = nil,
+                                scheduledFor: Date? = nil) -> WorkoutSession {
+        WorkoutSession(
+            id: UUID(), routineID: nil, organizerID: UUID(),
+            state: "in_progress", startedAt: date(2099, 1, 1), completedAt: nil,
+            createdAt: date(2099, 1, 1), groupID: groupID, roomCode: roomCode,
+            scheduledFor: scheduledFor, seriesID: nil,
+            currentTurnUserID: nil, currentTurnStartedAt: nil,
+            style: .freestyle)
+    }
 
     /// Built from components, never `Date()` — a test that reads the clock
     /// answers a different question tomorrow.

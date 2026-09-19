@@ -136,12 +136,18 @@ final class AppState {
     // now runs in the one body (`SessionLiveView`, plan tasks S1-S4) inside a
     // `.fullScreenCover` it cannot be swiped out of, and `SessionLiveView.
     // onAppear` registers `liveGroupSession` below unconditionally — for a
-    // roster of one too. `SessionRepository.startSolo` and
-    // `WorkoutSessionView` (the DEBUG-only catalog body, `CatalogHostView.
-    // swift`) are this struct's only remaining writer/reader, so
-    // `MainTabView`'s pill and `RootView`'s resume cover no longer read it —
-    // S5 removed that dead branch. **Not deleted here**: the old view still
-    // constructs it, and it retires with that view in C2.
+    // roster of one too.
+    //
+    // ITS ONLY REMAINING WRITERS AND READERS ARE BEHIND `#if DEBUG` (fix
+    // round 2 corrected this note, which named `SessionRepository.startSolo`
+    // as a writer — it never was; the field was written by the VIEW, not by
+    // the repository, and `startSolo` has never mentioned `AppState`):
+    // `WorkoutSessionView` writes it at `:3955`, reads it at `:3936` for the
+    // hotfix adopt and clears it at `:4749-4750`, and `CatalogHostView:1941`
+    // pre-seeds it — and that view has exactly one construction site, inside
+    // `#if DEBUG`. So `MainTabView`'s pill and `RootView`'s resume cover no
+    // longer read it; S5 removed that dead branch. **Not deleted here**: the
+    // old view still constructs it, and it retires with that view in C2.
     //
     // What follows is the ORIGINAL rationale, kept for that reader: a solo
     // session used to live inside a plain `.sheet` (Home's RoutinePickerSheet

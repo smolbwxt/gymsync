@@ -2435,8 +2435,17 @@ struct SessionLiveView: View {
             // PHASE C1 S5: registration is unconditional, so this now fires
             // for a roster of one too — `pillTitle`'s `isSolo` argument is
             // what keeps a freeform ad-hoc lifter from reading "Crew
-            // session" (`hidesCrewFurniture` is S4's roster-only law, so a
-            // scheduled solo session gets the same honest fallback).
+            // session".
+            //
+            // AND IT IS THE PROVISIONAL ANSWER, by construction (fix round 2).
+            // `hidesCrewFurniture` reads `crewShape`, which here has no
+            // roster and so answers from the row alone: an AD-HOC session is
+            // `.solo` and titles correctly on the first frame, while a
+            // SCHEDULED solo session is `.unknown` — indistinguishable at the
+            // row from a scheduled `.friends` session — and briefly reads
+            // "Crew session". `openAndSubscribe`'s refresh below is where
+            // that is corrected, once the roster has actually arrived, and
+            // it now runs for a session with no routine too.
             appState.liveGroupSession = AppState.LiveGroupSession(
                 sessionID: liveSession.id,
                 title: AppState.LiveGroupSession.pillTitle(
@@ -3448,11 +3457,24 @@ struct SessionLiveView: View {
         // sees the actual current exercise shortly after entering, not
         // only after the first turn change.
         pushWatchSessionState()
-        // Recovery-pill title refresh — onAppear registered before reload()
-        // populated routineName.
-        if appState.liveGroupSession?.sessionID == liveSession.id, let routineName {
+        // Recovery-pill title refresh — `.onAppear` registered before
+        // `reload()` populated `routineName` AND before `participants`
+        // existed, so both halves of the title were guesses there.
+        //
+        // THROUGH `pillTitle`, AND NO LONGER GATED ON A ROUTINE NAME (fix
+        // round 2 / the S5 residual). This site used to write
+        // `title: routineName` directly, behind `let routineName` — so it
+        // was the one writer that did not read the law, and a session with
+        // NO routine never reached it at all. That is exactly the case the
+        // law exists for: a scheduled solo FREEFORM session is `.unknown` at
+        // `.onAppear` (no roster yet) and prints "Crew session", and nothing
+        // ever corrected it. Now the roster has landed, `hidesCrewFurniture`
+        // is the real answer, and this is where it is applied.
+        if appState.liveGroupSession?.sessionID == liveSession.id {
             appState.liveGroupSession = AppState.LiveGroupSession(
-                sessionID: liveSession.id, title: routineName)
+                sessionID: liveSession.id,
+                title: AppState.LiveGroupSession.pillTitle(
+                    routineName: routineName, isSolo: hidesCrewFurniture))
         }
         await ExerciseNameCache.preload()
         // Owner item 7: latest body weight for bodyweight-set stamping.
