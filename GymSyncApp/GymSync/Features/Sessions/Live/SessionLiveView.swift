@@ -4093,12 +4093,30 @@ struct SessionLiveView: View {
 
         // Routine
         if let routineID = liveSession.routineID {
+            // THE PLAN SURVIVES A LOST SIGNAL (final review NEW-1). The read
+            // has no cache of its own, so a re-entry with no network used to
+            // leave `routineExercises` empty — and an empty routine is what
+            // makes a restored swap layer invisible and a restored set
+            // slotless. A successful fetch always wins and is recorded; only
+            // a failed one falls back to what this process last saw.
+            var loadedNow: SessionRoutineCache.Loaded?
             if let (routine, exercises) = try? await RoutineRepository.fetch(id: routineID) {
-                routineName = routine.name
-                routineExercises = exercises
-                let exIDs = exercises.map(\.exerciseID)
+                loadedNow = SessionRoutineCache.Loaded(routine: routine, exercises: exercises)
+            }
+            if let loaded = SessionRoutineCache.shared.resolve(routineID: routineID,
+                                                              fetched: loadedNow) {
+                routineName = loaded.routine.name
+                routineExercises = loaded.exercises
+                let exIDs = loaded.exercises.map(\.exerciseID)
                 if allExercises.isEmpty || !exIDs.allSatisfy({ id in allExercises.contains(where: { $0.id == id }) }) {
-                    allExercises = (try? await ExerciseRepository.fetchAll()) ?? []
+                    // AND A FAILED CATALOG READ NO LONGER WIPES THE CATALOG
+                    // (same rule as the line above, on the same leg): this was
+                    // `(try? …) ?? []`, which answered a lost signal by
+                    // discarding every exercise name this session already had.
+                    // Assign only what a read actually returned.
+                    if let catalog = try? await ExerciseRepository.fetchAll() {
+                        allExercises = catalog
+                    }
                 }
             }
         } else if allExercises.isEmpty {
