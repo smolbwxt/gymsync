@@ -60,8 +60,16 @@ struct DiscoverWorkoutDetailView: View {
 
     // MARK: - Attempt Solo
     @State private var showAttemptOptInDialog = false
-    @State private var startingAttemptOptIn: Bool?
-    @State private var startAttemptNavigation = false
+    /// PHASE C1 S3: the ad-hoc attempt session, filling the screen in a
+    /// `.fullScreenCover` over `SessionEntryView`. It used to be a Bool
+    /// pushing `WorkoutSessionView(attemptOptIn:)`, which created the row on
+    /// mount and called `start_attempt` afterwards from inside itself; the
+    /// row and the attempt are both started here now, in that same order.
+    @State private var attemptSession: WorkoutSession?
+    /// One start at a time, and the attempt's own failure said inline —
+    /// deliberately not `errorText`, which gates the whole screen.
+    @State private var startingAttempt = false
+    @State private var startAttemptErrorText: String?
 
     // MARK: - Attempt with Friends
     @State private var showScheduleSheet = false
@@ -171,24 +179,16 @@ struct DiscoverWorkoutDetailView: View {
             Button("Cancel", role: .cancel) {}
         }
         // Attempt Solo — Flow 3 with the routine pre-selected (Flow 4:
-        // "launches Flow 3 with the public routine pre-selected"). Reuses
-        // this screen's ALREADY-loaded `routineExercises`/`allExercises`
-        // (loaded once by `load()` for the exercise-list section above) —
-        // same mechanism `HomeView.RoutinePickerSheet.start(routine:)` uses
-        // (fetch once, hand straight to `WorkoutSessionView`,
-        // `HomeView.swift:628-637`), just without a redundant second fetch
-        // since the data is already in hand. `WorkoutSessionView` itself
-        // creates the solo session (`startIfNeeded()` ->
-        // `SessionRepository.startSolo(routineID:)`) and, because
-        // `attemptOptIn` is non-nil here, calls `start_attempt` right after
-        // (see that view's doc comment).
-        .navigationDestination(isPresented: $startAttemptNavigation) {
-            WorkoutSessionView(
-                routine: workout.routine,
-                routineExercises: routineExercises,
-                allExercises: allExercises,
-                attemptOptIn: startingAttemptOptIn
-            )
+        // "launches Flow 3 with the public routine pre-selected").
+        //
+        // PHASE C1 S3: a `.fullScreenCover` over `SessionEntryView`. The
+        // session and the leaderboard attempt are both started in
+        // `beginSoloAttempt(optIn:)` below, in the order the backend
+        // contract requires — the attempt AFTER the session exists — which
+        // is the order `WorkoutSessionView.startIfNeeded()` kept when it
+        // owned both.
+        .fullScreenCover(item: $attemptSession) { session in
+            SessionEntryView(session: session)
         }
         // Attempt with Friends — Flow 2's schedule sheet, pre-loaded with
         // this routine (Flow 4: "launches Flow 2 schedule sheet
@@ -368,13 +368,54 @@ struct DiscoverWorkoutDetailView: View {
                 Text("Attempt with Friends")
             }
             .buttonStyle(GSSecondaryButtonStyle())
+
+            if let startAttemptErrorText {
+                Text(startAttemptErrorText)
+                    .font(GSFont.body(12, relativeTo: .footnote))
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
+    /// PHASE C1 S3. The session first, the leaderboard attempt second, the
+    /// cover third.
+    ///
+    /// THE ATTEMPT IS BEST-EFFORT AND THE WORKOUT IS NOT. `start_attempt`
+    /// needs a session id, so it cannot run first; and a refused attempt must
+    /// never block the lift — the lifter simply will not appear on the
+    /// leaderboard for this run. That is verbatim the stance
+    /// `WorkoutSessionView.startIfNeeded()` took when it owned both calls,
+    /// and the failure is now said on THIS screen (where the tap was made)
+    /// instead of as a three-second notice inside the session.
+    ///
+    /// `startOrAdoptSolo` is deliberate here too: a lifter who minimises an
+    /// attempt and taps Attempt Solo again comes back to the same run rather
+    /// than splitting their sets across two sessions and two attempts.
     @MainActor
     private func beginSoloAttempt(optIn: Bool) async {
-        startingAttemptOptIn = optIn
-        startAttemptNavigation = true
+        guard !startingAttempt else { return }
+        startingAttempt = true
+        defer { startingAttempt = false }
+        startAttemptErrorText = nil
+        do {
+            let session = try await SessionRepository.startOrAdoptSolo(
+                routineID: workout.routine.id)
+            do {
+                _ = try await PublicWorkoutRepository.startAttempt(
+                    routineID: workout.routine.id, sessionID: session.id, optIn: optIn)
+            } catch {
+                AppLogger.db.error(
+                    "startAttempt failed: \(error.localizedDescription, privacy: .public)")
+                startAttemptErrorText =
+                    "Couldn't join the leaderboard for this run — the workout still starts."
+            }
+            attemptSession = session
+        } catch let error as GymSyncError {
+            startAttemptErrorText = error.errorDescription
+        } catch {
+            startAttemptErrorText = error.localizedDescription
+        }
     }
 
     // MARK: - Leaderboard

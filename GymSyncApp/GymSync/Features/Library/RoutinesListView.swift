@@ -246,7 +246,18 @@ struct RoutineDetailChoice: View {
     @Environment(AppState.self) private var appState
     @State private var exercises: [Exercise] = []
     @State private var routineExercises: [RoutineExercise] = []
+    /// PHASE C1 S3: the ad-hoc session this screen started, filling the
+    /// screen in a `.fullScreenCover` over `SessionEntryView`. It used to be
+    /// a `Bool` gating a sheet over `WorkoutSessionView`, which created the
+    /// row itself on mount; the row is created here now.
+    @State private var startedSession: WorkoutSession?
+    /// One start at a time — the CTA stays tappable while the round trip is
+    /// in flight otherwise.
     @State private var startingWorkout = false
+    /// The start's own failure, said inline. Deliberately not `errorText`
+    /// below, which gates the WHOLE screen: a failed start must not replace
+    /// the routine the lifter is looking at with a bare error.
+    @State private var startErrorText: String?
     /// Redesign (2026-07-23): best PR per exercise, feeding the projected
     /// working-weight line on each row. Absent PR = no estimate (honest).
     @State private var prByExercise: [UUID: PersonalRecord] = [:]
@@ -323,23 +334,30 @@ struct RoutineDetailChoice: View {
                         }
                     }
 
-                    // Canvas: Start Workout — primary CTA. A SHEET, not a
-                    // push (owner field report 2026-08-21: the push trapped
-                    // the whole app behind the session) — swipe-down
-                    // orphans the session and the live pill is the way
-                    // back, matching the resume path's presentation.
+                    // Canvas: Start Workout — primary CTA.
+                    //
+                    // PHASE C1 S3: a `.fullScreenCover` over
+                    // `SessionEntryView`, not a sheet over the old body. It
+                    // was a sheet rather than a push because the push trapped
+                    // the whole app behind the session (owner field report
+                    // 2026-08-21) — a cover solves that the same way and,
+                    // unlike a sheet, cannot be swiped away by accident. S4's
+                    // MINIMISE is the deliberate way out.
                     Button {
-                        startingWorkout = true
+                        Task { await startWorkout() }
                     } label: {
                         Text("Start Workout")
                     }
                     .buttonStyle(GSPrimaryButtonStyle())
-                    .sheet(isPresented: $startingWorkout) {
-                        NavigationStack {
-                            WorkoutSessionView(routine: routine,
-                                               routineExercises: routineExercises,
-                                               allExercises: exercises)
-                        }
+                    .fullScreenCover(item: $startedSession) { session in
+                        SessionEntryView(session: session)
+                    }
+
+                    if let startErrorText {
+                        Text(startErrorText)
+                            .font(GSFont.body(12, relativeTo: .footnote))
+                            .foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
 
                     // Canvas: Edit routine — secondary
@@ -458,5 +476,25 @@ struct RoutineDetailChoice: View {
                 prByExercise = best
             }
         } catch { errorText = ErrorMapping.map(error).errorDescription }
+    }
+
+    /// PHASE C1 S3. Start the ad-hoc session here, then let
+    /// `SessionEntryView` route it — the same door every other live session
+    /// goes through. `startOrAdoptSolo` returns the workout already running
+    /// for this routine rather than minting a second one, which is the
+    /// 2026-08-22 law moved out of the old body's `startIfNeeded()`.
+    @MainActor
+    private func startWorkout() async {
+        guard !startingWorkout else { return }
+        startingWorkout = true
+        defer { startingWorkout = false }
+        startErrorText = nil
+        do {
+            startedSession = try await SessionRepository.startOrAdoptSolo(routineID: routine.id)
+        } catch let error as GymSyncError {
+            startErrorText = error.errorDescription
+        } catch {
+            startErrorText = error.localizedDescription
+        }
     }
 }

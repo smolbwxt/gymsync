@@ -18,6 +18,71 @@ enum SessionRepository {
 
     // MARK: - Existing methods (unchanged)
 
+    /// THE AD-HOC START. One row, one participant, no RPC (Phase C1
+    /// decision 1) — and, from C1 on, `.freestyle`.
+    ///
+    /// WHY THE STYLE IS THE ONLY THING THAT CHANGED. The row this function
+    /// has always written is already a row the one body accepts:
+    /// `state: "in_progress"` with `lifting_started_at` never set is exactly
+    /// `WarmUpGate.isWarmingUp` (`WarmUpScreen.swift:25-27`), so
+    /// `SessionRouter.route` sends it to `.warmUp` → `SessionRunnerView` →
+    /// `WarmUpScreen`, and the shipped `start_lifting`/`mark_warmup_ready`
+    /// stamps the column that moves it to `.live`. No new start RPC exists
+    /// and constraint 20 is not strained.
+    ///
+    /// `.rounds` is the one style whose body carries a rotation strip, a
+    /// round wait and a server-owned round, and a lifter alone in a gym must
+    /// never see any of them. `.freestyle` is the style
+    /// `LogFollowUp.calls(for:)` maps to NEITHER `advanceTurn` NOR an offered
+    /// round close (`RoundPieces.swift:1205-1207`), so the round engine is
+    /// never walked for an ad-hoc row — no special case needed — and
+    /// `private.session_round_guard` freezes it the moment lifting starts.
+    /// A SCHEDULED solo session keeps whatever style scheduling chose; this
+    /// changes the ad-hoc insert alone.
+    ///
+    /// NOT `SessionStyleDefault.style(forExercises:)`, although the file
+    /// table names it. That function is the CREW LOBBY's default and never
+    /// returns `.freestyle` at all (its own header says so) — it answers
+    /// `.rounds` or `.together`, and `.together` would put a shared clock on
+    /// a session with one lifter. Decision 1's whole argument is that an
+    /// ad-hoc solo row is `.freestyle`; that is what is written.
+    ///
+    /// THE TRIGGERS, WALKED AGAINST THIS EXACT INSERT rather than assumed
+    /// (each read in `supabase/migrations`, Phase C1 S3):
+    ///   * `session_venue_insert_guard` (20260918000204, + the squad_swaps
+    ///     clause from 20260919000103) raises on a non-NULL `venue_id` or a
+    ///     non-NULL `squad_swaps` at INSERT. `WorkoutSession` carries no
+    ///     `squad_swaps` at all — deliberately, see `SessionSwapRepository
+    ///     .loadSquad` — and `venueID` is a nil Optional, which the
+    ///     synthesized `Encodable` emits through `encodeIfPresent` and so
+    ///     OMITS (the same fact `SetUpdate` below documents from the other
+    ///     side). Both land NULL. PASSES.
+    ///   * `private.session_round_guard` is BEFORE UPDATE; an INSERT never
+    ///     reaches it.
+    ///   * `session_lifecycle_announce` (20260712000002) returns immediately
+    ///     when `group_id IS NULL`. No chat row, no raise.
+    ///   * `zzpush_session_invite` (20260716000001) skips the organizer's own
+    ///     participant row, and here organizer and participant are the same
+    ///     person. No self-push.
+    ///   * `checkin_window_guard` and `engine_guard` and
+    ///     `late_joiner_to_rotation_end` are all BEFORE **UPDATE** on
+    ///     `session_participants` — the participant row below is INSERTED at
+    ///     `check_in_state: "ready"`, which no UPDATE trigger ever sees. On
+    ///     the later `warmup_ready` UPDATE that `mark_warmup_ready` makes,
+    ///     `checkin_window_guard` reads `scheduled_for`, finds it NULL and
+    ///     FAILS OPEN by its own comment (`20260715000003:36-41`);
+    ///     `engine_guard` raises only for `late_minutes`/`burpees_owed`/
+    ///     `turn_order`, none of which move; `late_joiner_to_rotation_end` is
+    ///     `UPDATE OF check_in_state` and that column is not in the SET list.
+    ///   * `set_logs_reject_prelive` (20260803000002) denies a list of
+    ///     PRE-LIVE states; `in_progress` is not among them, which is why a
+    ///     set logged on this row is accepted from the first second.
+    /// Nothing raises for a solo ad-hoc row.
+    ///
+    /// CHECK-IN IS NOTHING THE LIFTER HAS TO DO, and constraint 10 is the
+    /// reason this is stated here: the participant row is inserted AT
+    /// `"ready"`, exactly as it always has been. This adds no location read,
+    /// no `CLLocationManager` and no call to `CheckInService`.
     static func startSolo(routineID: UUID?) async throws -> WorkoutSession {
         guard let userID = await SupabaseService.shared.currentUserID() else {
             throw GymSyncError.unauthorized
@@ -36,7 +101,8 @@ enum SessionRepository {
                 scheduledFor: nil,
                 seriesID: nil,
                 currentTurnUserID: nil,
-                currentTurnStartedAt: nil
+                currentTurnStartedAt: nil,
+                style: .freestyle
             )
             let inserted: WorkoutSession = try await client
                 .from("sessions")
@@ -54,6 +120,52 @@ enum SessionRepository {
                 .execute()
             return inserted
         } catch { throw ErrorMapping.map(error) }
+    }
+
+    /// THE AD-HOC ENTRY POINTS' ONE START (Phase C1 S3) — adopt the workout
+    /// that is already running, or begin one.
+    ///
+    /// THIS IS NOT A NEW LAW; IT IS A MOVED ONE. Until C1 the four entry
+    /// points all mounted `WorkoutSessionView`, whose `startIfNeeded()`
+    /// adopted a live solo session for the same routine before minting a new
+    /// row (`WorkoutSessionView.swift:3930-3951`). That branch exists because
+    /// of the 2026-08-22 field report — Start Workout became a dismissible
+    /// sheet, so swipe-down and Start again minted a BRAND-NEW session with
+    /// an empty carry and a fragmented history. C1 moves the capability out
+    /// of that view, so the law has to move with it or the report comes back
+    /// through the new door.
+    ///
+    /// IT ADOPTS FROM THE DATABASE, NOT FROM `AppState`. The shipped branch
+    /// read `appState.liveSoloSession`, a view-registered in-memory handle
+    /// that a relaunch lost; `liveForCurrentUser()` is the durable answer to
+    /// the same question and already carries the bound that makes it safe —
+    /// `in_progress`, newest first, nothing older than six hours, and a
+    /// `started_at` floor that excludes rows which cannot say when they
+    /// began.
+    ///
+    /// AD-HOC IS THE TRIPLE NIL: no `group_id`, no `room_code`, no
+    /// `scheduled_for`. A `.friends` session leaves `group_id` NULL but is
+    /// scheduled; a `.code` session carries a room code; a scheduled solo
+    /// session carries a time. Only an ad-hoc row is all three, and the
+    /// routine must match as well — resuming yesterday's push day because
+    /// the lifter tapped a pull routine would be the same bug from the other
+    /// direction.
+    ///
+    /// A FAILED READ SIMPLY STARTS ONE. The adopt is an optimisation over
+    /// correctness-of-history, not a gate: a lifter with no connection must
+    /// still be able to begin a workout, and `startSolo`'s own error is the
+    /// one worth surfacing.
+    static func startOrAdoptSolo(routineID: UUID?) async throws -> WorkoutSession {
+        if let live = try? await liveForCurrentUser(),
+           let running = live.first(where: {
+               $0.routineID == routineID
+                   && $0.groupID == nil
+                   && $0.roomCode == nil
+                   && $0.scheduledFor == nil
+           }) {
+            return running
+        }
+        return try await startSolo(routineID: routineID)
     }
 
     static func complete(sessionID: UUID) async throws -> WorkoutSession {
@@ -525,10 +637,17 @@ enum SessionRepository {
     /// server-side), and a row that cannot say when it began cannot be aged
     /// out — so leaving it out is the honest reading of "live right now".
     ///
-    /// Returns solo sessions too. Home only routes the CREW ones (a live
-    /// solo session has its own recovery surface — `AppState.liveSoloSession`
-    /// and RootView's SESSION LIVE pill); other callers may want both, and
-    /// the state filter is the honest boundary for a repository.
+    /// Returns solo sessions too, and it always has — the state filter is
+    /// the honest boundary for a repository. Home USED to drop them on the
+    /// way out (`HomeView.actionableSessions`, `$0.groupID != nil`) because a
+    /// live solo session had its own recovery surface and no place in the
+    /// lobby. Phase C1 removed that filter: an ad-hoc session now runs in the
+    /// one body and is routed by `SessionEntryView` like any other live
+    /// session, so nothing downstream excludes solo any more.
+    ///
+    /// Two other callers read this: `CalendarSchedulingView:737` (which wants
+    /// every live row) and `startOrAdoptSolo` above (which wants exactly the
+    /// ad-hoc ones).
     static func liveForCurrentUser(limit: Int = 20) async throws -> [WorkoutSession] {
         guard let userID = await SupabaseService.shared.currentUserID() else {
             throw GymSyncError.unauthorized

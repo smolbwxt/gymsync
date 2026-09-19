@@ -327,12 +327,14 @@ private struct MainTabView: View {
     /// route.
     @State private var mountedTabs: Set<AppState.Tab> = Set(AppState.Tab.allCases)
 
-    /// The live solo session being re-presented after the lifter swiped its
-    /// sheet away (user report 2026-08-11: sessions were irrecoverable).
-    /// Driven by the "SESSION LIVE" pill below; presents WorkoutSessionView
-    /// in resume mode. A plain sheet ON PURPOSE — swiping it down again is
-    /// harmless now, because `AppState.liveSoloSession` persists until the
-    /// session completes and the pill just comes back.
+    /// The live solo session being re-presented (user report 2026-08-11:
+    /// sessions were irrecoverable). Driven by the "SESSION LIVE" pill below.
+    ///
+    /// PHASE C1 S3: it presents `SessionEntryView` in a `.fullScreenCover`,
+    /// so re-entry is the same door every other live session uses and the
+    /// cover cannot be swiped away again. Only `live.session` is read — the
+    /// routine and the two catalogs this handle also carries were the old
+    /// body's constructor arguments, and the one body loads its own plan.
     @State private var resumeTarget: AppState.LiveSoloSession?
 
     /// Re-tap-to-reset (owner 2026-08-16: "Clicking the you page doesn't
@@ -428,9 +430,20 @@ private struct MainTabView: View {
                 VStack(spacing: 0) {
                     // Rides with the dock (hidden alongside it on full-bleed
                     // screens — anyone on such a screen is mid-flow anyway).
-                    // While the session's own sheet is up this sits harmlessly
-                    // underneath it; the moment a swipe-down orphans the
-                    // session, the pill is the way back in.
+                    // While the session's own cover is up this sits harmlessly
+                    // underneath it.
+                    //
+                    // PHASE C1 S3: IT NO LONGER DESCRIBES AN ORPHANED SESSION.
+                    // This comment used to say the quiet part out loud — "the
+                    // moment a swipe-down orphans the session, the pill is the
+                    // way back in" — and a swipe-down was exactly the
+                    // mechanism behind both halves of the owner's field
+                    // report: it destroyed the view and every `@State` in it.
+                    // An ad-hoc session is now presented in a
+                    // `.fullScreenCover`, which cannot be swiped away, so
+                    // there is nothing to orphan. The pill describes a session
+                    // the lifter chose to MINIMISE (S4), and re-entering
+                    // restores the cursor, the swap layer and the rest window.
                     if let live = appState.liveSoloSession {
                         LiveSessionPill(title: live.routine?.name ?? "Freeform workout") {
                             resumeTarget = live
@@ -458,14 +471,21 @@ private struct MainTabView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .sheet(item: $resumeTarget) { live in
-            NavigationStack {
-                WorkoutSessionView(routine: live.routine,
-                                   routineExercises: live.routineExercises,
-                                   allExercises: live.allExercises,
-                                   resume: live.session,
-                                   onFinished: { resumeTarget = nil })
-            }
+        // THE RESUME PATH, INTO THE ONE BODY (Phase C1 S3, decision 6). A
+        // `.fullScreenCover` over `SessionEntryView`, not a sheet over
+        // `WorkoutSessionView` in resume mode: the row itself is the resume
+        // handle now, and the router reads its state to decide whether the
+        // lifter comes back to the warm-up or to the rail. `resume:` is gone
+        // with the old body's constructor — the one body has no second
+        // "adopt" mode, because it only ever adopts.
+        //
+        // NOT SWIPE-DISMISSIBLE. The comment this replaced argued a plain
+        // sheet was safe because "swiping it down again is harmless now, the
+        // pill just comes back" — true of the pill and false of the session:
+        // the swipe destroyed the view's `@State`, which is the defect this
+        // phase exists to end.
+        .fullScreenCover(item: $resumeTarget) { live in
+            SessionEntryView(session: live.session)
         }
         // Trainer arm T3: does this account coach? One light fetch at
         // launch; CoachingView/TrainerTabView keep it fresh after.
