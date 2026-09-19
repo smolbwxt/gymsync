@@ -9,6 +9,8 @@ final class CatalogScreenTests: XCTestCase {
     func testEveryDocumentedIdRoundTrips() {
         let ids = [
             "pr-celebration",
+            // The 2026-09-18 design round — both retire at the owner's pick.
+            "pr-celebration-a", "pr-celebration-b",
             "voice-idle", "voice-connecting", "voice-transmitting",
             "voice-mic-denied", "voice-unavailable",
             "voice-coach-mark", "voice-connected-toast", "voice-mixer-sheet",
@@ -150,6 +152,14 @@ final class CatalogScreenTests: XCTestCase {
             "session-scale-down",
             "session-warmup-suggestion",
             "session-your-turn",
+            // Owner-decisions round (plan task S9), frame 154: the station
+            // card's rack chip alone, over the same round fixture frame 137
+            // captures.
+            "session-round-rack-chip",
+            // Coordinator ruling, same task, frame 153: the lobby's rack
+            // question, fed from `LobbyFixtures.rackAsk`'s own
+            // `rackAskClass`, not a live routine/exercise lookup.
+            "session-lobby-rack-ask",
         ]
         for id in ids {
             XCTAssertNotNil(CatalogScreen(rawValue: id), "missing catalog case: \(id)")

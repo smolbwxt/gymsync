@@ -392,6 +392,23 @@ struct SessionLiveView: View {
     @State private var prOverlayReps: Int = 0
     @State private var prOverlayPriorBest: Decimal = 0
     @State private var prOverlayMonthlyCount: Int? = nil
+    /// Records HELD until their exercise finishes (ruling R-OD-1), keyed by
+    /// exercise. A record on set 1 of 4 does not take the screen over and is
+    /// not thrown away either: `PRFiring.step` parks it here and hands it
+    /// back at completion, or `flushPendingPRs(except:)` fires it when the
+    /// lifter moves on. SESSION-LOCAL BY DESIGN — a party resurrected three
+    /// days later is worse than a quiet one, and the recap's `PR` tag is the
+    /// record of anything this dictionary loses.
+    @State private var pendingPRs: [UUID: PRFiring.Pending] = [:]
+
+    /// THE VENUE'S RACK COUNTS, class → count (plan task S6, decision 1).
+    /// Empty is the ordinary answer — no venue, or a building nobody has
+    /// counted — and an ABSENT class is unknown, never zero.
+    @State private var venueRackCounts: [String: Int] = [:]
+    /// What `set_venue_rack_count` said, shown inside the station card's own
+    /// popover. Never `errorText`: a refused rack count is not a session
+    /// error and must not sit where a failed End would.
+    @State private var rackErrorText: String?
 
     /// Reaction emojis per canvas reaction strip.
     private let reactionEmojis = ["🔥", "💪", "😂", "👏"]
@@ -582,35 +599,6 @@ struct SessionLiveView: View {
         allSessionSets.filter { $0.userID == userID && $0.exerciseID == exerciseID && !$0.isPenalty }.count
     }
 
-    /// THE ONE REBUILD A SWAP PERFORMS on a routine row — the replacement's
-    /// exercise id, the same prescription, and no weight (a bar number for one
-    /// lift is not a bar number for another).
-    ///
-    /// A named function because TWO places need it: `effectiveRoutineExercises`
-    /// applies it for real, and `swapDoorDetails` applies it to word the
-    /// consent card's PROPOSED door. A door that computed the proposed
-    /// prescription its own way could promise something the swap does not
-    /// produce — which is exactly what it did for a to-failure row (R-B2-15).
-    ///
-    /// `targetFailure` IS CARRIED (R-B2-13). The old spelling listed fields by
-    /// hand and left it behind, so a swapped `AMRAP` row silently became
-    /// `3 × —`: a prescribed failure is the assignment fulfilled (the failure
-    /// doctrine), and swapping the lift does not cancel it. STILL DROPPED, and
-    /// named here rather than left to be discovered: `setType`, `dropSteps` and
-    /// `dropPercent` — set STRUCTURES, which the live body does not render and
-    /// which no surface in this file reads.
-    private static func swapped(_ re: RoutineExercise, to targetID: UUID) -> RoutineExercise {
-        RoutineExercise(
-            id: re.id, routineID: re.routineID, exerciseID: targetID,
-            position: re.position, targetSets: re.targetSets,
-            targetReps: re.targetReps, targetWeight: nil,
-            restSeconds: re.restSeconds, notes: re.notes,
-            supersetGroup: re.supersetGroup,
-            targetFailure: re.targetFailure,
-            targetRepsLow: re.targetRepsLow, targetRepsHigh: re.targetRepsHigh,
-            cardioZone: re.cardioZone, cardioMinutes: re.cardioMinutes)
-    }
-
     /// The shared routine with hot-swaps applied: squad swaps first
     /// (everyone), then MY quiet self-scales on top (my own choice for my
     /// body beats the squad's), then TODAY'S ACCEPTED SET REDUCTION last
@@ -618,26 +606,45 @@ struct SessionLiveView: View {
     /// alone and about the dose rather than the lift). Progression, logging,
     /// and display all read THIS, so a swapped lift is what actually gets
     /// logged and a scaled row is what actually gets counted.
+    ///
+    /// THE ORDER ITSELF LIVES IN `RoutineLayering` (plan task S7) — it was
+    /// hand-copied here, into `SessionRunnerView.planRows` and into a test,
+    /// which is three chances for two screens to print two prescriptions for
+    /// one lift. The doc above is kept because it is still the best statement
+    /// of WHY the order is that order; the body is now a delegation.
+    ///
+    /// `SwapTarget` carries a NAME for the consent card's wording, and the
+    /// layering needs only the replacement's id — so the two dictionaries are
+    /// mapped down here rather than dragging a view's nested type into a
+    /// model.
     private var effectiveRoutineExercises: [RoutineExercise] {
-        routineExercises.map { re in
-            var target: SwapTarget? = squadSwaps[re.exerciseID]
-            if let selfID, let mine = selfScales[selfID]?[re.exerciseID] { target = mine }
-            var row = target.map { Self.swapped(re, to: $0.id) } ?? re
-            // KEYED ON THE ROUTINE'S OWN EXERCISE, which is what the warm-up's
-            // plan rows carried when the athlete accepted. A squad swap that
-            // lands afterwards replaces the lift in that slot and the reduced
-            // set count rides with the slot, which is what "one set fewer
-            // today" meant.
-            if let scale = todaysScale, scale.exerciseID == re.exerciseID {
-                row.targetSets = scale.setsInstead
-            }
-            return row
-        }
+        RoutineLayering.apply(
+            routineExercises,
+            squadSwaps: squadSwaps.mapValues(\.id),
+            selfScale: selfID.flatMap { selfScales[$0] }?.mapValues(\.id) ?? [:],
+            todaysScale: todaysScale)
     }
 
     private var currentRoutineExercise: RoutineExercise? {
         guard let ex = currentExerciseForSheet else { return nil }
         return effectiveRoutineExercises.first(where: { $0.exerciseID == ex.id })
+    }
+
+    /// The CURRENT exercise's venue equipment class, or `nil` when there is no
+    /// venue to count racks at or the catalog's equipment word has no venue
+    /// class (plan task S6, decision 1). `nil` is also the gate on the
+    /// station card's correction affordance: no class, no question.
+    private var currentEquipmentClass: String? {
+        guard liveSession.venueID != nil else { return nil }
+        return Venue.equipmentClass(for: currentExerciseForSheet?.equipment)
+    }
+
+    /// The rack count that caps the split — the venue's number for the class
+    /// above. `nil` means UNKNOWN, which means no cap at all, which is
+    /// `ceil(crew / 3)`: the shipped behaviour, never a guess and never zero.
+    private var currentEquipmentCap: Int? {
+        guard let equipmentClass = currentEquipmentClass else { return nil }
+        return venueRackCounts[equipmentClass]
     }
 
     // Units sweep: stored weights render in the user's unit. Exact
@@ -2469,12 +2476,35 @@ struct SessionLiveView: View {
             // THE STATION SPLIT (plan task S3). `.task(id:)` rather than
             // `.onChange` so the crew's FIRST exercise is assigned too, and
             // `set_session_stations`' idempotency on the exercise position is
-            // what makes every repeat free.
-            .task(id: currentRoutineExercise?.position) {
+            // what makes every repeat free. The identity carries the
+            // exercise id ALONGSIDE the position (F9): a squad swap keeps
+            // `position` (`RoutineLayering.swapped` — `Models/RoutineLayering.swift`
+            // — preserves it) but changes `exerciseID`, and R-OD-2's "the
+            // exercise swapped" must still flush. Composite id built as a
+            // string, the same idiom `WorkoutSessionView.swift`'s per-set
+            // `.task(id:)` already uses.
+            .task(id: "\(currentRoutineExercise?.position ?? -1)-\(currentRoutineExercise?.exerciseID.uuidString ?? "")") {
                 // LOAD PATH 8 of 9 (plan task S4): `remixStations` calls
                 // `set_session_stations`, a WRITE — the one load path that
                 // would change a real row.
                 guard !catalogSkipLoad else { return }
+                // THE EXERCISE CHANGED (position OR a squad swap), so
+                // anything still held for the one we just left celebrates
+                // now (ruling R-OD-2). This `.task(id:)` rather than a new
+                // `.onChange`: the exercise's identity is already this
+                // chain's identity, and `body`'s modifier chain has blown
+                // the type-checker's budget twice.
+                await flushPendingPRs(except: currentExerciseForSheet?.id)
+                // The celebration's sound, built and decoded ahead of the
+                // moment rather than inside the overlay's animation turn
+                // (ruling R-OD-4). Idempotent — the second call onwards is a
+                // no-op — and silent when the resource is missing.
+                await MainActor.run { CelebrationSound.prepare() }
+                // THE VENUE'S RACK COUNTS, before the split that spends them
+                // (plan task S6). Its own `isEmpty` guard makes every repeat
+                // free; a failure leaves the cap unknown, which is today's
+                // `ceil(crew / 3)`.
+                await loadVenueRackCounts()
                 guard let position = currentRoutineExercise?.position else { return }
                 await remixStations(exercisePosition: position)
             }
@@ -2572,7 +2602,7 @@ struct SessionLiveView: View {
     /// with the real rebuild on most rows and disagreed on a to-failure one:
     /// the door printed `3 × AMRAP` while `effectiveRoutineExercises` produced
     /// `3 × —`, because the rebuild dropped `targetFailure` and the copy kept
-    /// it. Both now go through `Self.swapped(_:to:)`, so a door cannot promise
+    /// it. Both now go through `RoutineLayering.swapped(_:to:)`, so a door cannot promise
     /// a prescription the swap does not produce, whatever field is added next.
     private func swapDoorDetails(for exerciseID: UUID,
                                  target: UUID) -> (now: String, proposed: String) {
@@ -2580,7 +2610,7 @@ struct SessionLiveView: View {
             return ("—", "—")
         }
         return (SessionPlanRow.prescription(for: re),
-                SessionPlanRow.prescription(for: Self.swapped(re, to: target)))
+                SessionPlanRow.prescription(for: RoutineLayering.swapped(re, to: target)))
     }
 
     /// THE BODY'S ONE TOP SLOT (plan tasks S1 and S3).
@@ -3712,6 +3742,11 @@ struct SessionLiveView: View {
                 reactionEmojis: reactionEmojis,
                 voice: voiceFoot,
                 skip: skipOffer(now: context.date),
+                rackCount: currentEquipmentCap,
+                rackErrorText: rackErrorText,
+                onSetRackCount: currentEquipmentClass == nil ? nil : { count in
+                    Task { await saveRackCount(count) }
+                },
                 onCoachTap: { Task { await openCoachThread() } },
                 onReaction: { emoji in Task { await tapReaction(emoji: emoji) } },
                 onSkip: { Task { await skipHeldLifter() } })
@@ -4422,6 +4457,51 @@ struct SessionLiveView: View {
     /// FAILURE IS NOT FATAL. A re-mix that cannot be written leaves the
     /// previous assignment standing and logs: a station split must never block
     /// a round.
+    /// The venue's rack counts, read once per live session (plan task S6,
+    /// decision 1).
+    ///
+    /// Best-effort, like `remixStations` below: a failure leaves the counts
+    /// empty, which leaves the cap `nil`, which is the shipped split. Never
+    /// surfaced — a station split must never block a round, and neither must
+    /// the number that caps it.
+    @MainActor
+    private func loadVenueRackCounts() async {
+        guard venueRackCounts.isEmpty, let venueID = liveSession.venueID else { return }
+        do {
+            venueRackCounts = try await VenueRackRepository.counts(venueID: venueID)
+        } catch {
+            AppLogger.sessions.error(
+                "rack counts failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// THE CORRECTION, from the station card's header: whoever is standing in
+    /// the room can see that there are three racks and not two (decision 1).
+    ///
+    /// ON A REFUSAL — `P0001`, the RPC saying this caller holds no
+    /// `venue_checkins` row at this venue inside 12 hours — the message lands
+    /// inside the popover it was asked in, the count stays as it was, the cap
+    /// stays whatever it already was, and the round is not touched. The split
+    /// itself is NOT re-mixed here: a re-mix moves people between racks
+    /// mid-round, and it is the next exercise's `.task(id:)` that spends the
+    /// corrected number.
+    @MainActor
+    private func saveRackCount(_ count: Int) async {
+        guard let venueID = liveSession.venueID,
+              let equipmentClass = currentEquipmentClass else { return }
+        rackErrorText = nil
+        do {
+            try await VenueRackRepository.set(venueID: venueID,
+                                              equipmentClass: equipmentClass,
+                                              count: count)
+            venueRackCounts[equipmentClass] = count
+        } catch let error as GymSyncError {
+            rackErrorText = error.errorDescription
+        } catch {
+            rackErrorText = error.localizedDescription
+        }
+    }
+
     @MainActor
     private func remixStations(exercisePosition: Int) async {
         let lifters = presentRotation.map(\.participant.userID)
@@ -4432,9 +4512,16 @@ struct SessionLiveView: View {
             since: liveSession.startedAt ?? .distantPast)
         let split = StationSplit.assign(
             lifters: lifters,
-            // `nil`: no session -> venue link and no rack COUNT exist, so the
-            // cap is a parameter B1 never fills (the plan's data decision 3).
-            count: StationSplit.count(crew: lifters.count, equipmentCap: nil),
+            // THE OWNER'S `min(ceil(n/3), racks at the venue)`, finally whole
+            // (plan task S6, decision 1). B1 passed `nil` because neither
+            // half of the second term existed; S5 gave the session its venue
+            // and D1 gave the venue its counts, so the cap is the count for
+            // THIS exercise's equipment class — and still `nil` when the
+            // venue, the class or the count is unknown, which is today's
+            // `ceil(crew / 3)`. Re-read on every exercise change, so a
+            // barbell block and a dumbbell block may split differently.
+            count: StationSplit.count(crew: lifters.count,
+                                      equipmentCap: currentEquipmentCap),
             restMedians: medians,
             previous: liveSession.stations)
 
@@ -4515,6 +4602,10 @@ struct SessionLiveView: View {
             // prior max MUST be captured before the insert (self-comparison bug)
             var isPR = false
             var priorBest: Decimal = 0
+            // Docket row 7's rule (a): nothing to beat is not a record to
+            // celebrate. Stays `true` on the offline path below, where the PR
+            // check is skipped entirely and `isPR` stays false anyway.
+            var prBasisIsEmpty = true
             // Failure doctrine (owner 2026-08-13): failed sets are judged on
             // COMPLETED reps ("7 + FAIL" = 6 at true RIR 0); only the failed
             // single carries nothing. Mirrors solo WorkoutSessionView.log.
@@ -4532,8 +4623,9 @@ struct SessionLiveView: View {
                     let prior = try await priorMax(exerciseID: exerciseID,
                                                    reps: completedReps, userID: userID)
                     stamp("priorMax", tPrior)
-                    priorBest = prior
-                    isPR = weight > prior
+                    priorBest = prior.best
+                    prBasisIsEmpty = prior.basisIsEmpty
+                    isPR = weight > prior.best
                 } catch let error as GymSyncError {
                     guard case .network = error else { throw error }
                     // Offline — PR check skipped (best-effort, never blocks logging).
@@ -4545,13 +4637,18 @@ struct SessionLiveView: View {
             // weight 0 with previousBest carrying prior REPS.
             var isRepPR = false
             var priorBestReps = 0
+            // The rep-PR twin of `prBasisIsEmpty` — a first bodyweight set
+            // beats `max() ?? 0` and was a rep PR for exactly the same reason.
+            var repBasisIsEmpty = true
             if (weight ?? 0) == 0,
                currentExerciseForSheet?.id == exerciseID,
                currentExerciseForSheet?.equipment == "bodyweight",
                let completedReps {
-                priorBestReps = turnExerciseHistory
+                let priorReps = turnExerciseHistory
                     .filter { !$0.isPenalty && ($0.weight ?? 0) == 0 }
-                    .compactMap(\.completedReps).max() ?? 0
+                    .compactMap(\.completedReps)
+                repBasisIsEmpty = priorReps.isEmpty
+                priorBestReps = priorReps.max() ?? 0
                 isRepPR = completedReps > priorBestReps
             }
 
@@ -4624,14 +4721,64 @@ struct SessionLiveView: View {
             // queue) — this is the moment the success haptic fires.
             logHapticTick += 1
 
+            // Docket row 7, in one place for both bodies (`PRFiring`): the
+            // first log of a lift is a baseline, and the record DEFERS to the
+            // last set — it is never lost (ruling R-OD-1). THE RECORD ITSELF
+            // IS NOT GATED — both `PersonalRecordRepository.record` inserts
+            // below run exactly as they did; only the celebration waits.
+            //
+            // `targetSets` from the EFFECTIVE routine, never `routineExercises`:
+            // an accepted scale-down of 4 × 5 → 3 × 5 makes the third set the
+            // last one, and the celebration must agree with the number the
+            // screen printed. `nil` = unprescribed, which celebrates on the
+            // record itself.
+            let firingTargetSets = effectiveRoutineExercises
+                .first(where: { $0.exerciseID == exerciseID })?.targetSets
+            // THE RECORD PAYLOAD, built whenever the set IS one — held or
+            // fired, `PRFiring.step` decides which. The two forms are
+            // mutually exclusive by construction (`isRepPR` needs
+            // `weight == 0`, `isPR` needs `weight > 0`), so one context and
+            // one payload cover both; the rep form is `weight: 0` with
+            // `priorBest` carrying the prior REP count.
+            var firingRecord: PRFiring.Pending?
             if isRepPR, let completedReps {
                 let tName = Date()
                 let name = await ExerciseNameCache.name(for: exerciseID)
                 stamp("nameCache repPR", tName)
+                firingRecord = PRFiring.Pending(exerciseName: name, weight: 0,
+                                                reps: completedReps,
+                                                priorBest: Decimal(priorBestReps))
+            } else if isPR, let weight {
+                let tName = Date()
+                let name = await ExerciseNameCache.name(for: exerciseID)
+                stamp("nameCache PR", tName)
+                firingRecord = PRFiring.Pending(exerciseName: name, weight: weight,
+                                                reps: completedReps ?? 0,
+                                                priorBest: priorBest)
+            }
+            // `log.setIndex` is `mySetCount(for:) + 1` — sets of this exercise
+            // logged by me in this session, counting the one just written,
+            // which is the one meaning `setsLogged` has (ruling R-OD-3).
+            let firingStep = PRFiring.step(
+                record: firingRecord,
+                context: PRFiring.Context(basisIsEmpty: isRepPR ? repBasisIsEmpty : prBasisIsEmpty,
+                                          setsLogged: log.setIndex,
+                                          targetSets: firingTargetSets),
+                held: pendingPRs[exerciseID])
+            pendingPRs[exerciseID] = firingStep.held
+            if let celebration = firingStep.celebrate {
+                // The monthly badge is re-read only when THIS set wrote no
+                // record — the ordered pipeline below already re-reads it
+                // after its own insert, and a second read racing that insert
+                // is the undercount its comment warns about.
+                let needsCount = firingRecord == nil
                 Task { @MainActor in
-                    await showPROverlay(exerciseName: name, weight: 0,
-                                         reps: completedReps, priorBest: Decimal(priorBestReps))
+                    await firePendingPR(celebration, userID: userID,
+                                        refreshMonthlyCount: needsCount)
                 }
+            }
+
+            if isRepPR, let completedReps {
                 Task { @MainActor in
                     _ = try? await PersonalRecordRepository.record(
                         exerciseID: exerciseID,
@@ -4644,14 +4791,7 @@ struct SessionLiveView: View {
             }
 
             if isPR, let weight {
-                let tName = Date()
-                let name = await ExerciseNameCache.name(for: exerciseID)
-                stamp("nameCache PR", tName)
                 let repsForOverlay = completedReps ?? 0
-                Task { @MainActor in
-                    await showPROverlay(exerciseName: name, weight: weight,
-                                         reps: repsForOverlay, priorBest: priorBest)
-                }
                 // Ordered PR pipeline: record insert → monthly count → badge update, as ONE
                 // detached task so `countSince` can never race the insert it depends on
                 // (previously two unordered tasks — the badge could undercount by 1). Still
@@ -4893,7 +5033,15 @@ struct SessionLiveView: View {
     /// Two light columns rather than the 200 full rows this used to download
     /// in front of every write (2026-08-02 latency fix) — this call sits on the
     /// critical path of the turn CTA, and the whole rotation waits on it.
-    private func priorMax(exerciseID: UUID, reps: Int?, userID: UUID) async throws -> Decimal {
+    ///
+    /// Returns the emptiness of the basis alongside the number, because the
+    /// number alone cannot express it: `bestWeight` answers `0` both for "you
+    /// have never logged this" and for a basis it cannot beat. Docket row 7
+    /// needs the first of those two told apart from the second, and this is
+    /// the only place that still has the rows to tell it with (one fetch, not
+    /// two — this call is on the turn CTA's critical path).
+    private func priorMax(exerciseID: UUID, reps: Int?, userID: UUID) async throws
+        -> (best: Decimal, basisIsEmpty: Bool) {
         let rows = try await SessionRepository.prBasis(userID: userID, exerciseID: exerciseID)
         // Failed rows enter at their COMPLETED reps (doctrine 2026-08-13:
         // n logged − 1; failed singles drop out) — mirrors solo's pairs().
@@ -4901,7 +5049,8 @@ struct SessionLiveView: View {
             guard let w = row.weight, w > 0, let r = row.completedReps else { return nil }
             return (w, r)
         }
-        return PersonalRecordMath.bestWeight(atLeastReps: reps ?? 0, in: basis)
+        return (PersonalRecordMath.bestWeight(atLeastReps: reps ?? 0, in: basis),
+                PersonalRecordMath.qualifyingBasisIsEmpty(atLeastReps: reps ?? 0, in: basis))
     }
 
     /// Show the full-screen, USER-DISMISSED PR celebration (p29) — no auto-timeout.
@@ -4916,10 +5065,60 @@ struct SessionLiveView: View {
         prOverlayPriorBest = priorBest
         prOverlayMonthlyCount = nil
         withAnimation(.easeOut(duration: 0.25)) { isPROverlay = true }
-        // Ronnie for the PR moment (user 2026-08-01) left with the
-        // soundboard (ruling R-B8, plan task S11) — the celebration keeps
-        // its haptic (`logHapticTick`, fired on every logged set) but no
-        // longer plays a sound.
+        // The sound is back (owner 2026-09-18: "keep the sound effect") as
+        // the bundled `lightweight-baby.mp3` — not the soundboard, which
+        // stays gone (ruling R-B8, B1 plan task S11). Beside the flag, never
+        // before it: `CelebrationSound.playPR()` cannot throw and returns on
+        // every failure, so the celebration appears whether or not a sound
+        // does. The haptic (`logHapticTick`) is unchanged.
+        CelebrationSound.playPR()
+    }
+
+    /// Celebrate one payload `PRFiring` handed back — the set that completed
+    /// the exercise, or the flush when the lifter moved on (rulings R-OD-1,
+    /// R-OD-2). Exactly one moment per call.
+    ///
+    /// `refreshMonthlyCount` re-reads the badge for a DEFERRED celebration,
+    /// whose own record was inserted sets ago: `showPROverlay` clears
+    /// `prOverlayMonthlyCount` to `nil` for freshness, and without this the
+    /// deferred overlay would show no count at all. Never passed `true` on a
+    /// set that wrote a record — the ordered pipeline in `logSetAndAdvance`
+    /// re-reads it after its own insert, and a second read racing that insert
+    /// is the undercount its comment warns about.
+    @MainActor
+    private func firePendingPR(_ pending: PRFiring.Pending, userID: UUID,
+                               refreshMonthlyCount: Bool) async {
+        await showPROverlay(exerciseName: pending.exerciseName,
+                            weight: pending.weight,
+                            reps: pending.reps,
+                            priorBest: pending.priorBest)
+        guard refreshMonthlyCount else { return }
+        let startOfMonth = Calendar.current.dateInterval(of: .month, for: Date())?.start ?? Date()
+        prOverlayMonthlyCount = try? await PersonalRecordRepository.countSince(
+            userID: userID, date: startOfMonth)
+    }
+
+    /// LEAVING THE EXERCISE FLUSHES (ruling R-OD-2). Sets skipped, the
+    /// exercise swapped, the round moving the crew on: a record held for an
+    /// exercise that is no longer the one in front of the lifter celebrates
+    /// at that moment, once, and the store clears.
+    ///
+    /// A hold only ever arises for the PRESCRIBED row currently being logged
+    /// (an unprescribed lift celebrates on the record itself), and every
+    /// exercise change drains this store, so at most one payload is ever
+    /// here. The loop is ordered anyway so the behaviour stays defined if
+    /// that ever stops being true.
+    @MainActor
+    private func flushPendingPRs(except current: UUID?) async {
+        guard !pendingPRs.isEmpty, let userID = selfID else { return }
+        let leaving = pendingPRs
+            .filter { $0.key != current }
+            .sorted { $0.key.uuidString < $1.key.uuidString }
+        guard !leaving.isEmpty else { return }
+        for (exerciseID, _) in leaving { pendingPRs[exerciseID] = nil }
+        for (_, pending) in leaving {
+            await firePendingPR(pending, userID: userID, refreshMonthlyCount: true)
+        }
     }
 
     @MainActor

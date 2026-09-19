@@ -15,6 +15,11 @@ import UserNotifications
 /// drives by string — do not rename them; see `CatalogScreenTests.swift`.
 enum CatalogScreen: String, CaseIterable {
     case prCelebration = "pr-celebration"
+    // The 2026-09-18 design round on the PR celebration. Both ids RETIRE at
+    // the owner's pick, together with the file that draws them; frames 151
+    // and 152 are retired numbers afterwards and are never reused.
+    case prCelebrationA = "pr-celebration-a"
+    case prCelebrationB = "pr-celebration-b"
     case voiceIdle = "voice-idle"
     case voiceConnecting = "voice-connecting"
     case voiceTransmitting = "voice-transmitting"
@@ -182,6 +187,26 @@ enum CatalogScreen: String, CaseIterable {
     case sessionScaleDown = "session-scale-down"
     case sessionWarmupSuggestion = "session-warmup-suggestion"
     case sessionYourTurn = "session-your-turn"
+    // Owner-decisions round (plan task S9, 2026-09-18): S6 gave the rack
+    // count two surfaces (LobbyView.styleCard's ask, StationCard's header
+    // chip) and neither got a catalog frame, because LobbyWorld sets no
+    // venue and the chip is gated on `onSetRackCount != nil` (so frames
+    // 129/136 and 137/139/143 stay byte-identical). `session-round-rack-chip`
+    // photographs the chip alone, over the SAME LiveFixtures.roundWait world
+    // frame 137 captures, with a rack count and a no-op correction closure —
+    // see content_sessionRoundRackChip below.
+    case sessionRoundRackChip = "session-round-rack-chip"
+    // Coordinator ruling, same task: the ask's own frame IS buildable without
+    // a repository — `LobbyWorld` now carries `rackAskClass` directly
+    // (`LobbyFixtures.swift`), and `LobbyView.rackAskClass`
+    // (`LobbyView.swift:1248`) reads it straight from the catalog world
+    // instead of deriving it from `routineInfo`/`allExercises` (which still
+    // only a live repository read can populate — that derivation path is
+    // untouched and still unreachable from a catalog builder).
+    // `session-lobby-rack-ask` is `LobbyFixtures.waiting` (frame 129) copied
+    // with `rackAskClass: "barbell"` named on the fixture — see
+    // `LobbyFixtures.rackAsk` and `content_sessionLobbyRackAsk` below.
+    case sessionLobbyRackAsk = "session-lobby-rack-ask"
 }
 
 struct CatalogHostView: View {
@@ -192,6 +217,8 @@ struct CatalogHostView: View {
         Group {
             switch screen {
             case .prCelebration:              content_prCelebration
+            case .prCelebrationA:             content_prCelebrationA
+            case .prCelebrationB:             content_prCelebrationB
             case .voiceIdle:                  content_voice(.idle)
             case .voiceConnecting:             content_voice(.connecting)
             case .voiceTransmitting:          content_voice(.transmitting)
@@ -300,6 +327,8 @@ struct CatalogHostView: View {
             case .sessionScaleDown:           content_sessionScaleDown
             case .sessionWarmupSuggestion:    content_sessionWarmupSuggestion
             case .sessionYourTurn:            content_sessionYourTurn
+            case .sessionRoundRackChip:       content_sessionRoundRackChip
+            case .sessionLobbyRackAsk:        content_sessionLobbyRackAsk
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -329,6 +358,23 @@ struct CatalogHostView: View {
             monthlyCount: 3,
             onDismiss: {}
         )
+    }
+
+    // MARK: - PR celebration · the 2026-09-18 design round
+    //
+    // Two compositions of the SAME record, drawn from the one literal fixture
+    // in PRCelebrationVariations.swift — deliberately identical to
+    // `content_prCelebration`'s values above, so the three captures let the
+    // owner compare COMPOSITIONS rather than numbers. Value-in, no `Date()`,
+    // no repository, no `.shared` (constraint 11). Both arms, both ids and
+    // the file behind them retire at the pick.
+
+    private var content_prCelebrationA: some View {
+        PRCelebrationVariationA(fixture: .bench, onDismiss: {})
+    }
+
+    private var content_prCelebrationB: some View {
+        PRCelebrationVariationB(fixture: .bench, onDismiss: {})
     }
 
     // MARK: - Voice dock
@@ -2546,6 +2592,16 @@ struct CatalogHostView: View {
         NavigationStack { LobbyView(catalog: LobbyFixtures.waiting) }
     }
 
+    /// `session-lobby-rack-ask` (frame 153, owner-decisions round, plan task
+    /// S9): `LobbyFixtures.waiting`'s crew, Rounds style, over
+    /// `LobbyFixtures.rackAsk` — the same world with `rackAskClass: "barbell"`
+    /// named on the fixture, so `LobbyView.styleCard` draws the stepper
+    /// (`RackCountAsk`) under the style rows. Nothing else on the screen
+    /// differs from frame 129.
+    private var content_sessionLobbyRackAsk: some View {
+        NavigationStack { LobbyView(catalog: LobbyFixtures.rackAsk) }
+    }
+
     /// `session-lobby-ready`: everyone's here — the accent arrival widget
     /// becomes the button, and the owner's correction of 2026-09-12 keeps
     /// the whole plan card, the energy widget and Coach's door under it (no
@@ -2680,6 +2736,26 @@ struct CatalogHostView: View {
                              plan: world.plan, coach: world.coach,
                              waitingOn: world.waitingOn, dockNames: world.dockNames,
                              reactionEmojis: world.reactionEmojis, skip: world.skip)
+    }
+
+    /// `session-round-rack-chip` (frame 154, plan task S9): the same
+    /// production `RoundWaitView` over the SAME `LiveFixtures.roundWait`
+    /// world `session-round-wait` (frame 137) captures, with a rack count
+    /// and a no-op correction closure — `RoundWaitView` carries both to the
+    /// FIRST station card only (`RoundWaitView.swift:100-103`), and
+    /// `StationCard`'s own gate is `onSetRackCount != nil`
+    /// (`RoundPieces.swift:772`), so frame 137 (and every other fixture)
+    /// keeps drawing the card with no chip at all. The `count: 2` fixture
+    /// mirrors decision 1's own example (a venue with a counted class).
+    private var content_sessionRoundRackChip: some View {
+        let world = LiveFixtures.roundWait
+        return RoundWaitView(kicker: world.kicker, title: world.title,
+                             stations: world.stations, rest: world.rest,
+                             planKicker: world.planKicker, rungLine: world.rungLine,
+                             plan: world.plan, coach: world.coach,
+                             waitingOn: world.waitingOn, dockNames: world.dockNames,
+                             reactionEmojis: world.reactionEmojis, skip: world.skip,
+                             rackCount: 2, onSetRackCount: { _ in })
     }
 
     /// `session-round-skip` (frame 138): the same screen with the quiet

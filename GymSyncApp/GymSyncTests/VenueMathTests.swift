@@ -132,4 +132,44 @@ final class VenueMathTests: XCTestCase {
     func testVenueEquipmentDefaultsToAllClasses() {
         XCTAssertEqual(venue("Any", lat: 34, lng: -118).equipment, Venue.equipmentClasses)
     }
+
+    // MARK: - The exercise → venue equipment class normalizer (decision 1)
+
+    func testTheFiveVenueClassesMapToThemselves() {
+        for equipmentClass in Venue.equipmentClasses {
+            XCTAssertEqual(Venue.equipmentClass(for: equipmentClass), equipmentClass)
+        }
+    }
+
+    func testTheTwoBarbellAliasesCollapseToBarbell() {
+        // The same collapse `Units.weightKicker` (:169) and ProgramGenerator
+        // already make: as far as a RACK is concerned, an EZ bar and a Smith
+        // machine are a barbell.
+        XCTAssertEqual(Venue.equipmentClass(for: "ez-bar"), "barbell")
+        XCTAssertEqual(Venue.equipmentClass(for: "smith"), "barbell")
+    }
+
+    func testAnUnknownEquipmentIsUnknownAndNotAGuess() {
+        // nil means UNKNOWN, which means NO CAP — never "zero racks". A venue
+        // with none of a class says so by not listing it in `equipment`.
+        XCTAssertNil(Venue.equipmentClass(for: "kettlebell"))
+        XCTAssertNil(Venue.equipmentClass(for: ""))
+        XCTAssertNil(Venue.equipmentClass(for: nil))
+    }
+
+    func testTheNormalizerIsCaseInsensitive() {
+        // The catalog is lowercase, but a normalizer that answers `nil` for
+        // "Barbell" would silently drop the cap for one capitalised row.
+        XCTAssertEqual(Venue.equipmentClass(for: "Barbell"), "barbell")
+        XCTAssertEqual(Venue.equipmentClass(for: "EZ-Bar"), "barbell")
+    }
+
+    /// The cap the normalizer feeds, at the two ends that matter: an unknown
+    /// class caps nothing, and a counted one caps the split.
+    func testTheRackCountCapsTheSplitAndAnUnknownClassDoesNot() {
+        XCTAssertEqual(StationSplit.count(crew: 9, equipmentCap: nil), 3)
+        XCTAssertEqual(StationSplit.count(crew: 9, equipmentCap: 2), 2)
+        // A venue with more racks than the crew needs changes nothing.
+        XCTAssertEqual(StationSplit.count(crew: 9, equipmentCap: 8), 3)
+    }
 }

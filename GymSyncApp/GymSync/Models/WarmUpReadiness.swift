@@ -149,23 +149,40 @@ enum WarmUpReadiness {
     }
 }
 
-/// TODAY'S SET REDUCTION, carried in memory (plan decision 5).
+/// TODAY'S SET REDUCTION (plan decision 5), which now OUTLIVES A RELAUNCH
+/// (owner 2026-09-18: "Yes" — decision 3).
 ///
 /// There is no per-session prescription override anywhere: `routine_exercises`
 /// is the routine's own row and the trainer-prescription table is a different
 /// subject. So Accept sets this on `SessionRunnerView`, which passes it through
 /// `SessionInProgressView` into `SessionLiveView`, where
 /// `effectiveRoutineExercises` layers it after the squad swap and the self
-/// scale — the same three-layer order that already existed.
+/// scale — the order `RoutineLayering` now holds for both screens.
 ///
-/// ACCEPTED CONSEQUENCE, STATED: a relaunch mid-session loses it. NOTHING IS
-/// WRITTEN TO THE DATABASE by Accept or by Decline, so nothing can be wrong in
-/// it, and §4 holds either way — the athlete's tap is the only thing that
-/// changes the number.
-struct TodaysScale: Equatable, Sendable {
+/// THE ACCEPTED CONSEQUENCE IS GONE. It used to read "a relaunch mid-session
+/// loses it: nothing is written to the database". It is now written to
+/// `session_participants.todays_scale` on Accept — my own row, the same
+/// own-row policy `energy` already rides — and re-seeded from the participant
+/// rows the runner already fetches, so a phone that died mid-session comes
+/// back to the dose the athlete agreed to. The write is BEST-EFFORT: a
+/// failure leaves the in-memory value standing and the session behaves
+/// exactly as B2 shipped it, because §4 still holds either way — the
+/// athlete's tap is the only thing that changes the number.
+///
+/// CLEARED BY NOTHING. The session ends and the row stops being read.
+struct TodaysScale: Equatable, Sendable, Codable {
     /// The ROUTINE's own exercise for that slot, which is what the warm-up's
     /// plan rows carry. A squad swap later replaces the exercise in the slot
     /// and the reduced set count rides with the slot.
     let exerciseID: UUID
     let setsInstead: Int
+
+    /// `session_participants.todays_scale jsonb` (20260918, decision 3) —
+    /// `{"exercise_id": "<uuid>", "sets_instead": <int>}`. The column's own
+    /// shape, so a row written by the app and a row read back by it are the
+    /// same object and no second spelling exists.
+    enum CodingKeys: String, CodingKey {
+        case exerciseID = "exercise_id"
+        case setsInstead = "sets_instead"
+    }
 }

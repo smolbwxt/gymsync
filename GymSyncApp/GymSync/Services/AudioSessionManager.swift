@@ -93,11 +93,14 @@ final class AudioSessionManager {
     /// documented baseline ONLY when mixWithOthers is missing, and never
     /// while a voice room legitimately holds the session.
     ///
-    /// CALLERLESS since plan task S11: its one caller, SoundboardPlayer,
-    /// called this right before every play. Kept — not deleted on a hunch
-    /// — because the invariant it restores belongs to the whole app's
-    /// audio session, not to the soundboard specifically, and a future
-    /// overlay sound (or a returning one) would need it again.
+    /// Was CALLERLESS from B1 plan task S11 until 2026-09-18. Its one caller,
+    /// SoundboardPlayer, called this right before every play and left with
+    /// the board; it was kept — not deleted on a hunch — because the
+    /// invariant it restores belongs to the whole app's audio session, not
+    /// to the soundboard specifically, and "a future overlay sound (or a
+    /// returning one) would need it again". That sound returned: its caller
+    /// is now `CelebrationSound.playPR()` (owner 2026-09-18, "keep the sound
+    /// effect").
     func ensureMixablePlayback() {
         guard !isInVoiceMode else { return }
         guard !session.categoryOptions.contains(.mixWithOthers) else { return }

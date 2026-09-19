@@ -26,7 +26,8 @@
   },
   "pr-celebration": {
     "frame": 29,
-    "title": "PR Celebration"
+    "title": "PR Celebration",
+    "note": "Owner-decisions round 2026-09-18, integration task I1 (contingency path, constraint 7): the production rebuild to the owner's pick is PENDING and did NOT happen in this PR — the owner's pick between pr-celebration-a (151) and pr-celebration-b (152) had not arrived at integration. This frame still renders exactly what ships today; its rebuild note lands with S4, in the follow-up PR, once the pick is recorded."
   },
   "voice-idle": {
     "frame": 47,
@@ -372,5 +373,25 @@
     "frame": 146,
     "title": "The production pump-check post, re-composed",
     "note": "Group-session Phase B2 (plan task S10). Frame-map entry only - the id and its capture already existed (ScreenshotTests.testCatalogPumpFeedPost, CatalogHostView's content_pumpFeedPost) and had never carried a frame number. pump-check-card-v2 (119) retires without a numbered production twin of its own; PumpPostCard re-composed by plan task S5 IS that twin, so this row is what keeps the owner's deck from losing the pump card. No new capture - the FLOOR does not move for this row."
+  },
+  "pr-celebration-a": {
+    "frame": 151,
+    "title": "PR celebration, A - the number leads",
+    "note": "Owner-decisions round 2026-09-18 (plan task S3). A DESIGN ROUND on the PR celebration, not a production screen: the record itself is the hero - the tabular number at maximum size with one small unit beside it (rule 3), 'New personal record.' demoted to a kicker above it, the lift and the delta folded into one sentence on a 14 pt surface strip, and the monthly count as a gsSuccess tick on that strip rather than a bordered theme.surface chip at a third radius. Accent is spent once, on KEEP LIFTING; Share is a quiet raised face beneath it. Drawn over the same literal fixture as frame 29 (Bench Press, 205 x 5, prior 200, 3rd this month), so the owner compares compositions and not numbers. RETIRES at the owner's pick, together with pr-celebration-b and PRCelebrationVariations.swift; 151 is then a retired number and is never reused. Integration task I1 (2026-09-18, contingency path, constraint 7): LIVE — the owner's pick has not arrived at integration, so this id ships in this PR pending that pick; the retirement above becomes its own follow-up PR the moment the pick is recorded."
+  },
+  "pr-celebration-b": {
+    "frame": 152,
+    "title": "PR celebration, B - the lift's place on your ladder leads",
+    "note": "Owner-decisions round 2026-09-18 (plan task S3). A DESIGN ROUND on the PR celebration, not a production screen: the record read as progress rather than as a number - one raised island (radiusMd, 6 pt lip) carrying the lift, the old number and the new one as a before/after pair, and, where frame 29 draws two accent rings, the rung the athlete now stands on, worded only from the six values the caller already holds. 'nth PR this month' is the island's kicker and Share a flat glyph chip in its header, so the page's foot is one button. Accent is spent once, on the new number, which leaves KEEP LIFTING on the raised face. Same fixture as frames 29 and 151. RETIRES at the owner's pick, together with pr-celebration-a and PRCelebrationVariations.swift; 152 is then a retired number and is never reused. Integration task I1 (2026-09-18, contingency path, constraint 7): LIVE — the owner's pick has not arrived at integration, so this id ships in this PR pending that pick; the retirement above becomes its own follow-up PR the moment the pick is recorded."
+  },
+  "session-round-rack-chip": {
+    "frame": 154,
+    "title": "Rounds - the station card's rack correction chip",
+    "note": "Owner-decisions round 2026-09-18 (plan task S9). The production RoundWaitView over the SAME LiveFixtures.roundWait world frame 137 captures, with a rack count of 2 and a no-op onSetRackCount closure passed through to the first station card only (RoundWaitView.swift:100-103) - StationCard's own gate is onSetRackCount != nil (RoundPieces.swift:772), so every other catalog world and fixture (frames 137/139/143) keeps drawing the card exactly as before."
+  },
+  "session-lobby-rack-ask": {
+    "frame": 153,
+    "title": "Crew lobby - the style card's rack question",
+    "note": "Owner-decisions round 2026-09-18 (plan task S9, coordinator ruling). LobbyFixtures.waiting (frame 129) copied as LobbyFixtures.rackAsk with rackAskClass: \"barbell\" named on the fixture - LobbyView.rackAskClass (LobbyView.swift:1248) reads a catalog world's rackAskClass directly rather than deriving it from a live routineInfo/allExercises lookup, so no repository is reached. rack_counts stays empty, so the ask shows as unanswered and skippable, under the style rows, on the same crew and routine frame 129 renders. LobbyWorld.rackAskClass defaults to nil, so frames 129/130/131/135/136 are unchanged."
   }
 }

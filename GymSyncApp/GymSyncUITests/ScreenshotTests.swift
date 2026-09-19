@@ -187,6 +187,26 @@ final class ScreenshotTests: XCTestCase {
         }
         app.launchEnvironment = env
         app.launch()
+        // ONE retry for the cold-start flake this suite has actually hit
+        // (`testActivityFeed`, alphabetically first — see the evidence block
+        // above the class-level `setUp()`): a launch that never reaches the
+        // tab bar within `launchTimeout`. This is the only launch site of the
+        // signed-in app; the class-level warm-up above is a SEPARATE,
+        // tolerant launch, and S8's catalog-launch retry (`launchCatalogApp`)
+        // never reaches this path at all. Silent on a first miss — this can't
+        // call `waitForTabBar`'s `XCTAssertTrue` for that check, because
+        // `continueAfterFailure = false` (`setUp()` below) would abort the
+        // test right here instead of allowing a retry. Terminate, relaunch
+        // with the SAME `launchArguments`/`launchEnvironment` already set on
+        // `app`, and wait again. A second miss changes nothing: the caller's
+        // own `waitForTabBar(app)` still runs its full wait and fails with
+        // today's exact message.
+        if !app.buttons["Home"].waitForExistence(timeout: launchTimeout) {
+            NSLog("[ScreenshotTests] \"Home\" button did not appear within \(launchTimeout)s — terminating and relaunching once")
+            app.terminate()
+            app.launch()
+            _ = app.buttons["Home"].waitForExistence(timeout: launchTimeout)
+        }
         return app
     }
 
@@ -477,8 +497,10 @@ final class ScreenshotTests: XCTestCase {
     // fixed contract; a typo'd id here silently renders nothing (the launch
     // hook only routes on `CatalogScreen(rawValue:)` success).
 
-    /// Launches directly into a debug catalog screen and captures it.
-    private func captureCatalog(_ id: String) {
+    /// One `UITEST_CATALOG` launch — factored out of `captureCatalog(_:)`
+    /// (plan task S8c) so the retry there can call it twice without
+    /// duplicating the launch-argument/environment setup.
+    private func launchCatalogApp(_ id: String) -> XCUIApplication {
         let app = XCUIApplication()
         // Kill tips and tours for catalog captures too. `launchApp()` has
         // always passed this; `captureCatalog()` passed no launch arguments
@@ -502,6 +524,41 @@ final class ScreenshotTests: XCTestCase {
         env["UITEST_CATALOG"] = id
         app.launchEnvironment = env
         app.launch()
+        return app
+    }
+
+    /// Launches directly into a debug catalog screen and captures it.
+    ///
+    /// A SINGLE RETRY on the launch itself (docket leftover, plan task S8c).
+    /// The class-level warm-up in `setUp()` above only exercises the
+    /// signed-in autologin path (it polls for the "Home" button); it pays
+    /// nothing for THIS launch route, which bypasses `RootView` entirely via
+    /// `UITEST_CATALOG` and has no fixed element to warm up on across 100+
+    /// different ids. So whichever catalog test happens to run first can
+    /// still pay a cold-simulator install/boot cost this file has already
+    /// seen once on the signed-in path (`fix4-ci-warmup.md`) — this is that
+    /// same residual flake, one launch route over. Local to this function
+    /// only: the 19 `launchApp()` call sites and every other test are
+    /// untouched, and the retry is capped at one.
+    private func captureCatalog(_ id: String) {
+        var app = launchCatalogApp(id)
+        // A generic readiness probe, not a specific identifier: the 100+
+        // catalog ids render 100+ different screens with no element in
+        // common, so "did anything render at all" (any AX element, of any
+        // type) is the only signal available without hard-coding a
+        // per-id expectation into this shared function.
+        var rendered = app.descendants(matching: .any).firstMatch
+            .waitForExistence(timeout: catalogRenderBudget)
+        if !rendered {
+            NSLog("[ScreenshotTests] catalog launch for \"\(id)\" produced no view within \(catalogRenderBudget)s — retrying once")
+            app.terminate()
+            app = launchCatalogApp(id)
+            rendered = app.descendants(matching: .any).firstMatch
+                .waitForExistence(timeout: catalogRenderBudget)
+            if !rendered {
+                NSLog("[ScreenshotTests] catalog launch for \"\(id)\" produced no view on the retry either — capturing whatever is on screen")
+            }
+        }
         // NOT `settle()`: a catalog launch bypasses `RootView` entirely, so
         // there is no launch overlay to wait OUT and nothing here is a
         // synchronization point — this sleep is the screen's whole render
@@ -514,6 +571,9 @@ final class ScreenshotTests: XCTestCase {
     }
 
     func testCatalogPRCelebration()      { captureCatalog("pr-celebration") }
+    // The 2026-09-18 design round (frames 151, 152) — both retire at the pick.
+    func testCatalogPRCelebrationA()     { captureCatalog("pr-celebration-a") }
+    func testCatalogPRCelebrationB()     { captureCatalog("pr-celebration-b") }
     func testCatalogVoiceIdle()          { captureCatalog("voice-idle") }
     func testCatalogVoiceConnecting()    { captureCatalog("voice-connecting") }
     func testCatalogVoiceTransmitting()  { captureCatalog("voice-transmitting") }
@@ -818,6 +878,16 @@ final class ScreenshotTests: XCTestCase {
     func testCatalogSessionScaleDown()       { captureCatalog("session-scale-down") }
     func testCatalogSessionWarmupSuggestion() { captureCatalog("session-warmup-suggestion") }
     func testCatalogSessionYourTurn()        { captureCatalog("session-your-turn") }
+
+    // Owner-decisions round (plan task S9), frame 154: the rack count's
+    // station-card chip, alone — the production RoundWaitView over the same
+    // LiveFixtures.roundWait world frame 137 captures, with a rack count and
+    // a no-op correction closure.
+    func testCatalogSessionRoundRackChip()   { captureCatalog("session-round-rack-chip") }
+    // Coordinator ruling, same task, frame 153: the lobby's style card with
+    // the rack question showing, over LobbyFixtures.rackAsk (waiting's crew,
+    // rackAskClass: "barbell" named on the fixture).
+    func testCatalogSessionLobbyRackAsk()    { captureCatalog("session-lobby-rack-ask") }
 
     // MARK: - Seeded deep-screen captures
     //

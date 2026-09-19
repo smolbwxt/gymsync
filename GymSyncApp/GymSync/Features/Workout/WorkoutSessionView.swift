@@ -152,6 +152,13 @@ struct WorkoutSessionView: View {
     /// Solo has no established `countSince` plumbing wired to this view; see Task 2 report
     /// for the decision not to invent that ordering here (badge suppressed, by design).
     @State private var prOverlayMonthlyCount: Int? = nil
+    /// Records HELD until their exercise finishes (ruling R-OD-1), keyed by
+    /// exercise — the solo twin of `SessionLiveView.pendingPRs`, and the same
+    /// law: a record on set 1 of 4 neither takes the screen over nor is
+    /// thrown away. `flushPendingPRs(except:)` fires it when the lifter moves
+    /// on; session-local, so a session that ends mid-exercise leaves the
+    /// recap's `PR` tag as the record of it.
+    @State private var pendingPRs: [UUID: PRFiring.Pending] = [:]
     @State private var setStartedAt: Date = .now
     /// log id -> when its set began (histogram fuel; session-scoped).
     @State private var soloSetStarts: [UUID: Date] = [:]
@@ -401,6 +408,16 @@ struct WorkoutSessionView: View {
         .task { await loadPickerCatalogIfFreeform() }
         .task(id: currentRoutineExercise?.exerciseID) {
             barLoaderPounds = nil   // stale loaded weight must not prefill the next exercise
+            // THE EXERCISE CHANGED, so anything still held for the one just
+            // left celebrates now (ruling R-OD-2). On this existing
+            // `.task(id:)` rather than a new `.onChange`: the exercise is
+            // already this chain's identity, and a first run with an empty
+            // store is a no-op.
+            await flushPendingPRs(except: currentRoutineExercise?.exerciseID)
+            // The celebration's sound, built and decoded ahead of the moment
+            // rather than inside the overlay's animation turn (ruling
+            // R-OD-4). Idempotent, and silent when the resource is missing.
+            await MainActor.run { CelebrationSound.prepare() }
             await loadLastTime()
             // Ladder inputs (best-effort; absence just means fewer rungs).
             if let re = currentRoutineExercise,
@@ -3815,6 +3832,10 @@ struct WorkoutSessionView: View {
             // SessionLiveView.logSetAndAdvance's identical ordering.
             var isPR = false
             var priorBest: Decimal = 0
+            // Docket row 7's rule (a): nothing to beat is not a record to
+            // celebrate. Stays `true` on the offline path below, where the PR
+            // check is skipped entirely and `isPR` stays false anyway.
+            var prBasisIsEmpty = true
             // Failure doctrine (owner 2026-08-13): failed sets are judged on
             // their COMPLETED reps ("7 + FAIL" = 6 completed at true RIR 0 —
             // a real achievement AND a calibration point). Only the failed
@@ -3836,6 +3857,8 @@ struct WorkoutSessionView: View {
                     let basis = try await prBasis(exerciseID: re.exerciseID, userID: userID)
                     priorBest = PersonalRecordMath.bestWeight(atLeastReps: completedReps, in: basis)
                     isPR = PersonalRecordMath.isPR(weight: weight, reps: completedReps, basis: basis)
+                    prBasisIsEmpty = PersonalRecordMath.qualifyingBasisIsEmpty(
+                        atLeastReps: completedReps, in: basis)
                 } catch let error as GymSyncError {
                     guard case .network = error else { throw error }
                     // Offline — PR check skipped (best-effort, never blocks logging;
@@ -3851,12 +3874,17 @@ struct WorkoutSessionView: View {
             // the prior REP count.
             var isRepPR = false
             var priorBestReps = 0
+            // The rep-PR twin of `prBasisIsEmpty` — a first bodyweight set
+            // beats `max() ?? 0` and was a rep PR for exactly the same reason.
+            var repBasisIsEmpty = true
             if (weight ?? 0) == 0,
                currentExercise?.equipment == "bodyweight",
                let completedReps {
-                priorBestReps = (soloPriorSets + soloCurrentExerciseSets)
+                let priorReps = (soloPriorSets + soloCurrentExerciseSets)
                     .filter { $0.exerciseID == re.exerciseID && !$0.isPenalty && ($0.weight ?? 0) == 0 }
-                    .compactMap(\.completedReps).max() ?? 0
+                    .compactMap(\.completedReps)
+                repBasisIsEmpty = priorReps.isEmpty
+                priorBestReps = priorReps.max() ?? 0
                 isRepPR = completedReps > priorBestReps
             }
 
@@ -3914,13 +3942,61 @@ struct WorkoutSessionView: View {
                 prBasisByExercise[re.exerciseID, default: []].append((weight, completedReps))
             }
 
+            // Docket row 7, the solo mirror of `SessionLiveView`'s block
+            // (`PRFiring`): the first log of a lift is a baseline, and the
+            // record DEFERS to the last set — it is never lost (ruling
+            // R-OD-1). THE RECORD ITSELF IS NOT GATED — both
+            // `PersonalRecordRepository.record` calls below, and both
+            // `sessionPRs` appends that feed the recap, run exactly as they
+            // did; only the celebration waits.
+            //
+            // `re` is the CURRENT routine row the session is running
+            // (`activeExercises` — mid-session edits and swaps applied), the
+            // solo equivalent of the group body's `effectiveRoutineExercises`.
+            //
+            // `setsLogged` is THIS EXERCISE'S count in this session, counting
+            // the set just written (ruling R-OD-3, one meaning for both
+            // bodies) — `loggedSets` already carries the new row, appended
+            // above. NOT `currentSetIndex`, which is per routine SLOT and
+            // restarts when a routine names the same lift twice.
+            let setsLoggedForExercise = loggedSets
+                .filter { $0.exerciseID == re.exerciseID && !$0.isPenalty }
+                .count
+            // THE RECORD PAYLOAD, built whenever the set IS one — held or
+            // fired, `PRFiring.step` decides which. The two forms are
+            // mutually exclusive by construction (`isRepPR` needs
+            // `weight == 0`, `isPR` needs `weight > 0`), so one context and
+            // one payload cover both; the rep form is `weight: 0` with
+            // `priorBest` carrying the prior REP count.
+            var firingRecord: PRFiring.Pending?
+            if isRepPR, let completedReps {
+                firingRecord = PRFiring.Pending(
+                    exerciseName: exerciseName(for: re.exerciseID), weight: 0,
+                    reps: completedReps, priorBest: Decimal(priorBestReps))
+            } else if isPR, let weight {
+                firingRecord = PRFiring.Pending(
+                    exerciseName: exerciseName(for: re.exerciseID), weight: weight,
+                    reps: completedReps ?? 0, priorBest: priorBest)
+            }
+            let firingStep = PRFiring.step(
+                record: firingRecord,
+                context: PRFiring.Context(basisIsEmpty: isRepPR ? repBasisIsEmpty : prBasisIsEmpty,
+                                          setsLogged: setsLoggedForExercise,
+                                          targetSets: re.targetSets),
+                held: pendingPRs[re.exerciseID])
+            pendingPRs[re.exerciseID] = firingStep.held
+            if let celebration = firingStep.celebrate {
+                showPROverlay(exerciseName: celebration.exerciseName,
+                              weight: celebration.weight,
+                              reps: celebration.reps,
+                              priorBest: celebration.priorBest)
+            }
+
             if isRepPR, let completedReps {
                 // Bodyweight rep record (owner item 6): weight 0 signals the
                 // rep-PR form to the overlay and every display site;
                 // previousBest carries the prior REP count (completed reps —
                 // a failed 12th attempt celebrates the 11 that happened).
-                showPROverlay(exerciseName: exerciseName(for: re.exerciseID), weight: 0,
-                              reps: completedReps, priorBest: Decimal(priorBestReps))
                 if let record = try? await PersonalRecordRepository.record(
                     exerciseID: re.exerciseID,
                     weight: 0,
@@ -3940,11 +4016,6 @@ struct WorkoutSessionView: View {
 
             if isPR, let weight {
                 let repsForOverlay = completedReps ?? 0
-                // Full-screen, user-dismissed celebration (p29) — content comes from data
-                // already known at this point (no need to wait on the record insert below),
-                // same as SessionLiveView.showPROverlay.
-                showPROverlay(exerciseName: exerciseName(for: re.exerciseID), weight: weight,
-                              reps: repsForOverlay, priorBest: priorBest)
                 // Best-effort PR record — a failed insert must never block or delay
                 // set logging (which already happened above). Fall back to a local
                 // record so the recap (Task 9) still has the PR if the write failed.
@@ -4138,6 +4209,32 @@ struct WorkoutSessionView: View {
         pickerCatalog = (try? await ExerciseRepository.fetchAll()) ?? []
     }
 
+    /// LEAVING THE EXERCISE FLUSHES (ruling R-OD-2) — the solo twin of
+    /// `SessionLiveView.flushPendingPRs(except:)`. A record held for an
+    /// exercise the lifter has moved off (the prescription finished early, a
+    /// swap, a superset handing the bar to its partner) celebrates at that
+    /// moment, once, and the store clears.
+    ///
+    /// A hold only ever arises for the PRESCRIBED row being logged (freeform
+    /// and freestyle rows carry `targetSets: nil` and celebrate on the record
+    /// itself), and every exercise change drains this store, so at most one
+    /// payload is ever here. The loop is ordered anyway so the behaviour
+    /// stays defined if that ever stops being true.
+    @MainActor
+    private func flushPendingPRs(except current: UUID?) async {
+        guard !pendingPRs.isEmpty else { return }
+        let leaving = pendingPRs
+            .filter { $0.key != current }
+            .sorted { $0.key.uuidString < $1.key.uuidString }
+        for (exerciseID, _) in leaving { pendingPRs[exerciseID] = nil }
+        for (_, pending) in leaving {
+            showPROverlay(exerciseName: pending.exerciseName,
+                          weight: pending.weight,
+                          reps: pending.reps,
+                          priorBest: pending.priorBest)
+        }
+    }
+
     /// Show the full-screen, USER-DISMISSED PR celebration (p29) — no auto-timeout.
     /// Mirrors `SessionLiveView.showPROverlay`'s field-setting shape; `monthlyCount`
     /// stays `nil` here (see `prOverlayMonthlyCount`'s declaration for why).
@@ -4149,9 +4246,11 @@ struct WorkoutSessionView: View {
         prOverlayPriorBest = priorBest
         prOverlayMonthlyCount = nil
         withAnimation(.easeOut(duration: 0.25)) { isPROverlay = true }
-        // Ronnie for the PR moment (user 2026-08-01) left with the
-        // soundboard (ruling R-B8, plan task S11) — same change as
-        // SessionLiveView.showPROverlay.
+        // The sound is back (owner 2026-09-18: "keep the sound effect") as
+        // the bundled `lightweight-baby.mp3` — same change as
+        // SessionLiveView.showPROverlay, and the soundboard stays gone
+        // (ruling R-B8, B1 plan task S11).
+        CelebrationSound.playPR()
     }
 
     /// The PR basis for `exerciseID`, served from the prefetch when it landed.
