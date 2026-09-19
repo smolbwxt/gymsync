@@ -159,10 +159,52 @@ final class SessionSwapLayerTests: XCTestCase {
         XCTAssertTrue(store.isDirty(session))
         XCTAssertEqual(store.layer(for: session)[slot], inclineID)
 
-        store.confirm(session)
+        store.confirm(session, matching: SessionSwapLayer([slot: inclineID]))
         XCTAssertFalse(store.isDirty(session))
         XCTAssertEqual(store.layer(for: session)[slot], inclineID,
                        "a confirmed layer is kept — it is what a FAILED read falls back to")
+    }
+
+    /// RULING F1a. `confirm` used to clear by SESSION, so the FIRST write to
+    /// return marked whatever the store held at that moment clean — including
+    /// a second, larger layer recorded while write 1 was still travelling. A
+    /// failing write 2 then never retried (`flushIfDirty` short-circuits on
+    /// `isDirty`) although its notice had just promised it would, and the
+    /// second swap survived a swipe-down but not a relaunch.
+    @MainActor
+    func testTheFIRSTWriteToLandDoesNotMarkASECONDSwapClean() {
+        let store = SessionSwapPendingStore()
+        let session = UUID(), first = UUID(), second = UUID()
+
+        let layerA = SessionSwapLayer([first: inclineID])
+        store.record(layerA, for: session)           // write A starts
+
+        let layerB = SessionSwapLayer([first: inclineID, second: machinePressID])
+        store.record(layerB, for: session)           // write B starts, inside A's latency
+
+        store.confirm(session, matching: layerA)     // A lands FIRST
+        XCTAssertTrue(store.isDirty(session),
+                      "the row holds A; B has not landed and must still be retried")
+        XCTAssertEqual(store.layer(for: session), layerB,
+                       "and the layer the lifter sees is still B")
+
+        store.confirm(session, matching: layerB)     // B lands
+        XCTAssertFalse(store.isDirty(session))
+        XCTAssertEqual(store.layer(for: session), layerB)
+    }
+
+    /// A confirm for a session the store has forgotten (a `clear` that raced
+    /// a write home) is a no-op, never a resurrection.
+    @MainActor
+    func testConfirmingAClearedSessionPutsNothingBack() {
+        let store = SessionSwapPendingStore()
+        let session = UUID(), slot = UUID()
+        let layer = SessionSwapLayer([slot: inclineID])
+        store.record(layer, for: session)
+        store.clear(session)
+        store.confirm(session, matching: layer)
+        XCTAssertTrue(store.layer(for: session).isEmpty)
+        XCTAssertFalse(store.isDirty(session))
     }
 
     @MainActor

@@ -285,10 +285,22 @@ final class RoutineSlotProgressTests: XCTestCase {
                        "a bodyweight set's tonnage IS the body weight")
     }
 
-    /// An item queued by the previous build knows neither field, and must
-    /// still replay rather than fail — both are `nil`-defaulted stored
-    /// properties, a lightweight SwiftData addition.
-    func testAnItemQueuedBeforeEitherColumnStillReplays() {
+    /// A set log naming NEITHER new field mirrors into the queue as two nils
+    /// and reconstitutes as two nils — the in-memory leg of the claim, and
+    /// the only leg this pure file can reach.
+    ///
+    /// RULING F9: THIS TEST DOES NOT PROVE THE MIGRATION. Its earlier name,
+    /// `testAnItemQueuedBeforeEitherColumnStillReplays`, claimed that an item
+    /// queued by the PREVIOUS build still replays; what it actually does is
+    /// construct a fresh `PendingSetLog` and assert the defaults it was just
+    /// given. The store round trip lives where the `ModelContainer` does —
+    /// `OfflineSetLogQueueTests.testAnItemNamingNeitherNewColumnSurvivesThe`
+    /// `StoreAndReplaysWithNils` — and even that one states in its own
+    /// comment that a store file written by the older schema is out of reach
+    /// without a versioned schema. The migration claim rests on SwiftData's
+    /// documented lightweight case, not on an assertion, and no comment here
+    /// says otherwise any more.
+    func testAMirroredSetLogWithNeitherFieldCarriesTwoNils() {
         var bare = logs(benchID, 1, slot: nil)[0]
         bare.bodyWeightLbs = nil
         let pending = PendingSetLog(setLog: bare)
@@ -296,6 +308,7 @@ final class RoutineSlotProgressTests: XCTestCase {
         XCTAssertNil(pending.bodyWeightLbs)
         XCTAssertEqual(pending.asSetLog.id, bare.id)
         XCTAssertNil(pending.asSetLog.routineExerciseID)
+        XCTAssertNil(pending.asSetLog.bodyWeightLbs)
     }
 
     /// The column is NULLABLE and the codec must say so both ways — a

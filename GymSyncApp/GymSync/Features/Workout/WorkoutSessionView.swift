@@ -985,7 +985,7 @@ struct WorkoutSessionView: View {
         SessionSwapPendingStore.shared.record(layer, for: sessionID)
         do {
             try await SessionSwapRepository.saveSelf(sessionID: sessionID, layer: layer)
-            SessionSwapPendingStore.shared.confirm(sessionID)
+            SessionSwapPendingStore.shared.confirm(sessionID, matching: layer)
         } catch {
             AppLogger.workout.error("self_swaps write failed: \(error, privacy: .public)")
             await showSoloNotice("Couldn't save the swap — it applies on this phone; will retry.")

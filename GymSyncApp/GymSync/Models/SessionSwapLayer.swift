@@ -144,10 +144,22 @@ final class SessionSwapPendingStore {
         bySession[sessionID] = Entry(layer: layer, isDirty: true)
     }
 
-    /// The row caught up. The layer is kept — it is what a FAILED read falls
-    /// back to — and only the dirty flag drops.
-    func confirm(_ sessionID: UUID) {
-        guard var entry = bySession[sessionID] else { return }
+    /// The row caught up — WITH THE LAYER THAT WAS ACTUALLY WRITTEN. The
+    /// layer is kept (it is what a FAILED read falls back to) and only the
+    /// dirty flag drops, and only when the store still holds the very layer
+    /// this write carried.
+    ///
+    /// MATCHING, NOT BY SESSION (ruling F1a). Two swaps inside one write's
+    /// latency interleave: swap 1 records L1 and starts its write; swap 2
+    /// records L2 ⊃ L1 and starts its own; write 1 returns first. A
+    /// by-session confirm would mark L2 clean while the row held only L1, so
+    /// a failing write 2 would never retry — `flushIfDirty` short-circuits on
+    /// `isDirty` — although the notice it showed promised exactly that. The
+    /// equality is on the whole layer because that is what `saveSelf` writes:
+    /// `self_swaps` is a plain jsonb column with no server-side merge, so a
+    /// write either put this object in the row or it did not.
+    func confirm(_ sessionID: UUID, matching layer: SessionSwapLayer) {
+        guard var entry = bySession[sessionID], entry.layer == layer else { return }
         entry.isDirty = false
         bySession[sessionID] = entry
     }
@@ -171,10 +183,12 @@ final class SessionSwapPendingStore {
     @discardableResult
     func flushIfDirty(_ sessionID: UUID) async -> Bool {
         guard let entry = bySession[sessionID], entry.isDirty else { return true }
-        guard !entry.layer.isEmpty else { confirm(sessionID); return true }
+        guard !entry.layer.isEmpty else {
+            confirm(sessionID, matching: entry.layer); return true
+        }
         do {
             try await SessionSwapRepository.saveSelf(sessionID: sessionID, layer: entry.layer)
-            confirm(sessionID)
+            confirm(sessionID, matching: entry.layer)
             return true
         } catch {
             AppLogger.sessions.error(

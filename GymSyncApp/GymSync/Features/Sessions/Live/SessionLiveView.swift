@@ -3719,7 +3719,7 @@ struct SessionLiveView: View {
         SessionSwapPendingStore.shared.record(layer, for: liveSession.id)
         do {
             try await SessionSwapRepository.saveSelf(sessionID: liveSession.id, layer: layer)
-            SessionSwapPendingStore.shared.confirm(liveSession.id)
+            SessionSwapPendingStore.shared.confirm(liveSession.id, matching: layer)
         } catch {
             AppLogger.sessions.error("self_swaps write failed: \(error, privacy: .public)")
             errorText = "Couldn't save the swap — it applies on this phone; will retry."
