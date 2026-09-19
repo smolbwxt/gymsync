@@ -54,7 +54,9 @@
 -- silently erase the swap and one with RESTRICT would block the routine
 -- edit -- neither is right, so there is no FK.
 --
--- APPLIED: (held at its gate -- the controller fills this in)
+-- APPLIED: live 2026-09-19 as `session_swap_layer`, version 20260919001232 (controller, Supabase MCP; verified:
+-- three new columns present, the guard carries the venue AND the squad_swaps clauses, anon holds no EXECUTE).
+-- The controller's gate review added the slot-membership check (R-C-4) before applying.
 
 ALTER TABLE public.session_participants
   ADD COLUMN IF NOT EXISTS self_swaps jsonb;
@@ -89,6 +91,18 @@ BEGIN
     RAISE EXCEPTION 'replacement is not a known exercise' USING ERRCODE = 'P0001';
   END IF;
 
+  -- Controller's gate review (R-C-4): the key must be a slot of THIS session's
+  -- routine, or any participant could grow the object with keys that name
+  -- nothing. A session with no routine has no slots and no crew swap.
+  IF NOT EXISTS (
+    SELECT 1
+      FROM public.sessions s
+      JOIN public.routine_exercises re ON re.routine_id = s.routine_id
+     WHERE s.id = p_session_id AND re.id = p_slot_id
+  ) THEN
+    RAISE EXCEPTION 'slot is not part of this session''s routine' USING ERRCODE = 'P0001';
+  END IF;
+
   PERFORM set_config('gymsync.engine', 'on', true);
 
   UPDATE public.sessions
@@ -107,7 +121,7 @@ REVOKE EXECUTE ON FUNCTION public.apply_squad_swap(uuid, uuid, uuid) FROM PUBLIC
 GRANT  EXECUTE ON FUNCTION public.apply_squad_swap(uuid, uuid, uuid) TO authenticated;
 
 COMMENT ON FUNCTION public.apply_squad_swap(uuid, uuid, uuid) IS
-  'Merges {p_slot_id: p_replacement_id} into sessions.squad_swaps and returns the merged object. Participant-gated (private.is_session_participant, the same gate claim_session_venue uses); raises P0001 ''sign-in required'' when unauthenticated, ''not a participant of this session'' when the caller is not one, ''replacement is not a known exercise'' when p_replacement_id is not in public.exercises. SECURITY DEFINER; the only writer of sessions.squad_swaps -- private.session_round_guard refuses every other write of it. Phase C1 D1.';
+  'Merges {p_slot_id: p_replacement_id} into sessions.squad_swaps and returns the merged object. Participant-gated; raises P0001 ''sign-in required'', ''not a participant of this session'', ''replacement is not a known exercise'', ''slot is not part of this session''''s routine''. SECURITY DEFINER; the only writer of sessions.squad_swaps -- private.session_round_guard refuses every other write of it. Phase C1 D1.';
 
 -- One more clause on private.session_round_guard: the whole function as it
 -- stands at 20260918000203_session_venue_guard.sql, its three existing

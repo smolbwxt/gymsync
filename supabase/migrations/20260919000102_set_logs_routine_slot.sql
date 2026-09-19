@@ -46,7 +46,8 @@
 -- lifter writing their own row may already write this column. A fourth
 -- policy here would grant nothing while looking like it granted something.
 --
--- APPLIED: (held at its gate -- the controller fills this in)
+-- APPLIED: live 2026-09-19 as `set_logs_routine_slot`, version 20260919001239 (controller, Supabase MCP; verified:
+-- column + partial index present).
 
 ALTER TABLE public.set_logs
   ADD COLUMN IF NOT EXISTS routine_exercise_id uuid;
