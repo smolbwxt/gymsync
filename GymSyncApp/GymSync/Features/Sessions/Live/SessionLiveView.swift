@@ -3560,8 +3560,15 @@ struct SessionLiveView: View {
     /// Write the crew's agreed swap where a relaunch can find it.
     ///
     /// One RPC per slot, which is one for every swap a current build makes;
-    /// an installed build's slot-less proposal can name more than one, and
-    /// the loop is what keeps that case honest rather than half-written.
+    /// an installed build's slot-less proposal can name more than one.
+    ///
+    /// EVERY SLOT IS ATTEMPTED, AND THE REPORT NAMES WHAT LANDED (review
+    /// F4). The loop used to `return` on the first refusal, so a three-slot
+    /// proposal could persist one and abandon two while this function's own
+    /// comment claimed it kept that case "honest rather than half-written".
+    /// `apply_squad_swap` merges one key at a time and has no transaction
+    /// across calls, so all-or-nothing is not available to ask for: the
+    /// honest alternative is to try them all and say how many arrived.
     ///
     /// THE ERROR GOES WHERE THE QUESTION WAS ASKED. `topNotices` renders the
     /// consent card and `errorBannerOverlay` in the SAME slot, one or the
@@ -3570,18 +3577,27 @@ struct SessionLiveView: View {
     /// verbatim through `.validation`).
     @MainActor
     private func persistSquadSwaps(_ slotIDs: [UUID], replacementID: UUID) async {
+        var landed = 0
+        var lastMessage: String?
         for slotID in slotIDs {
             do {
                 try await SessionSwapRepository.applySquad(
                     sessionID: liveSession.id, slotID: slotID,
                     replacementID: replacementID)
+                landed += 1
             } catch {
                 AppLogger.sessions.error(
                     "apply_squad_swap refused: \(error, privacy: .public)")
-                errorText = ErrorMapping.map(error).errorDescription
-                return
+                lastMessage = ErrorMapping.map(error).errorDescription
             }
         }
+        guard let lastMessage, landed < slotIDs.count else { return }
+        // The crew's swap is applied on every screen either way — this says
+        // what the CREW'S ROW is now missing, which is what a relaunch or a
+        // late joiner would not see.
+        errorText = landed == 0
+            ? lastMessage
+            : "Saved \(landed) of \(slotIDs.count) — \(lastMessage)"
     }
 
     @MainActor
@@ -3631,9 +3647,20 @@ struct SessionLiveView: View {
 
     @MainActor
     private func chooseSwap(_ option: GroupSwapOption) {
-        guard let ex = currentExerciseForSheet, let selfID,
-              let slotID = currentRoutineExercise?.id else { return }
+        guard let ex = currentExerciseForSheet, let selfID else { return }
+        // THE SHEET ALWAYS CLOSES (review F3). The slot guard below used to
+        // sit in this line's `guard`, so a session with no routine answered
+        // a tap by doing nothing AND leaving the sheet up. S3 makes
+        // routine-less ad-hoc sessions ordinary, so a dead tap there would
+        // stop being a corner.
         showGroupSwapSheet = false
+        guard let slotID = currentRoutineExercise?.id else {
+            // A swap replaces a lift IN A PLANNED SLOT. With no plan there
+            // is no slot to key it to, and a layer keyed to nothing would
+            // apply to nothing — say so rather than pretend.
+            errorText = "Nothing to swap — this session has no planned exercises."
+            return
+        }
         let target = SwapTarget(id: option.id, name: option.name)
         if swapForSquad {
             let pid = UUID()
